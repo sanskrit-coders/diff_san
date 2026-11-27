@@ -1017,9 +1017,9 @@
       <button id="nextSandhiBtn" class="small" type="button" title="Next sandhi diff (Alt+Shift+↓)" onclick="jumpSandhiDiff(1)">▶</button>
     </span>
     <span class="row" style="gap:2px;">
-      <button id="commentNavBtn" class="small" type="button" title="Jump to next PR comment (Ctrl+D / Ctrl+Shift+D; resolved threads stay collapsed)" onclick="cyclePrComments(1)">Comments (<span id="commentNavCount">0</span>)</button>
-      <button id="prevCommentBtn" class="small" type="button" title="Previous PR comment (Ctrl+Shift+D)" onclick="cyclePrComments(-1)">◀</button>
-      <button id="nextCommentBtn" class="small" type="button" title="Next PR comment (Ctrl+D)" onclick="cyclePrComments(1)">▶</button>
+      <button id="commentNavBtn" class="small" type="button" title="Next PR comment (Ctrl+D / Ctrl+Shift+D; Alt+D / Alt+Shift+D for unresolved; resolved threads stay collapsed)" onclick="cyclePrComments(1)">Comments (<span id="commentNavCount">0</span>)</button>
+      <button id="prevCommentBtn" class="small" type="button" title="Previous PR comment (Ctrl+Shift+D; Alt+Shift+D for unresolved)" onclick="cyclePrComments(-1)">◀</button>
+      <button id="nextCommentBtn" class="small" type="button" title="Next PR comment (Ctrl+D; Alt+D for unresolved)" onclick="cyclePrComments(1)">▶</button>
     </span>
     <label title="Matches VS Code (25) / IntelliJ IDEA (28)">Editor font (px): <input id="fontPxInput" type="number" min="14" max="42" value="26" style="width:74px;" onchange="applyEditorFont(this.value)" /></label>
     <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;" title="Single pane inline word flow without line matching (Alt+S)">
@@ -1062,7 +1062,7 @@
     <div id="prContainer">
       <div class="card">Loading pull requests...</div>
     </div>
-    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • Tab / Shift+Tab Step diffs • Ctrl+Space Checked until here • Click diff box Copy OLD/NEW • Right-click Copy diff / PR line link • Ctrl+F Find (supports ँ) • Ctrl+G / Ctrl+Shift+G Next/Prev find • Ctrl+D / Ctrl+Shift+D Next/Prev comment • ←/→ Collapse/Expand resolved comment • Alt+R Reply selected comment • Alt+V Resolve/Unresolve selected comment • Alt+W Word/Char diff • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Shift+Enter Multiline reply • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • [/] Prev/Next PR • Esc Close bar/composer/settings</div>
+    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • Tab / Shift+Tab Step diffs • Ctrl+Space Checked until here • Click diff box Copy OLD/NEW • Right-click Copy diff / PR line link • Ctrl+F Find (supports ँ) • Ctrl+G / Ctrl+Shift+G Next/Prev find • Ctrl+D / Ctrl+Shift+D Next/Prev comment • Alt+D / Alt+Shift+D Next/Prev unresolved • ←/→ Collapse/Expand resolved comment • Alt+R Reply selected comment • Alt+V Resolve/Unresolve selected comment • Alt+W Word/Char diff • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Shift+Enter Multiline reply • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • [/] Prev/Next PR • Esc Close bar/composer/settings</div>
     <footer id="aboutFooter" class="about-footer">
       <div>
         <strong>diff_san — Pull Requests</strong> (<a href="https://github.com/sanskrit-coders/diff_san" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) —
@@ -7319,39 +7319,83 @@ function getNavigablePrComments() {
   return out;
 }
 
-function cyclePrComments(step = 1) {
-  const items = getNavigablePrComments();
-  if (!items.length) {
+function cyclePrComments(step = 1, { unresolvedOnly = false } = {}) {
+  const allItems = getNavigablePrComments();
+  if (!allItems.length) {
     clearActivePrCommentHighlight();
     setStatus("No comments in current view.", 2000);
+    return null;
+  }
+  const items = unresolvedOnly
+    ? allItems.filter(el => !(el.classList && el.classList.contains("resolved")))
+    : allItems;
+  if (!items.length) {
+    setStatus("No unresolved comments in current view.", 2200);
     return null;
   }
   const dir = step >= 0 ? 1 : -1;
   let curIdx = _activePrCommentEl ? items.indexOf(_activePrCommentEl) : -1;
   let nextIdx = -1;
   if (curIdx >= 0) {
-    nextIdx = ((curIdx + dir) % items.length + items.length) % items.length;
+    const candidate = curIdx + dir;
+    if (candidate >= items.length) {
+      setStatus(`At last ${unresolvedOnly ? "unresolved comment" : "comment"} (${items.length} / ${items.length})`, 2000);
+      return items[curIdx];
+    }
+    if (candidate < 0) {
+      setStatus(`At first ${unresolvedOnly ? "unresolved comment" : "comment"} (1 / ${items.length})`, 2000);
+      return items[curIdx];
+    }
+    nextIdx = candidate;
+  } else if (unresolvedOnly && _activePrCommentEl && allItems.includes(_activePrCommentEl)) {
+    const anchorPos = allItems.indexOf(_activePrCommentEl);
+    if (dir > 0) {
+      const nextEl = allItems.slice(anchorPos + 1).find(el => items.includes(el));
+      if (!nextEl) {
+        setStatus(`No further unresolved comments (${items.length} total)`, 2000);
+        return null;
+      }
+      nextIdx = items.indexOf(nextEl);
+    } else {
+      let prevEl = null;
+      for (let k = anchorPos - 1; k >= 0; k--) {
+        if (items.includes(allItems[k])) { prevEl = allItems[k]; break; }
+      }
+      if (!prevEl) {
+        setStatus(`No earlier unresolved comments (${items.length} total)`, 2000);
+        return null;
+      }
+      nextIdx = items.indexOf(prevEl);
+    }
   } else {
     const selMeta = selectedDiffRowKey ? renderedDiffRows.find(r => r.rowKey === selectedDiffRowKey) : null;
     const selEl = (selMeta && typeof document !== "undefined" && typeof document.getElementById === "function")
       ? document.getElementById(selMeta.domId)
       : null;
+    const kindNoun = unresolvedOnly ? "unresolved comments" : "comments";
     if (selEl && typeof selEl.compareDocumentPosition === "function") {
       if (dir > 0) {
-        const idx = items.findIndex(it => (selEl.compareDocumentPosition(it) & 4) || (typeof selEl.contains === "function" && selEl.contains(it)));
-        nextIdx = idx >= 0 ? idx : 0;
+        nextIdx = items.findIndex(it => (selEl.compareDocumentPosition(it) & 4) || (typeof selEl.contains === "function" && selEl.contains(it)));
+        if (nextIdx < 0) {
+          setStatus(`No further ${kindNoun} below selected line`, 2000);
+          return null;
+        }
       } else {
         for (let k = items.length - 1; k >= 0; k--) {
           if (selEl.compareDocumentPosition(items[k]) & 2) { nextIdx = k; break; }
         }
-        if (nextIdx < 0) nextIdx = items.length - 1;
+        if (nextIdx < 0) {
+          setStatus(`No earlier ${kindNoun} above selected line`, 2000);
+          return null;
+        }
       }
     } else {
       const pane = typeof document !== "undefined" && typeof document.getElementById === "function"
         ? document.getElementById("mainPane")
         : null;
       const paneRect = pane && typeof pane.getBoundingClientRect === "function" ? pane.getBoundingClientRect() : null;
-      if (paneRect && paneRect.height > 0) {
+      const hasItemRects = items.some(it => typeof it.getBoundingClientRect === "function");
+      if (paneRect && paneRect.height > 0 && hasItemRects) {
         if (dir > 0) {
           nextIdx = items.findIndex(it => typeof it.getBoundingClientRect === "function" && it.getBoundingClientRect().bottom > paneRect.top + 2);
         } else {
@@ -7362,8 +7406,13 @@ function cyclePrComments(step = 1) {
             }
           }
         }
+        if (nextIdx < 0) {
+          setStatus(dir > 0 ? `No further ${kindNoun} below view` : `No earlier ${kindNoun} above view`, 2000);
+          return null;
+        }
+      } else {
+        nextIdx = dir > 0 ? 0 : items.length - 1;
       }
-      if (nextIdx < 0) nextIdx = dir > 0 ? 0 : items.length - 1;
     }
   }
   const chosen = items[nextIdx];
@@ -7380,7 +7429,8 @@ function cyclePrComments(step = 1) {
   clearActivePrCommentHighlight();
   _activePrCommentEl = chosen;
   if (chosen.classList) chosen.classList.add("diff-comment-cur");
-  updateCommentNavUi(items, nextIdx);
+  const allIdx = allItems.indexOf(chosen);
+  updateCommentNavUi(allItems, allIdx);
 
   const threadRow = typeof chosen.closest === "function" ? chosen.closest("tr.thread-row") : null;
   let prevRowEl = threadRow ? threadRow.previousElementSibling : null;
@@ -7396,7 +7446,9 @@ function cyclePrComments(step = 1) {
   }
   const isRes = Boolean(chosen.classList && chosen.classList.contains("resolved"));
   const isPend = Boolean(chosen.classList && chosen.classList.contains("pending-draft"));
-  const kindLabel = isPend ? "Pending comment" : (isRes ? `Comment (Resolved${chosen.open ? "" : " — collapsed"})` : "Comment");
+  const kindLabel = unresolvedOnly
+    ? (isPend ? "Unresolved pending comment" : "Unresolved comment")
+    : (isPend ? "Pending comment" : (isRes ? `Comment (Resolved${chosen.open ? "" : " — collapsed"})` : "Comment"));
   setStatus(`${kindLabel} ${nextIdx + 1} / ${items.length}`, 2200);
   return chosen;
 }
@@ -8362,26 +8414,37 @@ async function mergeActivePr() {
   }
 }
 
-function isCommentCycleShortcut(ev) {
-  return Boolean(ev && ev.ctrlKey && !ev.altKey && !ev.metaKey && (ev.key === "d" || ev.key === "D" || ev.code === "KeyD"));
+function getCommentNavShortcutOpts(ev) {
+  if (!ev || ev.metaKey) return null;
+  const isD = ev.key === "d" || ev.key === "D" || ev.code === "KeyD";
+  if (!isD) return null;
+  if (ev.ctrlKey && !ev.altKey) {
+    return { step: ev.shiftKey ? -1 : 1, unresolvedOnly: false };
+  }
+  if (ev.altKey && !ev.ctrlKey) {
+    return { step: ev.shiftKey ? -1 : 1, unresolvedOnly: true };
+  }
+  return null;
 }
 
 if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
   window.addEventListener("keydown", (ev) => {
-    if (!isCommentCycleShortcut(ev)) return;
+    const navOpts = getCommentNavShortcutOpts(ev);
+    if (!navOpts) return;
     ev.__diffSanCommentCycleHandled = true;
     if (typeof ev.preventDefault === "function") ev.preventDefault();
     if (typeof ev.stopPropagation === "function") ev.stopPropagation();
-    cyclePrComments(ev.shiftKey ? -1 : 1);
+    cyclePrComments(navOpts.step, { unresolvedOnly: navOpts.unresolvedOnly });
   }, true);
 }
 
 document.addEventListener("keydown", (ev) => {
-  if (!ev?.__diffSanCommentCycleHandled && isCommentCycleShortcut(ev)) {
+  const navOpts = !ev?.__diffSanCommentCycleHandled ? getCommentNavShortcutOpts(ev) : null;
+  if (navOpts) {
     ev.__diffSanCommentCycleHandled = true;
     if (typeof ev.preventDefault === "function") ev.preventDefault();
     if (typeof ev.stopPropagation === "function") ev.stopPropagation();
-    cyclePrComments(ev.shiftKey ? -1 : 1);
+    cyclePrComments(navOpts.step, { unresolvedOnly: navOpts.unresolvedOnly });
     return;
   }
   if (typeof handleSharedDiffKeydown === "function" && handleSharedDiffKeydown(ev, {
