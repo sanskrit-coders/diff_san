@@ -41,12 +41,36 @@ jobs:
       run: |
         pytest -v
 
-  publish:
-    needs: build
-    if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
+  test-pada-svara:
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
+    defaults:
+      run:
+        working-directory: vishvAsa/pada_svara
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install package and test dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install "git+https://github.com/sanskrit-coders/doc_curation.git"
+        python -m pip install -e . pytest httpx build
+    - name: Test imports and CLI
+      run: |
+        python -c "import pada_svara; print(len(pada_svara.__all__))"
+        pada_svara --help >/dev/null
+    - name: Build distribution
+      run: |
+        python -m build
+    - name: Run pytest
+      run: |
+        pytest -v
+
+  publish:
+    needs: [ build, test-pada-svara ]
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: pull_requests
@@ -60,4 +84,7 @@ jobs:
         python -m build
     - uses: pypa/gh-action-pypi-publish@release/v1
       with:
+        user: __token__
+        password: ${{ secrets.PYPI_API_TOKEN }}
+        packages-dir: pull_requests/dist
         skip-existing: true
