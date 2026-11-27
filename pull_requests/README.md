@@ -30,7 +30,7 @@ GitHub authentication is auto-resolved in order from `--token`, `GITHUB_TOKEN`/`
 - **Single-pane word-flow diff** (default) matching changed space-separated strings inline without requiring strict line-by-line alignment (`Alt+S` toggles 2-pane LHS/RHS) and highlighting intra-word character differences cleanly.
 - **Vedic grapheme & codepoint modes** keeping trailing Vedic svaras (including `U+1CD3` `᳓`) attached to their akṣara.
 - **Unicode normalization (`NFC`/`NFD`/`NFKC`) & `Ignore punct`** (`।`, `॥`, quotes, commas) adapted from `bhashika-org-in/wordiff`.
-- **Full GitHub review & PR management**: inline line/range comments, thread replies, draft review batching, approve / request changes, resolve threads, mergeability & 3-way conflict inspection, open PR in main browser (`Alt+B`), merge PR (`Alt+Shift+M`), close/reopen PR (`Alt+Shift+C`).
+- **Full GitHub review & PR management**: inline line/range comments (`Ctrl+Click` or `Shift+Click` + `Ctrl+Enter`), multiline `Shift+Enter` replies, right-click **Copy diff for bug report**, `Ctrl+F` codepoint-exact search (finding combining marks like `ँ`), Sandhi diff highlighting (default ON, jump with `◀`/`▶` or `Alt+Shift+↑`/`↓`), draft review batching, approve / request changes, resolve threads, mergeability & 3-way conflict inspection, open PR in main browser (`Alt+B`), merge PR (`Alt+Shift+M`), close/reopen PR (`Alt+Shift+C`).
 
 ## Screenshots
 

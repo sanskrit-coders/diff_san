@@ -1329,8 +1329,11 @@
         else rhsMid += segments[i].text || "";
         i += 1;
       }
-      const runEnd = i;
-      const prevSeg = runStart > 0 && segments[runStart - 1].op === "eq" ? segments[runStart - 1] : null;
+      let runEnd = i;
+      while (runEnd < n && (segments[runEnd].op === "del_nl" || segments[runEnd].op === "ins_nl")) runEnd += 1;
+      let pIdx = runStart - 1;
+      while (pIdx >= 0 && (segments[pIdx].op === "del_nl" || segments[pIdx].op === "ins_nl")) pIdx -= 1;
+      const prevSeg = pIdx >= 0 && segments[pIdx].op === "eq" ? segments[pIdx] : null;
       const nextSeg = runEnd < n && segments[runEnd].op === "eq" ? segments[runEnd] : null;
       const prevInfo = prevSeg ? _trailingWordFromEq(prevSeg.text) : { prefixWord: "", touched: false };
       const nextInfo = nextSeg ? _leadingWordFromEq(nextSeg.text) : { suffixWord: "", touched: false };
@@ -1339,13 +1342,13 @@
       let testR = rhsMid;
       let pCtx = "";
       let nCtx = "";
-      if (prevInfo.touched && prevInfo.prefixWord) {
+      if (prevInfo.touched && pIdx === runStart - 1 && prevInfo.prefixWord) {
         testL = prevInfo.prefixWord + testL;
         testR = prevInfo.prefixWord + testR;
       } else if (prevInfo.prefixWord) {
         pCtx = prevInfo.prefixWord;
       }
-      if (nextInfo.touched && nextInfo.suffixWord) {
+      if (nextInfo.touched && runEnd === i && nextInfo.suffixWord) {
         testL = testL + nextInfo.suffixWord;
         testR = testR + nextInfo.suffixWord;
       } else if (nextInfo.suffixWord) {
@@ -1353,7 +1356,7 @@
       }
 
       if (isInterwordSandhiPair(testL, testR, pCtx, nCtx)) {
-        for (let k = runStart; k < runEnd; k++) marked.add(k);
+        for (let k = runStart; k < i; k++) marked.add(k);
       }
     }
     return marked;
@@ -1379,7 +1382,9 @@
               continue;
             }
             const rStr = rWords.slice(ri, rj).join(" ");
-            if (isInterwordSandhiPair(lStr, rStr)) {
+            const pCtx = (li > 0 && ri > 0 && lWords[li - 1] === rWords[ri - 1]) ? lWords[li - 1] : "";
+            const nCtx = (lj < m && rj < n && lWords[lj] === rWords[rj]) ? lWords[lj] : "";
+            if (isInterwordSandhiPair(lStr, rStr, pCtx, nCtx)) {
               hits.push({ li, lj, ri, rj, kind: "sandhi", score: (lj - li) + (rj - ri) });
             }
           }

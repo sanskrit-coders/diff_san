@@ -282,7 +282,11 @@
     <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;" title="Ignore Unicode punctuation differences when comparing words/lines">
       <input id="ignorePunctChk" type="checkbox" onchange="changeDiffMode()" /> Ignore punct
     </label>
-    <button id="sandhiHighlightBtn" class="small" type="button" title="Highlight interword sandhi changes (e.g. अस्ति इति ↔ अस्तीति) with a special color" onclick="onToggleSandhiHighlight()">Sandhi diff</button>
+    <span class="row" style="gap:2px;">
+      <button id="sandhiHighlightBtn" class="small" type="button" title="Highlight interword sandhi changes (e.g. अस्ति इति ↔ अस्तीति) with a special color" onclick="onToggleSandhiHighlight()">Sandhi diff</button>
+      <button id="prevSandhiBtn" class="small" type="button" title="Previous sandhi diff (Alt+Shift+↑)" onclick="jumpSandhiDiff(-1)">◀</button>
+      <button id="nextSandhiBtn" class="small" type="button" title="Next sandhi diff (Alt+Shift+↓)" onclick="jumpSandhiDiff(1)">▶</button>
+    </span>
     <label title="Matches VS Code (25) / IntelliJ IDEA (28)">Editor font (px): <input id="fontPxInput" type="number" min="14" max="42" value="26" style="width:74px;" onchange="applyEditorFont(this.value)" /></label>
     <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;" title="Single pane inline word flow without line matching (Alt+S)">
       <input id="singlePaneChk" type="checkbox" checked onchange="toggleSinglePane(this.checked)" /> Single pane <span class="kbd-hint">Alt+S</span>
@@ -294,6 +298,7 @@
       <input id="wrapLinesChk" type="checkbox" checked onchange="renderActivePrFiles()" /> Wrap long lines
     </label>
     <button id="gdSelectionBtn" class="small" title="Look up currently selected text in GoldenDict" onclick="lookupSelectedGoldenDict()">📖 GoldenDict Selection</button>
+    <button id="findBtn" class="small" type="button" title="Find text or combining marks like ँ across spans (Ctrl+F)" onclick="openDiffFindBar()">🔍 Find</button>
     <button id="settingsBtn" class="small" type="button" title="Customize deleted and added diff highlight colors" onclick="toggleSettingsPane()">⚙ Settings</button>
     <button type="button" class="pill filter-pill pill-green active" id="stateOpenPill" data-state-filter="open" title="Show Open PRs (Alt+O)" onclick="setStateFilter('open')">Open <span class="kbd-hint">Alt+O</span></button>
     <button type="button" class="pill filter-pill pill-amber" id="stateClosedPill" data-state-filter="closed" title="Show Closed PRs (Alt+C)" onclick="setStateFilter('closed')">Closed <span class="kbd-hint">Alt+C</span></button>
@@ -326,7 +331,7 @@
     <div id="prContainer">
       <div class="card">Loading pull requests...</div>
     </div>
-    <div style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Shift+Enter Multiline reply • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • ←/→ Collapse/Expand • [/] Prev/Next PR • Esc Close composer/settings</div>
+    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • Right-click Copy diff • Ctrl+F Find (supports ँ) • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Shift+Enter Multiline reply • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • ←/→ Collapse/Expand • [/] Prev/Next PR • Esc Close bar/composer/settings</div>
     <footer id="aboutFooter" class="about-footer">
       <div>
         <strong>diff_san — Pull Requests</strong> (<a href="https://github.com/sanskrit-coders/diff_san" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) —
@@ -376,6 +381,21 @@ let selectedDiffRowKey = null;
 function onToggleSandhiHighlight() {
   setSandhiHighlightEnabled(!isSandhiHighlightEnabled(), true);
   renderActivePr();
+}
+
+function jumpSandhiDiff(step = 1) {
+  if (!isSandhiHighlightEnabled()) {
+    setSandhiHighlightEnabled(true, true);
+    renderActivePr();
+  }
+  return moveSelectionBySelector(
+    renderedDiffRows,
+    selectedDiffRowKey,
+    rowKey => selectDiffRow(rowKey, { scroll: false, focusFile: true }),
+    step,
+    ".ch-sandhi",
+    "Sandhi diff"
+  );
 }
 
 function getDisplayedFiles() {
@@ -498,6 +518,11 @@ function toggleSinglePane(checked) {
 
 async function init() {
   initDiffSettingsPane();
+  bindDiffRowContextMenu(
+    () => renderedDiffRows,
+    rowKey => selectDiffRow(rowKey, { scroll: false, focusFile: true }),
+    () => "pull_requests_san"
+  );
   try {
     const savedPx = localStorage.getItem("github_pr_review_font_px") || localStorage.getItem("accent_review_font_px");
     if (savedPx) applyEditorFont(savedPx);
@@ -1633,6 +1658,9 @@ function _registerVisibleRowMeta(fi, f, r, pos) {
       leftNum: r.left_num ?? null,
       rightNum: r.right_num ?? null,
       inDiffHunk: Boolean(r.in_diff_hunk),
+      leftText: r.left_text ?? null,
+      rightText: r.right_text ?? null,
+      segments: r.segments || null,
     });
   }
   return { rowKey, domId, selCls: selectedDiffRowKey === rowKey ? " diff-row-selected" : "" };
@@ -1912,6 +1940,7 @@ function renderActivePrFiles() {
     const cb = document.getElementById("compBody");
     if (cb) cb.focus();
   }
+  if (typeof refreshDiffFindIfOpen === "function") refreshDiffFindIfOpen();
 }
 
 function startInlineComposer(fi, line, side, leftLine = null, rightLine = null) {
@@ -2282,6 +2311,7 @@ async function mergeActivePr() {
 }
 
 document.addEventListener("keydown", (ev) => {
+  if (typeof handleSharedDiffKeydown === "function" && handleSharedDiffKeydown(ev)) return;
   const target = ev.target;
   const id = (target && target.id) || "";
   const tag = (target && target.tagName || "").toUpperCase();
@@ -2293,11 +2323,16 @@ document.addEventListener("keydown", (ev) => {
     return;
   }
 
-  // Alt+Shift+M Merge PR, Alt+Shift+C Close/Reopen PR; Alt+O/C/M/L/0 filters; Alt+B Open in Browser; Alt+1/2/3 review actions
+  // Alt+Shift+M Merge PR, Alt+Shift+C Close/Reopen PR, Alt+Shift+Up/Down Sandhi jump; Alt+O/C/M/L/0 filters; Alt+B Open in Browser; Alt+1/2/3 review actions
   if (ev.altKey && !ev.ctrlKey && !ev.metaKey) {
     const ak = (ev.key || "").toLowerCase();
     const ac = ev.code || "";
     if (ev.shiftKey) {
+      if ((ev.key === "ArrowDown" || ev.key === "ArrowUp") && tag !== "SELECT") {
+        ev.preventDefault();
+        jumpSandhiDiff(ev.key === "ArrowDown" ? 1 : -1);
+        return;
+      }
       if (ak === "m" || ac === "KeyM") {
         ev.preventDefault();
         mergeActivePr();

@@ -564,3 +564,78 @@
     padding: 1px 6px;
     color: var(--text);
   }
+  #sandhiHighlightBtn.active {
+    background: var(--sandhi-char);
+    color: var(--sandhi-text);
+    border-color: var(--sandhi-border);
+    box-shadow: 0 0 0 2px var(--sandhi-word-border);
+    font-weight: 700;
+  }
+  .diff-ctx-menu {
+    position: fixed;
+    z-index: 1500;
+    min-width: 240px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--accent);
+    border-radius: 8px;
+    box-shadow: 0 10px 28px rgba(31, 28, 24, 0.24);
+    padding: 5px;
+    display: none;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .diff-ctx-item {
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 7px 11px;
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .diff-ctx-item:hover { background: var(--accent-soft); color: var(--accent); }
+  .diff-find-bar {
+    position: fixed;
+    top: 14px;
+    right: 18px;
+    z-index: 1400;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--accent);
+    border-radius: 9px;
+    box-shadow: 0 10px 30px rgba(31, 28, 24, 0.24);
+    padding: 7px 10px;
+    display: none;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    max-width: calc(100vw - 32px);
+  }
+  .diff-find-bar input {
+    width: 240px;
+    font-family: var(--dev);
+    font-size: 20px;
+    padding: 3px 8px;
+  }
+  .diff-find-count {
+    font-size: 15px;
+    color: var(--muted);
+    min-width: 58px;
+    text-align: center;
+  }
+  tr.diff-row-find-cur > td {
+    outline: 2px solid #f59e0b;
+    outline-offset: -2px;
+  }
+  ::highlight(diff-find) {
+    background-color: #fde047;
+    color: #1f1c18;
+  }
+  ::highlight(diff-find-current) {
+    background-color: #fb923c;
+    color: #1f1c18;
+  }

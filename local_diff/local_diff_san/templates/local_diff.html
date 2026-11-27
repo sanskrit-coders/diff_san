@@ -115,7 +115,11 @@
     <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;">
       <input id="ignorePunctChk" type="checkbox" onchange="changeDiffOptions()" /> Ignore punct
     </label>
-    <button id="sandhiHighlightBtn" class="small" type="button" title="Highlight interword sandhi changes (e.g. अस्ति इति ↔ अस्तीति) with a special color" onclick="onToggleSandhiHighlight()">Sandhi diff</button>
+    <span class="row" style="gap:2px;">
+      <button id="sandhiHighlightBtn" class="small" type="button" title="Highlight interword sandhi changes (e.g. अस्ति इति ↔ अस्तीति) with a special color" onclick="onToggleSandhiHighlight()">Sandhi diff</button>
+      <button id="prevSandhiBtn" class="small" type="button" title="Previous sandhi diff (Alt+Shift+↑)" onclick="jumpSandhiDiff(-1)">◀</button>
+      <button id="nextSandhiBtn" class="small" type="button" title="Next sandhi diff (Alt+Shift+↓)" onclick="jumpSandhiDiff(1)">▶</button>
+    </span>
     <label title="Matches VS Code (25) / IntelliJ IDEA (28)">Editor font (px): <input id="fontPxInput" type="number" min="14" max="42" value="26" style="width:74px;" onchange="applyEditorFont(this.value, 'local_diff_san_font_px')" /></label>
     <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;" title="Single pane inline word flow (Alt+S)">
       <input id="singlePaneChk" type="checkbox" checked onchange="toggleSinglePane(this.checked)" /> Single pane <span class="kbd-hint">Alt+S</span>
@@ -130,6 +134,7 @@
       <input id="wrapLinesChk" type="checkbox" checked onchange="renderWorkspace()" /> Wrap long lines
     </label>
     <button id="gdSelectionBtn" class="small" type="button" title="Look up currently selected text in GoldenDict" onclick="lookupSelectedGoldenDict()">📖 GoldenDict Selection</button>
+    <button id="findBtn" class="small" type="button" title="Find text or combining marks like ँ across spans (Ctrl+F)" onclick="openDiffFindBar()">🔍 Find</button>
     <button id="settingsBtn" class="small" type="button" title="Customize deleted and added diff highlight colors" onclick="toggleSettingsPane()">⚙ Settings</button>
   </div>
 </header>
@@ -171,7 +176,7 @@
     <div id="diffContainer">
       <div class="card">Loading diff...</div>
     </div>
-    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Alt+S Single/2-Pane • Ctrl+R Refresh • j/k Navigate files • Esc Close Settings</div>
+    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • Right-click Copy diff • Ctrl+F Find (supports ँ) • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Alt+S Single/2-Pane • Ctrl+R Refresh • j/k Navigate files • Esc Close bar/settings</div>
     <footer id="aboutFooter" class="about-footer">
       <div>
         <strong>diff_san</strong> (<a href="https://github.com/sanskrit-coders/diff_san" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) —
@@ -204,6 +209,21 @@ let selectedLocalRowKey = null;
 function onToggleSandhiHighlight() {
   setSandhiHighlightEnabled(!isSandhiHighlightEnabled(), true);
   renderWorkspace();
+}
+
+function jumpSandhiDiff(step = 1) {
+  if (!isSandhiHighlightEnabled()) {
+    setSandhiHighlightEnabled(true, true);
+    renderWorkspace();
+  }
+  return moveSelectionBySelector(
+    renderedLocalRows,
+    selectedLocalRowKey,
+    rowKey => selectLocalRow(rowKey, { scroll: false }),
+    step,
+    ".ch-sandhi",
+    "Sandhi diff"
+  );
 }
 
 function selectLocalRow(rowKey, { scroll = true } = {}) {
@@ -527,10 +547,20 @@ function expandGapRow(gapKey, dir, count) {
   renderWorkspace();
 }
 
-function _registerLocalRowMeta(itemId, hi, ri, r) {
+function _registerLocalRowMeta(itemId, hi, ri, r, filename = "") {
   const rowKey = `${itemId}:${hi}:${ri}`;
   const domId = `localRow_${hi}_${ri}`;
-  renderedLocalRows.push({ rowKey, domId, kind: r.kind || "modify" });
+  renderedLocalRows.push({
+    rowKey,
+    domId,
+    filename: filename || itemId,
+    kind: r.kind || "modify",
+    leftNum: r.left_num ?? null,
+    rightNum: r.right_num ?? null,
+    leftText: r.left_text ?? null,
+    rightText: r.right_text ?? null,
+    segments: r.segments || null,
+  });
   return { rowKey, domId, selCls: selectedLocalRowKey === rowKey ? " diff-row-selected" : "" };
 }
 
@@ -570,7 +600,7 @@ function renderDiffItemHtml(item) {
         const rowsHtml = renderItems.map(it => {
           if (it.type === "gap") return renderGapRowHtml(it, colspan, "expandGapRow");
           const r = it.r;
-          const { rowKey, domId, selCls } = _registerLocalRowMeta(item.id, hi, it.ri, r);
+          const { rowKey, domId, selCls } = _registerLocalRowMeta(item.id, hi, it.ri, r, item.title || item.right_path || item.left_path || item.id);
           const rowCls = `diff-row single-row-${esc(r.kind || 'modify')}${selCls}`;
           return `<tr id="${esc(domId)}" class="${rowCls}" onclick="handleLocalRowClick(event, ${esc(JSON.stringify(rowKey))})">
             ${renderLocalLineCell(r.left_num, item.left_path)}
@@ -587,7 +617,7 @@ function renderDiffItemHtml(item) {
       const rowsHtml = renderItems.map(it => {
         if (it.type === "gap") return renderGapRowHtml(it, colspan, "expandGapRow");
         const r = it.r;
-        const { rowKey, domId, selCls } = _registerLocalRowMeta(item.id, hi, it.ri, r);
+        const { rowKey, domId, selCls } = _registerLocalRowMeta(item.id, hi, it.ri, r, item.title || item.right_path || item.left_path || item.id);
         const rowCls = `diff-row diff-row-${esc(r.kind || 'modify')}${selCls}`;
         const lhsHtml = r.left_text == null ? "" : renderDiffSegments(r.lhs_segments, null, { leftText: r.left_text, rightText: r.right_text, otherSegments: r.rhs_segments });
         const rhsHtml = r.right_text == null ? "" : renderDiffSegments(r.rhs_segments, null, { leftText: r.left_text, rightText: r.right_text, otherSegments: r.lhs_segments });
@@ -645,6 +675,7 @@ function renderWorkspace() {
   const container = document.getElementById("diffContainer");
   if (!container) return;
   container.innerHTML = renderDiffItemHtml(workspaceData?.active_item || null);
+  if (typeof refreshDiffFindIfOpen === "function") refreshDiffFindIfOpen();
 }
 
 async function fetchDiff(activeId = null) {
@@ -748,6 +779,11 @@ async function openPathInIdea(filePath, line = null) {
 
 async function init() {
   initDiffSettingsPane();
+  bindDiffRowContextMenu(
+    () => renderedLocalRows,
+    rowKey => selectLocalRow(rowKey, { scroll: false }),
+    () => "local-diff-san"
+  );
   try {
     const savedPx = localStorage.getItem("local_diff_san_font_px") || localStorage.getItem("github_pr_review_font_px");
     if (savedPx) applyEditorFont(savedPx, "local_diff_san_font_px");
@@ -783,6 +819,7 @@ async function init() {
 }
 
 document.addEventListener("keydown", (ev) => {
+  if (typeof handleSharedDiffKeydown === "function" && handleSharedDiffKeydown(ev)) return;
   const target = ev.target;
   const tag = (target && target.tagName || "").toUpperCase();
   if ((ev.key === "r" || ev.key === "R") && ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey) {
@@ -790,8 +827,16 @@ document.addEventListener("keydown", (ev) => {
     refreshDiff();
     return;
   }
-  if (ev.altKey && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey) {
+  if (ev.altKey && !ev.ctrlKey && !ev.metaKey) {
     const ak = (ev.key || "").toLowerCase();
+    if (ev.shiftKey) {
+      if ((ev.key === "ArrowDown" || ev.key === "ArrowUp") && tag !== "SELECT") {
+        ev.preventDefault();
+        jumpSandhiDiff(ev.key === "ArrowDown" ? 1 : -1);
+        return;
+      }
+      return;
+    }
     if (ak === "s" || ev.code === "KeyS") {
       ev.preventDefault();
       toggleSinglePane(!isSinglePaneMode());
