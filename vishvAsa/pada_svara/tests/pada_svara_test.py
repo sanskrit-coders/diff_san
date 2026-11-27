@@ -811,20 +811,38 @@ def test_open_in_intellij_endpoint_and_line_resolution(tmp_path: Path, monkeypat
 
 
 def test_open_in_goldendict_and_pratipadika_lookup(tmp_path: Path, monkeypatch):
+  from doc_curation.sanskrit.accent import shatapatha_solver as ss
   from fastapi.testclient import TestClient
   from pada_svara import review, review_gui
 
-  gd_sup = review.resolve_goldendict_lookup("- सुपेश᳓सा (*TS*-0/1)")
-  assert gd_sup["pratipadika"] == "सुपेशस्"
-  assert gd_sup["primary"] == "सुपेशस्"
-  assert "सुपेशसा" in gd_sup["alternatives"]
+  if ss.get_vidyut_kosha() is not None:
+    gd_sup = review.resolve_goldendict_lookup("- सुपेश᳓सा (*TS*-0/1)")
+    assert gd_sup["pratipadika"] == "सुपेशस्"
+    assert gd_sup["primary"] == "सुपेशस्"
+    assert "सुपेशसा" in gd_sup["alternatives"]
 
-  gd_jiv = review.resolve_goldendict_lookup("- जी᳓वताम् (शतृ)")
-  assert gd_jiv["pratipadika"] == "जीवत्"
-  assert "जीवताम्" in gd_jiv["alternatives"]
+    gd_jiv = review.resolve_goldendict_lookup("- जी᳓वताम् (शतृ)")
+    assert gd_jiv["pratipadika"] == "जीवत्"
+    assert "जीवताम्" in gd_jiv["alternatives"]
 
-  gd_dirgha = review.resolve_goldendict_lookup("- दीर्घायुः᳓ → **दीर्घ᳓-आयुः** (*RV*-2)")
-  assert gd_dirgha["pratipadika"] in ("दीर्घायु", "दीर्घायुस्")
+    gd_dirgha = review.resolve_goldendict_lookup("- दीर्घायुः᳓ → **दीर्घ᳓-आयुः** (*RV*-2)")
+    assert gd_dirgha["pratipadika"] in ("दीर्घायु", "दीर्घायुस्")
+
+  # Verify graceful fallback when Vidyut Kosha data is unavailable (e.g., clean CI runner)
+  with monkeypatch.context() as mp:
+    mp.setattr(ss, "get_vidyut_kosha", lambda: None)
+    review.resolve_goldendict_lookup.cache_clear()
+    fb_sup = review.resolve_goldendict_lookup("- सुपेश᳓सा (*TS*-0/1)")
+    assert fb_sup["pratipadika"] == ""
+    assert fb_sup["word"] == "सुपेशसा"
+    assert fb_sup["primary"] == "सुपेशसा"
+
+    fb_jiv = review.resolve_goldendict_lookup("- जी᳓वताम् (शतृ)")
+    assert fb_jiv["primary"] == "जीवताम्"
+
+    fb_dirgha = review.resolve_goldendict_lookup("- दीर्घायुः᳓ → **दीर्घ᳓-आयुः** (*RV*-2)")
+    assert fb_dirgha["primary"] == "दीर्घायुः"
+  review.resolve_goldendict_lookup.cache_clear()
 
   launched: list[list[str]] = []
   monkeypatch.setattr(review_gui, "_resolve_goldendict_binary", lambda: "/usr/bin/goldendict-mock")
