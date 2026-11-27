@@ -780,7 +780,12 @@ def test_gui_endpoints_diff_comments_refresh_and_local_helpers(tmp_path: Path, m
   tc = TestClient(app)
 
   r_html = tc.get("/")
-  assert r_html.status_code == 200 and "GitHub PR Character-Level Reviewer" in r_html.text
+  assert r_html.status_code == 200 and "<title>GitHub PR Character-Level Reviewer</title>" in r_html.text
+  hdr_top = r_html.text.split("<header>", 1)[1].split("</div>", 1)[0]
+  assert "GitHub PR Character-Level Reviewer" not in hdr_top
+  for pill_id in ("stateOpenPill", "stateClosedPill", "stateMergedPill", "stateAllPill"):
+    assert f'id="{pill_id}"' in hdr_top
+    assert r_html.text.count(f'id="{pill_id}"') == 1
 
   r_meta = tc.get("/api/meta")
   assert r_meta.status_code == 200
