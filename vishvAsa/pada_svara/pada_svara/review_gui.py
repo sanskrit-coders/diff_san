@@ -1622,7 +1622,7 @@ function _makeSutraAnchor(labelHtml, a, p, n) {
 }
 
 function linkPaniniSutrasInText(escapedText) {
-  const sutraChainRe = /(पा(?:[॰०]|\.?\s*सू\.?)\s*)([1-8१-८])\.([1-4१-४])\.([0-9०-९]+)((?:[–\-]([0-9०-९]+)(?=[\s,);]|$))?)((?:\s*[,/;–\-+]\s*[1-8१-८]\.[1-4१-४]\.[0-9०-९]+(?:[–\-][0-9०-९]+(?=[\s,);]|$))?)*)/g;
+  const sutraChainRe = /(पा(?:[॰०]|\.?\s*सू\.?)\s*)([1-8१-८])\.([1-4१-४])\.([0-9०-९]+)((?:[–\-]([0-9०-९]+)(?![.0-9०-९]))?)((?:\s*[,/;–\-+]\s*[1-8१-८]\.[1-4१-४]\.[0-9०-९]+(?:[–\-][0-9०-९]+(?![.0-9०-९]))?)*)/g;
   return escapedText.replace(sutraChainRe, (_, prefix, a, p, n, rangeFull, rangeEnd, tail) => {
     let out = _makeSutraAnchor(`${prefix}${a}.${p}.${n}`, a, p, n);
     if (rangeFull && rangeEnd) {
@@ -1630,7 +1630,7 @@ function linkPaniniSutrasInText(escapedText) {
       out += `${sep}${_makeSutraAnchor(rangeEnd, a, p, rangeEnd)}`;
     }
     if (tail) {
-      out += tail.replace(/([1-8१-८])\.([1-4१-४])\.([0-9०-९]+)([–\-]([0-9०-९]+)(?=[\s,);]|$))?/g,
+      out += tail.replace(/([1-8१-८])\.([1-4१-४])\.([0-9०-९]+)([–\-]([0-9०-९]+)(?![.0-9०-९]))?/g,
         (__, sa, sp, sn, sRangeFull, sRangeEnd) => {
           let seg = _makeSutraAnchor(`${sa}.${sp}.${sn}`, sa, sp, sn);
           if (sRangeFull && sRangeEnd) {

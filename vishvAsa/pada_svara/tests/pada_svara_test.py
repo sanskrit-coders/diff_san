@@ -762,8 +762,20 @@ def test_review_gui_embedded_js_syntax(tmp_path: Path):
   + '    const call = fetchedCalls.slice(before).find(c => c.url.startsWith("/api/items?"));\n'
   + '    if (!call || !call.url.includes("status_filter=" + expected)) throw new Error("Alt+" + key + " missing /api/items call");\n'
   + '  }\n'
+  + '  // Pāṇini sūtra references link to ashtadhyayi.com/sutraani/a/p/n without false-matching Vedic refs\n'
+  + '  const sutraHtml = formatPadapathaLineHtml("- आ᳓ → **आ** (गतिर्गतौ, पा॰ ८.१.७०, पा॰ ६.२.२, ६.१.१९३, *KS*-122) +++(पा॰ ८.१.१८–२३!!)+++");\n'
+  + '  for (const expectUrl of ["https://ashtadhyayi.com/sutraani/8/1/70", "https://ashtadhyayi.com/sutraani/6/2/2", "https://ashtadhyayi.com/sutraani/6/1/193", "https://ashtadhyayi.com/sutraani/8/1/18", "https://ashtadhyayi.com/sutraani/8/1/23"]) {\n'
+  + '    if (!sutraHtml.includes(\'href="\' + expectUrl + \'"\')) throw new Error("Missing ashtadhyayi.com link " + expectUrl + " in: " + sutraHtml);\n'
+  + '  }\n'
+  + '  const mixedHtml = formatPadapathaLineHtml("- वरे᳓भिः (तै.ब्रा. 3.2.1; *RV*-1/3 १०.३२.१; *MS*-1/3 २.९.१; पा.सू. 8.1.66)");\n'
+  + '  if (!mixedHtml.includes(\'href="https://ashtadhyayi.com/sutraani/8/1/66"\') || mixedHtml.includes("3/2/1") || mixedHtml.includes("10/32/1") || mixedHtml.includes("2/9/1")) {\n'
+  + '    throw new Error("Bad sūtra link filtering in: " + mixedHtml);\n'
+  + '  }\n'
+  + '  const vpNoteHtml = formatTextSegment("Note +++(पा॰ 8.1.70)+++ end");\n'
+  + '  if (!vpNoteHtml.includes(\'href="https://ashtadhyayi.com/sutraani/8/1/70"\')) throw new Error("Missing VP note sūtra link: " + vpNoteHtml);\n'
       + '})();\n'
     )
+    assert ".sutra-link {" in review_gui._RENDERED_HTML
     n_idx = review_gui._RENDERED_HTML.index('id="nInput"')
     ref_idx = review_gui._RENDERED_HTML.index('id="refreshBtn"')
     font_idx = review_gui._RENDERED_HTML.index('id="fontPxInput"')
