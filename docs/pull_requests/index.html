@@ -1062,7 +1062,7 @@
     <div id="prContainer">
       <div class="card">Loading pull requests...</div>
     </div>
-    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • Tab / Shift+Tab Step diffs • Ctrl+Space Checked until here • Click diff box Copy OLD/NEW • Right-click Copy diff / PR line link • Ctrl+F Find (supports ँ) • Ctrl+G / Ctrl+Shift+G Next/Prev find • Ctrl+D / Ctrl+Shift+D Next/Prev comment • Alt+R Reply selected comment • Alt+V Resolve/Unresolve selected comment • Alt+W Word/Char diff • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Shift+Enter Multiline reply • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • ←/→ Collapse/Expand • [/] Prev/Next PR • Esc Close bar/composer/settings</div>
+    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • Tab / Shift+Tab Step diffs • Ctrl+Space Checked until here • Click diff box Copy OLD/NEW • Right-click Copy diff / PR line link • Ctrl+F Find (supports ँ) • Ctrl+G / Ctrl+Shift+G Next/Prev find • Ctrl+D / Ctrl+Shift+D Next/Prev comment • ←/→ Collapse/Expand resolved comment • Alt+R Reply selected comment • Alt+V Resolve/Unresolve selected comment • Alt+W Word/Char diff • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Shift+Enter Multiline reply • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • [/] Prev/Next PR • Esc Close bar/composer/settings</div>
     <footer id="aboutFooter" class="about-footer">
       <div>
         <strong>diff_san — Pull Requests</strong> (<a href="https://github.com/sanskrit-coders/diff_san" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) —
@@ -7237,6 +7237,25 @@ function focusReplyBoxForSelectedComment() {
   return true;
 }
 
+function setSelectedResolvedCommentOpen(isOpen) {
+  const box = resolveSelectedPrCommentBox();
+  if (!box) return false;
+  const isResolved = String(box.tagName || "").toUpperCase() === "DETAILS"
+    || Boolean(box.classList && box.classList.contains("resolved"));
+  if (!isResolved) return false;
+  const openBool = Boolean(isOpen);
+  if (!openBool && typeof document !== "undefined" && document.activeElement && typeof box.contains === "function" && box.contains(document.activeElement)) {
+    const inSummary = typeof document.activeElement.closest === "function" && document.activeElement.closest("summary");
+    if (!inSummary && typeof document.activeElement.blur === "function") document.activeElement.blur();
+  }
+  box.open = openBool;
+  const tid = box.dataset?.threadId ?? (typeof box.getAttribute === "function" ? box.getAttribute("data-thread-id") : null);
+  if (tid) setResolvedThreadExpanded(tid, openBool);
+  selectActivePrCommentEl(box);
+  setStatus(openBool ? "Expanded resolved comment" : "Collapsed resolved comment", 1800);
+  return true;
+}
+
 function toggleResolveSelectedComment() {
   const box = resolveSelectedPrCommentBox();
   if (!box) {
@@ -8539,7 +8558,7 @@ document.addEventListener("keydown", (ev) => {
     return;
   }
 
-  // j/k navigate file cards; ArrowLeft/ArrowRight collapse/expand focused file card
+  // j/k navigate file cards; ArrowLeft/ArrowRight collapse/expand resolved comment thread
   if (ev.key === "j") {
     if (visibleFileIndices.length) {
       ev.preventDefault();
@@ -8560,15 +8579,11 @@ document.addEventListener("keydown", (ev) => {
     }
     return;
   }
-  if (ev.key === "ArrowLeft" && !ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey && focusedFileIdx >= 0) {
-    ev.preventDefault();
-    toggleFileCollapse(focusedFileIdx, true);
-    return;
-  }
-  if (ev.key === "ArrowRight" && !ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey && focusedFileIdx >= 0) {
-    ev.preventDefault();
-    toggleFileCollapse(focusedFileIdx, false);
-    return;
+  if ((ev.key === "ArrowLeft" || ev.key === "ArrowRight") && !ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey) {
+    if (setSelectedResolvedCommentOpen(ev.key === "ArrowRight")) {
+      ev.preventDefault();
+      return;
+    }
   }
 
   // [ / ] navigate PRs in sidebar
