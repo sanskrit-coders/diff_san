@@ -1260,7 +1260,349 @@ function _ensureDiffFindBarEl() {
   return bar;
 }
 
-function handleSharedDiffKeydown(ev) {
+// --- Diff-chunk Tab Stepping & "Checked until here" (Ctrl+Space) Marker ---
+let _activeDiffFocus = null; // { rowKey, domId, tokenIdx, el } | null
+let _lastCheckedRowEl = null;
+let _lastCheckedTokEl = null;
+const _checkedUntilMemCache = {};
+
+function blurStrayUiFocus() {
+  if (typeof document === "undefined") return;
+  const active = document.activeElement;
+  if (!active || active === document.body || typeof active.blur !== "function") return;
+  if (active.closest && active.closest(".inline-composer, .thread-box, #diffFindBar, #settingsPane")) return;
+  active.blur();
+}
+
+function clearActiveDiffFocus() {
+  if (_activeDiffFocus && _activeDiffFocus.el && _activeDiffFocus.el.classList) {
+    _activeDiffFocus.el.classList.remove("diff-focus-cur");
+  }
+  _activeDiffFocus = null;
+  if (typeof document !== "undefined" && typeof document.querySelectorAll === "function") {
+    document.querySelectorAll(".diff-focus-cur").forEach(el => {
+      if (el.classList) el.classList.remove("diff-focus-cur");
+    });
+  }
+}
+
+function getRowDiffFocusTargets(rowEl) {
+  if (!rowEl || typeof rowEl.querySelectorAll !== "function") return [];
+  const raw = Array.from(rowEl.querySelectorAll(".ch-pair, .ch-del, .ch-ins, .nl-del, .nl-ins"));
+  const top = raw.filter(el => {
+    const par = el.parentElement;
+    if (!par || typeof par.closest !== "function") return true;
+    return !par.closest(".ch-pair, .ch-del, .ch-ins");
+  });
+  if (top.length) return top;
+  if (rowEl.classList && (
+    rowEl.classList.contains("diff-row-modify")
+    || rowEl.classList.contains("diff-row-del")
+    || rowEl.classList.contains("diff-row-add")
+    || rowEl.classList.contains("single-row-modify")
+    || rowEl.classList.contains("single-row-del")
+    || rowEl.classList.contains("single-row-add")
+  )) {
+    const cells = Array.from(rowEl.querySelectorAll("td.code-cell:not(.diff-empty)"));
+    return cells.length ? cells : [rowEl];
+  }
+  return [];
+}
+
+function _applyDiffFocusDom() {
+  if (_activeDiffFocus && _activeDiffFocus.el && _activeDiffFocus.el.classList) {
+    _activeDiffFocus.el.classList.remove("diff-focus-cur");
+  }
+  if (typeof document !== "undefined" && typeof document.querySelectorAll === "function") {
+    document.querySelectorAll(".diff-focus-cur").forEach(el => {
+      if (el.classList) el.classList.remove("diff-focus-cur");
+    });
+  }
+  if (!_activeDiffFocus || typeof document === "undefined" || typeof document.getElementById !== "function") return null;
+  const rowEl = document.getElementById(_activeDiffFocus.domId || "");
+  if (!rowEl) return null;
+  const targets = getRowDiffFocusTargets(rowEl);
+  const tgt = targets[_activeDiffFocus.tokenIdx];
+  if (!tgt) return null;
+  _activeDiffFocus.el = tgt;
+  if (tgt.classList) tgt.classList.add("diff-focus-cur");
+  return tgt;
+}
+
+function getActiveDiffFocusEl() {
+  if (!_activeDiffFocus || typeof document === "undefined" || typeof document.getElementById !== "function") return null;
+  const rowEl = document.getElementById(_activeDiffFocus.domId || "");
+  if (!rowEl) return null;
+  const targets = getRowDiffFocusTargets(rowEl);
+  return targets[_activeDiffFocus.tokenIdx] || null;
+}
+
+function stepRowDiffFocus(rows, currentRowKey, selectRowFn, step = 1) {
+  if (!Array.isArray(rows) || !rows.length || !currentRowKey) return null;
+  const curRowIdx = rows.findIndex(r => r.rowKey === currentRowKey);
+  if (curRowIdx < 0) return null;
+
+  const entries = [];
+  for (let ri = 0; ri < rows.length; ri++) {
+    const r = rows[ri];
+    const rowEl = (typeof document !== "undefined" && typeof document.getElementById === "function")
+      ? document.getElementById(r.domId)
+      : null;
+    const targets = getRowDiffFocusTargets(rowEl);
+    for (let ti = 0; ti < targets.length; ti++) {
+      entries.push({ row: r, rowIdx: ri, tokenIdx: ti, targetEl: targets[ti] });
+    }
+  }
+  if (!entries.length) {
+    setStatus("No differences in current view.", 2000);
+    return null;
+  }
+
+  let chosenPos = -1;
+  let wrapped = false;
+  if (_activeDiffFocus && _activeDiffFocus.rowKey === currentRowKey) {
+    const curEntryIdx = entries.findIndex(e => e.row.rowKey === currentRowKey && e.tokenIdx === _activeDiffFocus.tokenIdx);
+    if (curEntryIdx >= 0) {
+      const nextRaw = curEntryIdx + (step >= 0 ? 1 : -1);
+      if (nextRaw < 0 || nextRaw >= entries.length) wrapped = true;
+      chosenPos = ((nextRaw % entries.length) + entries.length) % entries.length;
+    }
+  }
+  if (chosenPos < 0) {
+    if (step >= 0) {
+      chosenPos = entries.findIndex(e => e.rowIdx >= curRowIdx);
+      if (chosenPos < 0) { chosenPos = 0; wrapped = true; }
+    } else {
+      for (let k = entries.length - 1; k >= 0; k--) {
+        if (entries[k].rowIdx <= curRowIdx) { chosenPos = k; break; }
+      }
+      if (chosenPos < 0) { chosenPos = entries.length - 1; wrapped = true; }
+    }
+  }
+
+  const chosen = entries[chosenPos];
+  const prevEl = _activeDiffFocus?.el || null;
+  if (prevEl && prevEl.classList) prevEl.classList.remove("diff-focus-cur");
+  if (typeof selectRowFn === "function") {
+    selectRowFn(chosen.row.rowKey, { preserveDiffFocus: true, scroll: false });
+  }
+  _activeDiffFocus = { rowKey: chosen.row.rowKey, domId: chosen.row.domId, tokenIdx: chosen.tokenIdx, el: chosen.targetEl };
+  const focusedEl = _applyDiffFocusDom() || chosen.targetEl;
+  if (focusedEl && typeof focusedEl.scrollIntoView === "function") {
+    focusedEl.scrollIntoView({ block: "nearest", inline: "nearest" });
+  } else {
+    const rowEl = document.getElementById(chosen.row.domId);
+    if (rowEl && typeof rowEl.scrollIntoView === "function") rowEl.scrollIntoView({ block: "nearest" });
+  }
+  setStatus(`Diff ${chosenPos + 1} / ${entries.length}${wrapped ? " (wrapped)" : ""}`, 2000);
+  return { row: chosen.row, tokenIdx: chosen.tokenIdx, index: chosenPos, total: entries.length };
+}
+
+function shouldHandleDiffTabKey(ev, rows, selectedRowKey) {
+  if (!ev || ev.key !== "Tab" || ev.ctrlKey || ev.altKey || ev.metaKey) return false;
+  if (!selectedRowKey || !Array.isArray(rows) || !rows.some(r => r.rowKey === selectedRowKey)) return false;
+  const tgt = ev.target;
+  const tag = (tgt && tgt.tagName || "").toUpperCase();
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || tgt?.isContentEditable) return false;
+  if (tgt && typeof tgt.closest === "function" && tgt.closest(".inline-composer, .thread-box, .review-panel, #diffFindBar, #settingsPane, #diffRowContextMenu, header, aside.sidebar")) {
+    return false;
+  }
+  return true;
+}
+
+function _loadCheckedUntilMap(storageKey) {
+  if (_checkedUntilMemCache[storageKey]) return _checkedUntilMemCache[storageKey];
+  let map = {};
+  try {
+    const raw = typeof localStorage !== "undefined" ? localStorage.getItem(storageKey) : null;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) map = parsed;
+    }
+  } catch (_) {}
+  _checkedUntilMemCache[storageKey] = map;
+  return map;
+}
+
+function _saveCheckedUntilMap(storageKey, map) {
+  _checkedUntilMemCache[storageKey] = map;
+  try {
+    if (typeof localStorage !== "undefined") {
+      const keys = Object.keys(map);
+      if (keys.length > 50) {
+        const sorted = keys.sort((a, b) => (map[b]?.updatedAt || 0) - (map[a]?.updatedAt || 0));
+        const trimmed = {};
+        for (const k of sorted.slice(0, 50)) trimmed[k] = map[k];
+        map = trimmed;
+        _checkedUntilMemCache[storageKey] = map;
+      }
+      localStorage.setItem(storageKey, JSON.stringify(map));
+    }
+  } catch (_) {}
+}
+
+function _resolveCheckedRowMeta(rows, cp) {
+  if (!cp || !Array.isArray(rows) || !rows.length) return null;
+  if (cp.rowKey) {
+    const exact = rows.find(r => r.rowKey === cp.rowKey);
+    if (exact) return exact;
+  }
+  const fRows = cp.filename ? rows.filter(r => r.filename === cp.filename) : rows;
+  if (cp.rightNum != null) {
+    const rMatch = fRows.find(r => r.rightNum === cp.rightNum);
+    if (rMatch) return rMatch;
+  }
+  if (cp.leftNum != null) {
+    const lMatch = fRows.find(r => r.leftNum === cp.leftNum);
+    if (lMatch) return lMatch;
+  }
+  return null;
+}
+
+function _formatCheckedCheckpointLabel(cp) {
+  if (!cp) return "";
+  const fileBase = String(cp.filename || "").split("/").pop() || cp.filename || "";
+  const ln = cp.rightNum ?? cp.leftNum;
+  const lineStr = ln != null ? `:${ln}` : "";
+  const tokStr = cp.tokenIdx != null ? ` (#${cp.tokenIdx + 1})` : "";
+  return `${fileBase}${lineStr}${tokStr}` || "point";
+}
+
+function _renderCheckedUntilHeaderPill(cp, onJump, onClear) {
+  const pill = typeof document !== "undefined" ? document.getElementById("checkedUntilPill") : null;
+  if (!pill) return;
+  if (!cp) {
+    if (pill.style) pill.style.display = "none";
+    pill.innerHTML = "";
+    return;
+  }
+  const shortLbl = _formatCheckedCheckpointLabel(cp);
+  pill.className = "checked-until-pill";
+  if (pill.style) pill.style.display = "inline-flex";
+  pill.innerHTML = `<button type="button" class="checked-until-jump-btn" title="Jump to Checked until here (${esc(shortLbl)})">✓ Checked: ${esc(shortLbl)}</button><button type="button" class="checked-until-clear-btn" title="Clear Checked until here marker">✕</button>`;
+  if (typeof pill.querySelector === "function") {
+    const jBtn = pill.querySelector(".checked-until-jump-btn");
+    const cBtn = pill.querySelector(".checked-until-clear-btn");
+    if (jBtn && typeof onJump === "function") jBtn.onclick = onJump;
+    if (cBtn && typeof onClear === "function") cBtn.onclick = onClear;
+  }
+}
+
+function clearCheckedUntilHere(rows, scopeKey, { storageKey, selectRowFn = null } = {}) {
+  if (scopeKey && storageKey) {
+    const map = _loadCheckedUntilMap(storageKey);
+    if (Object.prototype.hasOwnProperty.call(map, scopeKey)) {
+      delete map[scopeKey];
+      _saveCheckedUntilMap(storageKey, map);
+    }
+  }
+  syncDiffFocusAndCheckedUi(rows, scopeKey, { storageKey, selectRowFn });
+  setStatus("Cleared Checked until here marker", 2000);
+}
+
+function jumpToCheckedUntilHere(rows, scopeKey, { storageKey, selectRowFn = null } = {}) {
+  if (!scopeKey || !storageKey) return null;
+  const cp = _loadCheckedUntilMap(storageKey)[scopeKey];
+  if (!cp) return null;
+  const meta = _resolveCheckedRowMeta(rows, cp);
+  if (!meta) {
+    setStatus("Checked checkpoint row is collapsed or in another file.", 2500);
+    return null;
+  }
+  if (typeof selectRowFn === "function") {
+    selectRowFn(meta.rowKey, { preserveDiffFocus: true, scroll: false });
+  }
+  if (cp.tokenIdx != null) {
+    _activeDiffFocus = { rowKey: meta.rowKey, domId: meta.domId, tokenIdx: cp.tokenIdx };
+  } else {
+    clearActiveDiffFocus();
+  }
+  syncDiffFocusAndCheckedUi(rows, scopeKey, { storageKey, selectRowFn });
+  const rowEl = typeof document !== "undefined" && typeof document.getElementById === "function"
+    ? document.getElementById(meta.domId)
+    : null;
+  if (rowEl && typeof rowEl.scrollIntoView === "function") rowEl.scrollIntoView({ block: "center" });
+  setStatus(`Jumped to Checked until ${_formatCheckedCheckpointLabel(cp)}`, 2000);
+  return meta;
+}
+
+function setCheckedUntilHere(rows, currentRowKey, scopeKey, { storageKey, selectRowFn = null } = {}) {
+  if (!scopeKey || !storageKey) return null;
+  if (!currentRowKey || !Array.isArray(rows)) {
+    setStatus("Select a line first (Shift+Click / ↑ / ↓) to set Checked until here.", 2500);
+    return null;
+  }
+  const meta = rows.find(r => r.rowKey === currentRowKey);
+  if (!meta) {
+    setStatus("Select a line first (Shift+Click / ↑ / ↓) to set Checked until here.", 2500);
+    return null;
+  }
+  const tokenIdx = (_activeDiffFocus && _activeDiffFocus.rowKey === currentRowKey) ? _activeDiffFocus.tokenIdx : null;
+  const cp = {
+    rowKey: meta.rowKey,
+    filename: meta.filename || "",
+    leftNum: meta.leftNum ?? null,
+    rightNum: meta.rightNum ?? null,
+    tokenIdx,
+    updatedAt: Date.now(),
+  };
+  const map = _loadCheckedUntilMap(storageKey);
+  map[scopeKey] = cp;
+  _saveCheckedUntilMap(storageKey, map);
+  syncDiffFocusAndCheckedUi(rows, scopeKey, { storageKey, selectRowFn });
+  setStatus(`✓ Checked until ${_formatCheckedCheckpointLabel(cp)}`, 2500);
+  return cp;
+}
+
+function syncDiffFocusAndCheckedUi(rows, scopeKey, { storageKey, selectRowFn = null } = {}) {
+  if (_lastCheckedRowEl && _lastCheckedRowEl.classList) _lastCheckedRowEl.classList.remove("diff-checked-until");
+  if (_lastCheckedTokEl && _lastCheckedTokEl.classList) _lastCheckedTokEl.classList.remove("diff-checked-token");
+  _lastCheckedRowEl = null;
+  _lastCheckedTokEl = null;
+  if (typeof document !== "undefined" && typeof document.querySelectorAll === "function") {
+    document.querySelectorAll(".diff-checked-until").forEach(el => {
+      if (el.classList) el.classList.remove("diff-checked-until");
+    });
+    document.querySelectorAll(".diff-checked-token").forEach(el => {
+      if (el.classList) el.classList.remove("diff-checked-token");
+    });
+  }
+  if (_activeDiffFocus && Array.isArray(rows)) {
+    const focusMeta = rows.find(r => r.rowKey === _activeDiffFocus.rowKey);
+    if (focusMeta) {
+      _activeDiffFocus.domId = focusMeta.domId;
+      _applyDiffFocusDom();
+    } else {
+      clearActiveDiffFocus();
+    }
+  }
+  const cp = (scopeKey && storageKey) ? _loadCheckedUntilMap(storageKey)[scopeKey] || null : null;
+  _renderCheckedUntilHeaderPill(
+    cp,
+    () => jumpToCheckedUntilHere(rows, scopeKey, { storageKey, selectRowFn }),
+    () => clearCheckedUntilHere(rows, scopeKey, { storageKey, selectRowFn })
+  );
+  if (cp && Array.isArray(rows) && typeof document !== "undefined" && typeof document.getElementById === "function") {
+    const meta = _resolveCheckedRowMeta(rows, cp);
+    if (meta) {
+      const rowEl = document.getElementById(meta.domId);
+      if (rowEl && rowEl.classList) {
+        rowEl.classList.add("diff-checked-until");
+        _lastCheckedRowEl = rowEl;
+        if (cp.tokenIdx != null) {
+          const targets = getRowDiffFocusTargets(rowEl);
+          const tokEl = targets[cp.tokenIdx];
+          if (tokEl && tokEl.classList) {
+            tokEl.classList.add("diff-checked-token");
+            _lastCheckedTokEl = tokEl;
+          }
+        }
+      }
+    }
+  }
+}
+
+function handleSharedDiffKeydown(ev, navCtx = null) {
   if (!ev) return false;
   if ((ev.key === "f" || ev.key === "F") && ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey) {
     if (typeof ev.preventDefault === "function") ev.preventDefault();
@@ -1278,6 +1620,31 @@ function handleSharedDiffKeydown(ev) {
       if (typeof ev.preventDefault === "function") ev.preventDefault();
       closeDiffFindBar();
       return true;
+    }
+  }
+  if (navCtx) {
+    const rows = typeof navCtx.getRows === "function" ? (navCtx.getRows() || []) : [];
+    const selKey = typeof navCtx.getSelectedRowKey === "function" ? navCtx.getSelectedRowKey() : null;
+    if (shouldHandleDiffTabKey(ev, rows, selKey)) {
+      if (typeof ev.preventDefault === "function") ev.preventDefault();
+      stepRowDiffFocus(rows, selKey, navCtx.selectRow, ev.shiftKey ? -1 : 1);
+      return true;
+    }
+    if (ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey && (ev.code === "Space" || ev.key === " ")) {
+      const tgt = ev.target;
+      const tag = (tgt && tgt.tagName || "").toUpperCase();
+      const isTextControl = tag === "TEXTAREA" || tag === "SELECT"
+        || (tag === "INPUT" && tgt.type !== "checkbox" && tgt.type !== "radio" && tgt.type !== "button")
+        || !!tgt?.isContentEditable;
+      if (!isTextControl) {
+        if (typeof ev.preventDefault === "function") ev.preventDefault();
+        const scopeKey = typeof navCtx.getScopeKey === "function" ? navCtx.getScopeKey() : "";
+        setCheckedUntilHere(rows, selKey, scopeKey, {
+          storageKey: navCtx.checkedStorageKey,
+          selectRowFn: navCtx.selectRow,
+        });
+        return true;
+      }
     }
   }
   return false;

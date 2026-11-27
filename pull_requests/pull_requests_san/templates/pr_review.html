@@ -259,6 +259,7 @@
     <button id="refreshAllBtn" class="primary" title="Refresh PRs from GitHub (Ctrl+R)" onclick="refreshAll()">↻ Refresh <span class="kbd-hint" style="background:rgba(255,255,255,0.2); color:#fff;">Ctrl+R</span></button>
     <button id="reloadBtn" class="small" title="Reload UI (Ctrl+R refreshes from GitHub)" onclick="reloadUi()">↻ Reload</button>
     <span id="authBadge" class="pill">Checking auth...</span>
+    <span id="checkedUntilPill" class="checked-until-pill" style="display:none;"></span>
     <span id="statusText" style="color:var(--muted); font-size:16px;"></span>
   </div>
   <div id="staticTokenRow" class="row" style="display:none; padding:4px 8px; background:var(--surface-2); border:1px solid var(--border); border-radius:7px;">
@@ -337,7 +338,7 @@
     <div id="prContainer">
       <div class="card">Loading pull requests...</div>
     </div>
-    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • Right-click Copy diff / PR line link • Ctrl+F Find (supports ँ) • Alt+W Word/Char diff • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Shift+Enter Multiline reply • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • ←/→ Collapse/Expand • [/] Prev/Next PR • Esc Close bar/composer/settings</div>
+    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • Tab / Shift+Tab Step diffs • Ctrl+Space Checked until here • Right-click Copy diff / PR line link • Ctrl+F Find (supports ँ) • Alt+W Word/Char diff • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Shift+Enter Multiline reply • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • ←/→ Collapse/Expand • [/] Prev/Next PR • Esc Close bar/composer/settings</div>
     <footer id="aboutFooter" class="about-footer">
       <div>
         <strong>diff_san — Pull Requests</strong> (<a href="https://github.com/sanskrit-coders/diff_san" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) —
@@ -1324,6 +1325,10 @@ function renderActivePr() {
   renderFileSidebar();
   const container = document.getElementById("prContainer");
   if (!activePrData) {
+    if (typeof clearActiveDiffFocus === "function") clearActiveDiffFocus();
+    if (typeof syncDiffFocusAndCheckedUi === "function") {
+      syncDiffFocusAndCheckedUi([], "", { storageKey: PR_CHECKED_UNTIL_STORAGE_KEY });
+    }
     container.innerHTML = `<div class="card">No pull requests match current filters.</div>`;
     return;
   }
@@ -1433,7 +1438,7 @@ function renderActivePr() {
             </label>
           </div>
         </div>
-        <textarea id="prReviewBody" class="review-textarea" placeholder="Write a PR comment or review summary (Alt+3 focuses) · Ctrl+Enter submits" oninput="prReviewDraftText=this.value" onkeydown="if(event.key==='Enter'&&event.ctrlKey){event.preventDefault(); submitSelectedReviewAction();}">${esc(prReviewDraftText)}</textarea>
+        <textarea id="prReviewBody" class="review-textarea" placeholder="Write a PR comment or review summary (Alt+3 focuses) · Ctrl+Enter submits" oninput="prReviewDraftText=this.value">${esc(prReviewDraftText)}</textarea>
         <div class="row">
           <button class="primary" onclick="submitSelectedReviewAction()">Submit <span class="kbd-hint" style="background:rgba(255,255,255,0.2); color:#fff;">Ctrl+Enter</span></button>
           <button onclick="submitIssueComment()">Post General Comment</button>
@@ -1663,7 +1668,7 @@ function renderComposerHtml(c) {
         <label style="font-size:16px;">Start line (opt): <input id="compStartLine" type="number" min="1" value="${esc(c.startLine || '')}" style="width:80px;" oninput="openComposer.startLine=this.value" /></label>
       </div>
     </div>
-    <textarea id="compBody" class="review-textarea" placeholder="Write review comment (Ctrl+Enter posts immediately)..." oninput="openComposer.body=this.value" onkeydown="if(event.key==='Enter'&&event.ctrlKey){event.preventDefault(); postInlineComposer();}">${esc(c.body || '')}</textarea>
+    <textarea id="compBody" class="review-textarea" placeholder="Write review comment (Ctrl+Enter posts immediately, Shift+Enter for newline)..." oninput="openComposer.body=this.value">${esc(c.body || '')}</textarea>
     <div class="row">
       <button class="primary" onclick="postInlineComposer()">Post Comment Now</button>
       <button onclick="queueInlineDraft()">Add to Pending Review</button>
@@ -1696,7 +1701,16 @@ function collectRowExtrasHtml(f, r, pos, anchoredByPos, seenExtras, colspan) {
     </td></tr>`;
 }
 
-function selectDiffRow(rowKey, { scroll = true, focusFile = true } = {}) {
+const PR_CHECKED_UNTIL_STORAGE_KEY = "pull_requests_san_checked_until_v1";
+
+function getActivePrCheckedScopeKey() {
+  if (!activePrKey) return "";
+  return `${activePrKey.owner}/${activePrKey.repo}#${activePrKey.number}${selectedChangelistSha ? `@${selectedChangelistSha}` : ""}`;
+}
+
+function selectDiffRow(rowKey, { scroll = true, focusFile = true, preserveDiffFocus = false } = {}) {
+  if (!preserveDiffFocus && typeof clearActiveDiffFocus === "function") clearActiveDiffFocus();
+  if (!preserveDiffFocus && typeof blurStrayUiFocus === "function") blurStrayUiFocus();
   const prevKey = selectedDiffRowKey;
   if (prevKey && prevKey !== rowKey) {
     const prevMeta = renderedDiffRows.find(x => x.rowKey === prevKey);
@@ -1751,7 +1765,11 @@ function moveDiffRowSelection(step, diffOnly = false) {
 function commentOnSelectedDiffRow() {
   const meta = selectedDiffRowKey ? renderedDiffRows.find(r => r.rowKey === selectedDiffRowKey) : null;
   if (!meta) return false;
-  const side = meta.rightNum != null ? "RIGHT" : "LEFT";
+  const focusTokEl = typeof getActiveDiffFocusEl === "function" ? getActiveDiffFocusEl() : null;
+  const inLeftPane = Boolean(focusTokEl && typeof focusTokEl.closest === "function" && focusTokEl.closest(".lhs-cell, .ln-left"));
+  const side = inLeftPane
+    ? (meta.leftNum != null ? "LEFT" : "RIGHT")
+    : (meta.rightNum != null ? "RIGHT" : "LEFT");
   const targetLine = side === "RIGHT" ? meta.rightNum : meta.leftNum;
   if (!meta.inDiffHunk || targetLine == null) {
     setStatus("Selected line is outside diff hunk — inline PR comments must be on lines inside the PR hunk.", 3000);
@@ -2104,7 +2122,12 @@ function renderActivePrFiles() {
 
   if (openComposer) {
     const cb = document.getElementById("compBody");
-    if (cb) cb.focus();
+    if (cb) {
+      if (typeof cb.focus === "function") cb.focus();
+      const box = typeof cb.closest === "function" ? cb.closest(".inline-composer") : null;
+      if (box && typeof box.scrollIntoView === "function") box.scrollIntoView({ block: "nearest" });
+      else if (typeof cb.scrollIntoView === "function") cb.scrollIntoView({ block: "nearest" });
+    }
   }
   if (pendingPrDeepLink) {
     const tgt = pendingPrDeepLink;
@@ -2125,6 +2148,12 @@ function renderActivePrFiles() {
     } else {
       pendingPrDeepLink = null;
     }
+  }
+  if (typeof syncDiffFocusAndCheckedUi === "function") {
+    syncDiffFocusAndCheckedUi(renderedDiffRows, getActivePrCheckedScopeKey(), {
+      storageKey: PR_CHECKED_UNTIL_STORAGE_KEY,
+      selectRowFn: (rowKey, opts) => selectDiffRow(rowKey, { focusFile: true, ...opts }),
+    });
   }
   if (typeof refreshDiffFindIfOpen === "function") refreshDiffFindIfOpen();
 }
@@ -2158,9 +2187,12 @@ function _readComposerPayload() {
   return { path: openComposer.filename, line: openComposer.line, side, body, start_line: startLine, start_side: startLine ? side : null };
 }
 
+let _inlinePostInFlight = false;
+
 async function postInlineComposer() {
-  if (!activePrKey || !openComposer) return;
+  if (!activePrKey || !openComposer || _inlinePostInFlight) return;
   showError("");
+  _inlinePostInFlight = true;
   try {
     const bodyObj = { ..._readComposerPayload(), ...getDiffOptions() };
     setStatus("Posting inline comment...");
@@ -2177,6 +2209,8 @@ async function postInlineComposer() {
   } catch (e) {
     showError(e.message);
     setStatus("");
+  } finally {
+    _inlinePostInFlight = false;
   }
 }
 
@@ -2514,7 +2548,13 @@ async function mergeActivePr() {
 }
 
 document.addEventListener("keydown", (ev) => {
-  if (typeof handleSharedDiffKeydown === "function" && handleSharedDiffKeydown(ev)) return;
+  if (typeof handleSharedDiffKeydown === "function" && handleSharedDiffKeydown(ev, {
+    getRows: () => renderedDiffRows,
+    getSelectedRowKey: () => selectedDiffRowKey,
+    selectRow: (rowKey, opts) => selectDiffRow(rowKey, { focusFile: true, ...opts }),
+    getScopeKey: getActivePrCheckedScopeKey,
+    checkedStorageKey: PR_CHECKED_UNTIL_STORAGE_KEY,
+  })) return;
   const target = ev.target;
   const id = (target && target.id) || "";
   const tag = (target && target.tagName || "").toUpperCase();
@@ -2593,21 +2633,34 @@ document.addEventListener("keydown", (ev) => {
     }
   }
 
-  // Ctrl+Enter submits active reply/composer/PR review or opens inline comment composer on selected line
-  if (ev.key === "Enter" && ev.ctrlKey && !ev.altKey && !ev.metaKey) {
-    if (id !== "ownerInput" && id !== "staticPrUrlInput" && id !== "staticTokenInput") {
+  // Ctrl+Enter submits active reply/composer/review-panel or opens inline review comment composer on selected line
+  const isEnterKey = ev.key === "Enter" || ev.code === "Enter" || ev.code === "NumpadEnter";
+  if (isEnterKey && ev.ctrlKey && !ev.altKey && !ev.metaKey) {
+    if (id !== "ownerInput" && id !== "staticPrUrlInput" && id !== "staticTokenInput" && id !== "diffFindInput") {
       ev.preventDefault();
       const replyMatch = id ? id.match(/^replyInput_(\d+)$/) : null;
+      const inComposer = Boolean(
+        id === "compBody" || id === "compSide" || id === "compStartLine"
+        || (target && typeof target.closest === "function" && target.closest(".inline-composer"))
+      );
+      const inReviewPanel = Boolean(
+        id === "prReviewBody"
+        || (target && typeof target.closest === "function" && target.closest(".review-panel"))
+      );
       if (replyMatch) {
         submitReplyIdx(Number(replyMatch[1]));
-      } else if (openComposer) {
+      } else if (inComposer && openComposer) {
         postInlineComposer();
-      } else if (id === "prReviewBody" || (target && typeof target.closest === "function" && target.closest(".review-box"))) {
+      } else if (inReviewPanel) {
         submitSelectedReviewAction();
       } else if (selectedDiffRowKey && renderedDiffRows.some(r => r.rowKey === selectedDiffRowKey)) {
         commentOnSelectedDiffRow();
-      } else {
+      } else if (openComposer) {
+        postInlineComposer();
+      } else if ((document.getElementById("prReviewBody")?.value || "").trim()) {
         submitSelectedReviewAction();
+      } else {
+        setStatus("Select a line (Shift+Click / ↑ / ↓) and press Ctrl+Enter to create a review comment.", 3000);
       }
       return;
     }

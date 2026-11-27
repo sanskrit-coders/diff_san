@@ -93,6 +93,7 @@
     <button id="compareBtn" class="primary" type="button" onclick="submitCompareSpec()">Compare</button>
     <button id="refreshBtn" class="small" type="button" title="Reload diff (Ctrl+R)" onclick="refreshDiff()">↻ Refresh <span class="kbd-hint">Ctrl+R</span></button>
     <button id="reloadBtn" class="small" type="button" onclick="window.location.reload()">↻ Reload UI</button>
+    <span id="checkedUntilPill" class="checked-until-pill" style="display:none;"></span>
     <span id="statusText" style="color:var(--muted); font-size:16px;"></span>
   </div>
   <div class="row">
@@ -177,7 +178,7 @@
     <div id="diffContainer">
       <div class="card">Loading diff...</div>
     </div>
-    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • Right-click Copy diff • Ctrl+F Find (supports ँ) • Alt+W Word/Char diff • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Alt+S Single/2-Pane • Ctrl+R Refresh • j/k Navigate files • Esc Close bar/settings</div>
+    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • Tab / Shift+Tab Step diffs • Ctrl+Space Checked until here • Right-click Copy diff • Ctrl+F Find (supports ँ) • Alt+W Word/Char diff • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Alt+S Single/2-Pane • Ctrl+R Refresh • j/k Navigate files • Esc Close bar/settings</div>
     <footer id="aboutFooter" class="about-footer">
       <div>
         <strong>diff_san</strong> (<a href="https://github.com/sanskrit-coders/diff_san" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) —
@@ -227,7 +228,19 @@ function jumpSandhiDiff(step = 1) {
   );
 }
 
-function selectLocalRow(rowKey, { scroll = true } = {}) {
+const LOCAL_CHECKED_UNTIL_STORAGE_KEY = "local_diff_san_checked_until_v1";
+
+function getLocalCheckedScopeKey() {
+  const it = workspaceData?.active_item;
+  if (!it) return selectedItemId || "local";
+  return it.id === "static:0"
+    ? `static:${it.left_label || ""}->${it.right_label || ""}`
+    : (it.id || selectedItemId || "local");
+}
+
+function selectLocalRow(rowKey, { scroll = true, preserveDiffFocus = false } = {}) {
+  if (!preserveDiffFocus && typeof clearActiveDiffFocus === "function") clearActiveDiffFocus();
+  if (!preserveDiffFocus && typeof blurStrayUiFocus === "function") blurStrayUiFocus();
   const prevKey = selectedLocalRowKey;
   if (prevKey && prevKey !== rowKey) {
     const prevMeta = renderedLocalRows.find(x => x.rowKey === prevKey);
@@ -676,6 +689,12 @@ function renderWorkspace() {
   const container = document.getElementById("diffContainer");
   if (!container) return;
   container.innerHTML = renderDiffItemHtml(workspaceData?.active_item || null);
+  if (typeof syncDiffFocusAndCheckedUi === "function") {
+    syncDiffFocusAndCheckedUi(renderedLocalRows, getLocalCheckedScopeKey(), {
+      storageKey: LOCAL_CHECKED_UNTIL_STORAGE_KEY,
+      selectRowFn: (rowKey, opts) => selectLocalRow(rowKey, opts),
+    });
+  }
   if (typeof refreshDiffFindIfOpen === "function") refreshDiffFindIfOpen();
 }
 
@@ -820,7 +839,13 @@ async function init() {
 }
 
 document.addEventListener("keydown", (ev) => {
-  if (typeof handleSharedDiffKeydown === "function" && handleSharedDiffKeydown(ev)) return;
+  if (typeof handleSharedDiffKeydown === "function" && handleSharedDiffKeydown(ev, {
+    getRows: () => renderedLocalRows,
+    getSelectedRowKey: () => selectedLocalRowKey,
+    selectRow: (rowKey, opts) => selectLocalRow(rowKey, opts),
+    getScopeKey: getLocalCheckedScopeKey,
+    checkedStorageKey: LOCAL_CHECKED_UNTIL_STORAGE_KEY,
+  })) return;
   const target = ev.target;
   const tag = (target && target.tagName || "").toUpperCase();
   if ((ev.key === "r" || ev.key === "R") && ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey) {
