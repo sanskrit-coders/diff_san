@@ -36,3 +36,20 @@ pull_requests_san --owner vishvAsa --state open
 ## Acknowledgements
 
 - [`bhashika-org-in/wordiff`](https://github.com/bhashika-org-in/wordiff) for Unicode normalization, punctuation-ignoring comparison keys, and whole-block inline diffing ideas.
+
+---
+
+## Vedic Accent Suggestion Reviewer (`vishvAsa/pada_svara`)
+
+Review UI and corpus scanner for Sanskrit Vedic accent fix suggestions (`[[OLD|NEW]]`) alongside aligned `विश्वास-प्रस्तुतिः`, `मूलम्`, and `पद-पाठः` context across `vishvAsa` repositories.
+
+- **Package documentation:** [vishvAsa/pada_svara/README.md](vishvAsa/pada_svara/README.md)
+
+```bash
+pip install -e ./vishvAsa/pada_svara
+pada_svara --dir /path/to/vedAH_yajuH/content/maitrAyaNIyam/saMhitA/sarva-prastutiH
+```
+
+![Pada Svara Review Overview](vishvAsa/pada_svara/docs/screenshots/pending_review_overview.png)
+![With !! Feedback Filter](vishvAsa/pada_svara/docs/screenshots/feedback_and_filter.png)
+![Scoped Git Diff Modal](vishvAsa/pada_svara/docs/screenshots/file_diff_modal.png)

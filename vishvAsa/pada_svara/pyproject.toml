@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pada_svara"
+version = "0.1.0"
+description = "FastAPI review GUI and scanner for Vedic padapāṭha and विश्वास-प्रस्तुतिः accent fix suggestions"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+  {name = "Sanskrit Coders", email = "sanskrit-programmers@googlegroups.com"}
+]
+dependencies = [
+  "doc_curation",
+  "fastapi",
+  "indic_transliteration",
+  "pydantic",
+  "uvicorn",
+]
+
+[project.urls]
+Homepage = "https://github.com/sanskrit-coders/diff_san"
+Repository = "https://github.com/sanskrit-coders/diff_san"
+
+[project.scripts]
+pada_svara = "pada_svara.review_gui:main"
+
+[tool.setuptools.packages.find]
+include = ["pada_svara*"]

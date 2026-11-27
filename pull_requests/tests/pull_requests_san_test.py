@@ -868,6 +868,9 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
 
   assert '--dev: "Adishila SanVedic", "Tiro Devanagari Sanskrit", "Noto Sans Devanagari", "Annapurna SIL", serif;' in html_src
   assert "--dev-font-size: 26px;" in html_src
+  # Comment & review typography matches the main diff pane (--dev-font-size without -3px/-4px shrinking)
+  assert "calc(var(--dev-font-size) - 3px)" not in html_src
+  assert "calc(var(--dev-font-size) - 4px)" not in html_src
   assert 'id="reloadBtn"' in html_src and 'onclick="reloadUi()"' in html_src
   assert 'id="singlePaneChk" type="checkbox" checked' in html_src
   assert '<option value="word" selected>Word (space-separated)</option>' in html_src
@@ -1186,6 +1189,26 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
     "  await changeDiffMode();\n"
     "  if (!fetched.some(c => c.url.includes('normalize=nfc') && c.url.includes('ignore_punct=true'))) {\n"
     "    throw new Error('normalize / ignore_punct query params missing: ' + JSON.stringify(fetched));\n"
+    "  }\n"
+    "  // Resolved threads collapse in <details class=\"thread-box resolved\"> and outdated/nearby threads attach near their line\n"
+    "  samplePr.review_threads.push({\n"
+    "    id: 'PRRT_res_outdated', path: '01.md', line: null, original_line: 10, side: 'RIGHT', is_resolved: true, is_outdated: true,\n"
+    "    comments: [{ id: 2002, author: 'vvasuki', body: 'शोधितम्', created_at: '2026-11-26T02:00:00Z' }],\n"
+    "  });\n"
+    "  samplePr.review_threads.push({\n"
+    "    id: 'PRRT_far', path: '01.md', line: 500, original_line: 500, side: 'RIGHT', is_resolved: true, is_outdated: false,\n"
+    "    comments: [{ id: 2003, author: 'vvasuki', body: 'दूरस्थम्', created_at: '2026-11-26T02:00:00Z' }],\n"
+    "  });\n"
+    "  renderActivePrFiles();\n"
+    "  const thHtml = elems['filesDiffContainer'].innerHTML;\n"
+    "  if (!thHtml.includes('<details class=\"thread-box resolved\"') || thHtml.includes('<details class=\"thread-box resolved\" data-thread-id=\"PRRT_res_outdated\" open')) {\n"
+    "    throw new Error('Resolved thread did not collapse by default: ' + thHtml);\n"
+    "  }\n"
+    "  if (!thHtml.includes('near L3') && !thHtml.includes('shown at L')) {\n"
+    "    throw new Error('Nearby outdated thread did not anchor near hunk line: ' + thHtml);\n"
+    "  }\n"
+    "  if (!thHtml.includes('Threads Outside Diff Hunks')) {\n"
+    "    throw new Error('Genuinely distant thread should stay in Threads Outside Diff Hunks: ' + thHtml);\n"
     "  }\n"
     "})().catch(err => { console.error(err); process.exit(1); });\n"
   )
