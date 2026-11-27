@@ -1,0 +1,70 @@
+"""Unified facade re-exporting GitHub PR review client, diffing, and session helpers."""
+
+from pull_requests_san.auth import DEFAULT_OWNER, _read_gh_hosts_token, normalize_owner, resolve_github_token
+from pull_requests_san.client import (
+  DEFAULT_API_BASE,
+  DEFAULT_LOCAL_ORG_DIR,
+  GitHubAPIError,
+  GitHubClient,
+  VALID_MERGE_METHODS,
+  VALID_REVIEW_EVENTS,
+)
+from pull_requests_san.diff import (
+  VALID_DIFF_MODES,
+  VALID_NORMALIZATIONS,
+  apply_normalization,
+  build_full_file_hunk,
+  build_inline_flow_rows,
+  build_unified_patch_from_texts,
+  compute_char_diff,
+  compute_stream_diff,
+  extract_three_way_conflicts,
+  parse_full_diff_by_file,
+  parse_patch_hunks,
+  strip_punctuation,
+  tokenize_for_diff,
+)
+from pull_requests_san.models import (
+  AlignedDiffRow,
+  DiffHunk,
+  PullRequestDetail,
+  PullRequestFileDiff,
+  PullRequestSummary,
+  ReviewComment,
+  ReviewThread,
+)
+from pull_requests_san.session import PRReviewSession
+
+__all__ = [
+  "AlignedDiffRow",
+  "DEFAULT_API_BASE",
+  "DEFAULT_LOCAL_ORG_DIR",
+  "DEFAULT_OWNER",
+  "DiffHunk",
+  "GitHubAPIError",
+  "GitHubClient",
+  "PRReviewSession",
+  "PullRequestDetail",
+  "PullRequestFileDiff",
+  "PullRequestSummary",
+  "ReviewComment",
+  "ReviewThread",
+  "VALID_DIFF_MODES",
+  "VALID_MERGE_METHODS",
+  "VALID_NORMALIZATIONS",
+  "VALID_REVIEW_EVENTS",
+  "_read_gh_hosts_token",
+  "apply_normalization",
+  "build_full_file_hunk",
+  "build_inline_flow_rows",
+  "build_unified_patch_from_texts",
+  "compute_char_diff",
+  "compute_stream_diff",
+  "extract_three_way_conflicts",
+  "normalize_owner",
+  "parse_full_diff_by_file",
+  "parse_patch_hunks",
+  "resolve_github_token",
+  "strip_punctuation",
+  "tokenize_for_diff",
+]

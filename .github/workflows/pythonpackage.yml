@@ -1,0 +1,63 @@
+name: Python package
+
+on:
+  push:
+    branches: [ master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ master ]
+  release:
+    types: [ published ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [ '3.10', '3.12' ]
+    defaults:
+      run:
+        working-directory: pull_requests
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install package and test dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install -e . pytest httpx build
+    - name: Test imports and CLI
+      run: |
+        python -c "import pull_requests_san; print(len(pull_requests_san.__all__))"
+        pull_requests_san --help >/dev/null
+    - name: Build distribution
+      run: |
+        python -m build
+    - name: Run pytest
+      run: |
+        pytest -v
+
+  publish:
+    needs: build
+    if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    defaults:
+      run:
+        working-directory: pull_requests
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - run: |
+        python -m pip install --upgrade pip build
+        python -m build
+    - uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        skip-existing: true

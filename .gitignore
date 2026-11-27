@@ -1,0 +1,17 @@
+# Python build & caches
+/build/
+*/build/
+dist/
+*/dist/
+.pytest_cache/
+*/.pytest_cache/
+*.egg-info/
+*.egg
+*.py[cod]
+__pycache__/
+*.so
+*~
+.tox/
+.cache/
+*.iml
+.DS_Store

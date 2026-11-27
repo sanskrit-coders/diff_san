@@ -1,0 +1,2373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GitHub PR Character-Level Reviewer</title>
+<style>
+  :root {
+    --bg: #f6f4ef;
+    --surface: #ffffff;
+    --surface-2: #fbfaf7;
+    --border: #ddd6c7;
+    --text: #1f1c18;
+    --muted: #6a6257;
+    --accent: #8b4513;
+    --accent-soft: #fdf3e7;
+    --green: #156236;
+    --green-soft: #eafaf1;
+    --green-row: #f3fff6;
+    --green-char: #9ef0b5;
+    --red: #943126;
+    --red-soft: #fdeeee;
+    --red-row: #fff5f5;
+    --red-char: #ffb8b8;
+    --amber: #9c5700;
+    --amber-soft: #fff8e1;
+    --blue: #1b4f72;
+    --blue-soft: #ebf5fb;
+    --dev: "Adishila SanVedic", "Tiro Devanagari Sanskrit", "Noto Sans Devanagari", "Annapurna SIL", serif;
+    --dev-font-size: 26px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+    line-height: 1.45;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 9px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    flex-shrink: 0;
+  }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  input[type="text"], input[type="number"], select, textarea {
+    padding: 5px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #fff;
+    color: var(--text);
+    font-size: 13px;
+    font-family: inherit;
+  }
+  button {
+    padding: 5px 11px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface-2);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 12.5px;
+    font-weight: 500;
+  }
+  button:hover:not(:disabled) { background: #efeae0; }
+  button:disabled { opacity: 0.55; cursor: not-allowed; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.primary:hover:not(:disabled) { background: #70360d; }
+  button.green { background: var(--green); color: #fff; border-color: var(--green); }
+  button.green:hover:not(:disabled) { background: #104b29; }
+  button.danger { background: var(--red); color: #fff; border-color: var(--red); }
+  button.danger:hover:not(:disabled) { background: #74251c; }
+  button.small { padding: 3px 7px; font-size: 11.5px; }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text);
+  }
+  .pill-green { background: var(--green-soft); color: var(--green); border-color: #a9dfbf; }
+  .pill-red { background: var(--red-soft); color: var(--red); border-color: #f5b7b1; }
+  .pill-amber { background: var(--amber-soft); color: var(--amber); border-color: #f9e79f; }
+  .pill-blue { background: var(--blue-soft); color: var(--blue); border-color: #aed6f1; }
+  button.filter-pill {
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: box-shadow 0.12s, filter 0.12s;
+  }
+  button.filter-pill:hover { filter: brightness(0.96); }
+  button.filter-pill.active { box-shadow: 0 0 0 2px var(--accent); }
+  .kbd-hint {
+    font-size: 10px;
+    font-family: monospace;
+    color: var(--muted);
+    background: rgba(0,0,0,0.05);
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
+
+  .workspace {
+    display: grid;
+    grid-template-columns: 330px minmax(0, 1fr);
+    flex: 1;
+    min-height: 0;
+  }
+  aside.sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .sidebar-section {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: 10px;
+    gap: 6px;
+  }
+  .sidebar-prs {
+    flex: 1.25;
+    border-bottom: 1px solid var(--border);
+  }
+  .sidebar-files {
+    flex: 1;
+  }
+  .scroll-list {
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-height: 0;
+    flex: 1;
+  }
+  .pane-title {
+    font-size: 11.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .pr-item, .file-item {
+    padding: 7px 9px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .pr-item:hover, .file-item:hover { background: #f2ede2; }
+  .pr-item.active, .file-item.active {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  .pr-item-title { font-family: var(--dev); font-weight: 600; font-size: calc(var(--dev-font-size) - 6px); word-break: break-word; }
+  .pr-title-heading { margin: 6px 0 2px 0; font-family: var(--dev); font-size: var(--dev-font-size); line-height: 1.35; }
+  .pr-item-meta, .file-item-meta {
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+  main {
+    min-width: 0;
+    overflow-y: auto;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 12px 14px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .error-banner {
+    background: var(--red-soft);
+    border: 1px solid #f5b7b1;
+    color: var(--red);
+    border-radius: 7px;
+    padding: 8px 12px;
+    font-size: 13px;
+    display: none;
+  }
+  .pr-body-box {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    white-space: pre-wrap;
+    font-family: var(--dev);
+    font-size: calc(var(--dev-font-size) - 3px);
+  }
+
+  .review-panel {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .review-textarea {
+    width: 100%;
+    min-height: 62px;
+    resize: vertical;
+    font-family: var(--dev);
+    font-size: calc(var(--dev-font-size) - 3px);
+  }
+  .draft-chip {
+    background: var(--amber-soft);
+    border: 1px solid #f5cba7;
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-size: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .radio-group {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--surface-2);
+  }
+  .radio-group label {
+    padding: 4px 11px;
+    cursor: pointer;
+    font-size: 12.5px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border-right: 1px solid var(--border);
+    user-select: none;
+  }
+  .radio-group label:last-child { border-right: none; }
+  .radio-group label.sel-approve { background: var(--green-soft); color: var(--green); font-weight: 700; }
+  .radio-group label.sel-request_changes { background: var(--red-soft); color: var(--red); font-weight: 700; }
+  .radio-group label.sel-comment { background: var(--blue-soft); color: var(--blue); font-weight: 700; }
+  .radio-group label.sel-issue_comment { background: #ede9df; color: var(--text); font-weight: 600; }
+
+  .file-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    overflow: hidden;
+    transition: box-shadow 0.12s ease, border-color 0.12s ease;
+  }
+  .file-card.focused {
+    border-color: var(--accent);
+    outline: 3px solid var(--accent);
+    box-shadow: 0 0 0 5px rgba(139, 69, 19, 0.16), 0 6px 18px rgba(139, 69, 19, 0.14);
+  }
+  .active-badge {
+    display: none;
+    align-items: center;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+    font-family: system-ui, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .file-card.focused .active-badge { display: inline-flex; }
+  .file-card-header {
+    background: #f2ede2;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .file-card.collapsed .file-card-body { display: none; }
+
+  .hunk-bar {
+    background: #edf2f7;
+    color: var(--blue);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    padding: 4px 10px;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  table.diff-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+  table.diff-table col.col-num { width: 48px; }
+  table.diff-table col.col-code { width: calc(50% - 65px); }
+  table.diff-table col.col-act { width: 34px; }
+
+  table.diff-table td {
+    vertical-align: top;
+    border-bottom: 1px solid #f0ebe0;
+    padding: 2px 6px;
+  }
+  td.ln {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    color: var(--muted);
+    text-align: right;
+    user-select: none;
+    background: #faf8f3;
+    border-right: 1px solid #e7e1d3;
+  }
+  td.ln.clickable { cursor: pointer; }
+  td.ln.clickable:hover { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+  td.code-cell {
+    font-family: var(--dev);
+    font-size: var(--dev-font-size);
+    line-height: 1.55;
+    border-right: 1px solid #e7e1d3;
+    overflow-wrap: anywhere;
+  }
+  .wrap-on td.code-cell { white-space: pre-wrap; }
+  .wrap-off td.code-cell { white-space: pre; overflow-x: auto; }
+  td.act-cell {
+    text-align: center;
+    background: #faf8f3;
+    padding: 2px;
+  }
+  .add-comment-btn {
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--muted);
+    border-radius: 4px;
+    padding: 1px 4px;
+    font-size: 12px;
+    cursor: pointer;
+    opacity: 0.45;
+  }
+  tr.diff-row:hover .add-comment-btn,
+  .add-comment-btn:focus {
+    opacity: 1;
+    border-color: var(--border);
+    background: var(--surface);
+    color: var(--accent);
+  }
+
+  tr.diff-row-context td.code-cell { background: #ffffff; }
+  tr.diff-row-modify td.lhs-cell { background: var(--red-row); }
+  tr.diff-row-modify td.rhs-cell { background: var(--green-row); }
+  tr.diff-row-del td.lhs-cell { background: #ffecec; color: #78281f; }
+  tr.diff-row-add td.rhs-cell { background: #e6ffed; color: #145a32; }
+  td.diff-empty {
+    background: repeating-linear-gradient(
+      -45deg,
+      #f6f4ef,
+      #f6f4ef 6px,
+      #efece4 6px,
+      #efece4 12px
+    );
+  }
+
+  .ch-del {
+    background: var(--red-char);
+    color: #7f1d1d;
+    border-bottom: 2px solid #dc2626;
+    border-radius: 3px;
+    padding: 0 2px;
+    margin: 0 1px;
+  }
+  .ch-ins {
+    background: var(--green-char);
+    color: #0f5132;
+    border-bottom: 2px solid #16a34a;
+    border-radius: 3px;
+    padding: 0 2px;
+    margin: 0 1px;
+  }
+  .nl-badge {
+    display: inline-block;
+    font-family: ui-monospace, monospace;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 3px;
+    padding: 0 3px;
+    margin: 0 2px;
+    vertical-align: middle;
+  }
+  .nl-del { background: var(--red-char); color: #7f1d1d; }
+  .nl-ins { background: var(--green-char); color: #0f5132; }
+  table.diff-table-single col.col-num { width: 46px; }
+  table.diff-table-single col.col-single-code { width: calc(100% - 126px); }
+  table.diff-table-single col.col-act { width: 34px; }
+  tr.single-row-modify td.single-code-cell { background: #ffffff; border-right: 1px solid #e7e1d3; }
+  tr.single-row-del td.single-code-cell { background: #ffecec; color: #78281f; border-right: 1px solid #e7e1d3; }
+  tr.single-row-add td.single-code-cell { background: #e6ffed; color: #145a32; border-right: 1px solid #e7e1d3; }
+  tr.single-row-context td.single-code-cell { background: #ffffff; border-right: 1px solid #e7e1d3; }
+  .ch-inv {
+    display: inline-block;
+    font-family: ui-monospace, monospace;
+    font-size: 10px;
+    font-weight: 700;
+    background: var(--amber-soft);
+    color: var(--amber);
+    border: 1px solid #d97706;
+    border-radius: 3px;
+    padding: 0 3px;
+    vertical-align: middle;
+  }
+
+  tr.thread-row td {
+    background: #fcfaf5;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .thread-box {
+    border: 1px solid #d5c8b4;
+    border-left: 4px solid var(--blue);
+    background: #ffffff;
+    border-radius: 7px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .thread-box.resolved { border-left-color: var(--green); opacity: 0.84; }
+  .thread-comment {
+    border-top: 1px solid #f0ebe0;
+    padding-top: 5px;
+  }
+  .thread-comment:first-of-type { border-top: none; padding-top: 0; }
+  .comment-body {
+    font-family: var(--dev);
+    font-size: calc(var(--dev-font-size) - 3px);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    margin-top: 2px;
+  }
+  .comment-body img {
+    max-width: 100%;
+    max-height: 360px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    display: block;
+    margin-top: 6px;
+  }
+  .inline-composer {
+    border: 1px solid var(--accent);
+    background: var(--accent-soft);
+    border-radius: 7px;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .outdated-box {
+    padding: 8px 12px;
+    background: #fffcf5;
+    border-bottom: 1px solid var(--border);
+  }
+  .pr-item-browser-btn {
+    margin-left: auto;
+    padding: 1px 5px;
+    font-size: 11px;
+    line-height: 1.2;
+  }
+  .merge-banner {
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--muted);
+    border-radius: 7px;
+    padding: 9px 11px;
+    background: var(--surface-2);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .merge-banner.clean { border-color: #a9dfbf; border-left-color: var(--green); background: #f4fcf7; }
+  .merge-banner.dirty { border-color: #f5b7b1; border-left-color: var(--red); background: #fff6f6; }
+  .merge-banner.warn { border-color: #f9e79f; border-left-color: var(--amber); background: #fffcf2; }
+  .merge-banner.merged { border-color: #aed6f1; border-left-color: var(--blue); background: #f4f9fd; }
+  .conflict-item {
+    border: 1px solid #f1c6c2;
+    border-radius: 6px;
+    background: #fff;
+    overflow: hidden;
+  }
+  .conflict-item-header {
+    padding: 6px 9px;
+    background: #fdf2f2;
+    border-bottom: 1px solid #f5d8d6;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <strong style="font-size:15px;">GitHub PR Character-Level Reviewer</strong>
+    <label>Owner/Org: <input id="ownerInput" type="text" value="vishvAsa" style="width:155px;" /></label>
+    <label>State:
+      <select id="stateSelect" onchange="setStateFilter(this.value)">
+        <option value="open" selected>Open</option>
+        <option value="closed">Closed</option>
+        <option value="merged">Merged</option>
+        <option value="all">All</option>
+      </select>
+    </label>
+    <label>Repo:
+      <select id="repoSelect" onchange="applyPrFilters()">
+        <option value="">All repos</option>
+      </select>
+    </label>
+    <input id="prSearchInput" type="text" placeholder="Filter PRs (repo / title / author)..." style="width:200px;" oninput="applyPrFilters()" />
+    <button id="refreshAllBtn" class="primary" title="Refresh PRs from GitHub (Ctrl+R)" onclick="refreshAll()">↻ Refresh <span class="kbd-hint" style="background:rgba(255,255,255,0.2); color:#fff;">Ctrl+R</span></button>
+    <button id="reloadBtn" class="small" title="Reload UI (Ctrl+R refreshes from GitHub)" onclick="reloadUi()">↻ Reload</button>
+    <span id="authBadge" class="pill">Checking auth...</span>
+    <span id="statusText" style="color:var(--muted); font-size:12px;"></span>
+  </div>
+  <div class="row">
+    <label>Diff unit:
+      <select id="diffModeSelect" onchange="changeDiffMode()">
+        <option value="word" selected>Word (space-separated)</option>
+        <option value="grapheme">Char (Grapheme \X)</option>
+        <option value="codepoint">Codepoint (Raw)</option>
+      </select>
+    </label>
+    <label title="Apply Unicode normalization before diffing">Norm:
+      <select id="normalizeSelect" onchange="changeDiffMode()">
+        <option value="none" selected>None</option>
+        <option value="nfc">NFC</option>
+        <option value="nfd">NFD</option>
+        <option value="nfkc">NFKC</option>
+        <option value="nfkd">NFKD</option>
+      </select>
+    </label>
+    <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;" title="Ignore Unicode punctuation differences when comparing words/lines">
+      <input id="ignorePunctChk" type="checkbox" onchange="changeDiffMode()" /> Ignore punct
+    </label>
+    <label title="Matches VS Code (25) / IntelliJ IDEA (28)">Editor font (px): <input id="fontPxInput" type="number" min="14" max="42" value="26" style="width:62px;" onchange="applyEditorFont(this.value)" /></label>
+    <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;" title="Single pane inline word flow without line matching (Alt+P)">
+      <input id="singlePaneChk" type="checkbox" checked onchange="toggleSinglePane(this.checked)" /> Single pane <span class="kbd-hint">Alt+P</span>
+    </label>
+    <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;">
+      <input id="changedOnlyChk" type="checkbox" onchange="renderActivePrFiles()" /> Changed lines only
+    </label>
+    <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;">
+      <input id="wrapLinesChk" type="checkbox" checked onchange="renderActivePrFiles()" /> Wrap long lines
+    </label>
+    <button id="gdSelectionBtn" class="small" title="Look up currently selected text in GoldenDict" onclick="lookupSelectedGoldenDict()">📖 GoldenDict Selection</button>
+    <button type="button" class="pill filter-pill pill-green active" id="stateOpenPill" data-state-filter="open" title="Show Open PRs (Alt+O)" onclick="setStateFilter('open')">Open <span class="kbd-hint">Alt+O</span></button>
+    <button type="button" class="pill filter-pill pill-amber" id="stateClosedPill" data-state-filter="closed" title="Show Closed PRs (Alt+C)" onclick="setStateFilter('closed')">Closed <span class="kbd-hint">Alt+C</span></button>
+    <button type="button" class="pill filter-pill pill-blue" id="stateMergedPill" data-state-filter="merged" title="Show Merged PRs (Alt+M)" onclick="setStateFilter('merged')">Merged <span class="kbd-hint">Alt+M</span></button>
+    <button type="button" class="pill filter-pill" id="stateAllPill" data-state-filter="all" title="Show All PRs (Alt+L / Alt+0)" onclick="setStateFilter('all')">All <span class="kbd-hint">Alt+L</span></button>
+  </div>
+</header>
+
+<div class="workspace">
+  <aside class="sidebar">
+    <div class="sidebar-section sidebar-prs">
+      <div class="pane-title">
+        <span>Pull Requests (<span id="prCountLabel">0</span>)</span>
+        <button class="small" onclick="refreshAll()">↻</button>
+      </div>
+      <div id="prList" class="scroll-list"></div>
+    </div>
+    <div class="sidebar-section sidebar-files">
+      <div class="pane-title">
+        <span>Changed Files (<span id="fileCountLabel">0</span>)</span>
+        <button class="small" onclick="selectFileFilter('')">Show All</button>
+      </div>
+      <div id="fileList" class="scroll-list"></div>
+    </div>
+  </aside>
+
+  <main id="mainPane">
+    <div id="errorBanner" class="error-banner"></div>
+    <div id="prContainer">
+      <div class="card">Loading pull requests...</div>
+    </div>
+    <div style="color:var(--muted); font-size:11px; padding:4px 0;">Shortcuts: Alt+P Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+Enter Submit • Ctrl+R Refresh • j/k/↑/↓ navigate files • ←/→ Collapse/Expand • [/] Prev/Next PR • Esc Close composer</div>
+  </main>
+</div>
+
+<script>
+let allPrs = [];
+let filteredPrs = [];
+let activePrKey = null;
+let activePrData = null;
+let selectedFileFilter = "";
+let collapsedFiles = {};
+let openComposer = null;
+let metaInfo = {};
+let prListReqSeq = 0;
+let prDetailReqSeq = 0;
+let prReviewDraftText = "";
+let selectedReviewAction = "issue_comment";
+let selectedMergeMethod = "merge";
+let focusedFileIdx = -1;
+let visibleFileIndices = [];
+let threadRegistry = [];
+
+function esc(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function setStatus(msg, autoClearMs = 0) {
+  const el = document.getElementById("statusText");
+  if (!el) return;
+  el.textContent = msg || "";
+  if (autoClearMs > 0 && msg) {
+    setTimeout(() => { if (el.textContent === msg) el.textContent = ""; }, autoClearMs);
+  }
+}
+
+function showError(msg) {
+  const el = document.getElementById("errorBanner");
+  if (!el) return;
+  if (!msg) {
+    el.style.display = "none";
+    el.textContent = "";
+    return;
+  }
+  el.textContent = msg;
+  el.style.display = "block";
+}
+
+async function apiJson(url, opts = null, fallbackErr = "Request failed") {
+  let resp;
+  try {
+    resp = await fetch(url, opts || undefined);
+  } catch (err) {
+    throw new Error(`${fallbackErr}: ${err?.message || err}`);
+  }
+  let data = null;
+  try {
+    data = await resp.json();
+  } catch (_) {
+    data = null;
+  }
+  if (!resp.ok) {
+    const detail = data?.detail || data?.message || `HTTP ${resp.status}`;
+    throw new Error(detail);
+  }
+  return data;
+}
+
+function reloadUi() {
+  window.location.reload();
+}
+
+function updateStateFilterPills(stateVal) {
+  const active = stateVal || document.getElementById("stateSelect").value || "open";
+  const pillMap = [
+    ["stateOpenPill", "open"],
+    ["stateClosedPill", "closed"],
+    ["stateMergedPill", "merged"],
+    ["stateAllPill", "all"],
+  ];
+  for (const [id, val] of pillMap) {
+    const el = document.getElementById(id);
+    if (el && el.classList) el.classList.toggle("active", active === val);
+  }
+}
+
+function setStateFilter(stateVal) {
+  const target = stateVal || "open";
+  const sel = document.getElementById("stateSelect");
+  if (sel) sel.value = target;
+  updateStateFilterPills(target);
+  return loadPrList(false);
+}
+
+function applyEditorFont(pxVal) {
+  const px = Math.max(14, Math.min(42, Number(pxVal) || 26));
+  document.documentElement.style.setProperty("--dev-font-size", `${px}px`);
+  const inp = document.getElementById("fontPxInput");
+  if (inp) inp.value = px;
+  try { localStorage.setItem("github_pr_review_font_px", String(px)); } catch (_) {}
+}
+
+function codepointTitle(txt) {
+  const pts = [];
+  for (const ch of String(txt || "")) {
+    const cp = ch.codePointAt(0).toString(16).toUpperCase().padStart(4, "0");
+    pts.push(`U+${cp} ${ch}`);
+    if (pts.length >= 12) { pts.push("..."); break; }
+  }
+  return pts.join(" | ");
+}
+
+function renderChangedText(txt, op) {
+  const cls = op === "del" ? "ch-del" : "ch-ins";
+  const raw = String(txt || "");
+  let lead = "";
+  let core = raw;
+  let trail = "";
+  const m = raw.match(/^([ \t]*)([\s\S]*?\S[\s\S]*?)([ \t]*)$/);
+  if (m) {
+    lead = m[1];
+    core = m[2];
+    trail = m[3];
+  }
+  const tip = esc(codepointTitle(core));
+  const invMap = {
+    "\u200b": "[ZWSP]",
+    "\u200c": "[ZWNJ]",
+    "\u200d": "[ZWJ]",
+    "\ufeff": "[BOM]",
+    "\u00a0": "[NBSP]",
+  };
+  let inner = "";
+  for (const ch of core) {
+    if (invMap[ch]) {
+      inner += `<span class="ch-inv" title="${tip}">${invMap[ch]}</span>`;
+    } else if (ch === "\t") {
+      inner += "  ";
+    } else {
+      inner += esc(ch);
+    }
+  }
+  const fmtWs = s => esc(s.replace(/\t/g, "  "));
+  return `${fmtWs(lead)}<span class="${cls}" title="${tip}">${inner}</span>${fmtWs(trail)}`;
+}
+
+function renderDiffSegments(segments) {
+  if (!segments || !segments.length) return "";
+  let out = "";
+  for (const seg of segments) {
+    if (seg.op === "eq") {
+      out += esc(seg.text);
+    } else if (seg.op === "del_nl") {
+      out += `<span class="nl-badge nl-del" title="Removed line break">↵</span>`;
+    } else if (seg.op === "ins_nl") {
+      out += `<span class="nl-badge nl-ins" title="Inserted line break">↵</span>`;
+    } else {
+      out += renderChangedText(seg.text, seg.op);
+    }
+  }
+  return out;
+}
+
+function formatCommentBody(body) {
+  const raw = String(body ?? "");
+  const tokenRe = /`([^`\n]+)`|<img\b[^>]*?\bsrc="(https:\/\/[^"\s]+)"[^>]*?>|!\[([^\]]*)\]\((https:\/\/[^)\s]+)\)|\[([^\]]+)\]\((https:\/\/[^)\s]+)\)/gi;
+  let out = "";
+  let last = 0;
+  let m;
+  while ((m = tokenRe.exec(raw)) !== null) {
+    out += esc(raw.slice(last, m.index));
+    if (m[1] !== undefined) {
+      out += `<code class="mono" style="background:#f3efe6; padding:0 3px; border-radius:3px;">${esc(m[1])}</code>`;
+    } else if (m[2] !== undefined) {
+      out += `<img src="${esc(m[2])}" loading="lazy" alt="attachment" />`;
+    } else if (m[4] !== undefined) {
+      out += `<img src="${esc(m[4])}" loading="lazy" alt="${esc(m[3] || '')}" />`;
+    } else if (m[6] !== undefined) {
+      out += `<a href="${esc(m[6])}" target="_blank" rel="noopener">${esc(m[5])}</a>`;
+    }
+    last = tokenRe.lastIndex;
+  }
+  out += esc(raw.slice(last));
+  return out;
+}
+
+function shortDate(iso) {
+  if (!iso) return "";
+  return String(iso).slice(0, 16).replace("T", " ");
+}
+
+function normalizeOwnerInput(raw) {
+  const s = (raw || "").trim();
+  if (!s) return "vishvAsa";
+  const m = s.match(/^https?:\/\/(?:www\.)?github\.com\/([^/?#]+)/i);
+  if (m) return m[1];
+  return s.replace(/^\/+|\/+$/g, "").split("/")[0] || "vishvAsa";
+}
+
+function populateRepoSelect(repos, preferredRepo = null) {
+  const repoSel = document.getElementById("repoSelect");
+  const prevRepo = preferredRepo !== null ? preferredRepo : repoSel.value;
+  const repoCounts = {};
+  for (const p of allPrs) repoCounts[p.repo] = (repoCounts[p.repo] || 0) + 1;
+  const list = [...new Set([...(repos || []), ...(prevRepo ? [prevRepo] : [])])];
+  repoSel.innerHTML = `<option value="">All repos (${allPrs.length})</option>` +
+    list.map(r => `<option value="${esc(r)}">${esc(r)} (${repoCounts[r] || 0})</option>`).join("");
+  if (prevRepo && list.includes(prevRepo)) repoSel.value = prevRepo;
+}
+
+function getDiffMode() {
+  return document.getElementById("diffModeSelect")?.value || "word";
+}
+
+function getNormalize() {
+  return document.getElementById("normalizeSelect")?.value || "none";
+}
+
+function getIgnorePunct() {
+  return Boolean(document.getElementById("ignorePunctChk")?.checked);
+}
+
+function getDiffOptions() {
+  return {
+    diff_mode: getDiffMode(),
+    normalize: getNormalize(),
+    ignore_punct: getIgnorePunct(),
+  };
+}
+
+function isSinglePaneMode() {
+  const chk = document.getElementById("singlePaneChk");
+  return chk ? !!chk.checked : true;
+}
+
+function toggleSinglePane(checked) {
+  const chk = document.getElementById("singlePaneChk");
+  if (chk) chk.checked = !!checked;
+  try { localStorage.setItem("github_pr_review_single_pane", checked ? "true" : "false"); } catch (_) {}
+  renderActivePr();
+}
+
+async function init() {
+  try {
+    const savedPx = localStorage.getItem("github_pr_review_font_px") || localStorage.getItem("accent_review_font_px");
+    if (savedPx) applyEditorFont(savedPx);
+    const savedSingle = localStorage.getItem("github_pr_review_single_pane");
+    const spChk = document.getElementById("singlePaneChk");
+    if (spChk && (savedSingle === "true" || savedSingle === "false")) {
+      spChk.checked = savedSingle === "true";
+    }
+    const savedMode = localStorage.getItem("github_pr_review_diff_mode");
+    const dmSel = document.getElementById("diffModeSelect");
+    if (dmSel && savedMode && ["word", "grapheme", "codepoint"].includes(savedMode)) {
+      dmSel.value = savedMode;
+    }
+    const savedNorm = localStorage.getItem("github_pr_review_normalize");
+    const normSel = document.getElementById("normalizeSelect");
+    if (normSel && savedNorm && ["none", "nfc", "nfd", "nfkc", "nfkd"].includes(savedNorm)) {
+      normSel.value = savedNorm;
+    }
+    const savedIp = localStorage.getItem("github_pr_review_ignore_punct");
+    const ipChk = document.getElementById("ignorePunctChk");
+    if (ipChk && (savedIp === "true" || savedIp === "false")) {
+      ipChk.checked = savedIp === "true";
+    }
+  } catch (_) {}
+  try {
+    metaInfo = await apiJson("/api/meta", null, "Failed to load metadata");
+    if (metaInfo.default_owner) document.getElementById("ownerInput").value = metaInfo.default_owner;
+    if (metaInfo.default_state) {
+      document.getElementById("stateSelect").value = metaInfo.default_state;
+      updateStateFilterPills(metaInfo.default_state);
+    }
+    const badge = document.getElementById("authBadge");
+    if (metaInfo.auth_user?.login) {
+      badge.className = "pill pill-green";
+      badge.textContent = `@${metaInfo.auth_user.login}`;
+    } else if (metaInfo.has_token) {
+      badge.className = "pill pill-blue";
+      badge.textContent = "Token configured";
+    } else {
+      badge.className = "pill pill-amber";
+      badge.textContent = "Unauthenticated (read-only)";
+    }
+  } catch (e) {
+    showError(e.message);
+  }
+  await loadPrList(false, metaInfo.default_repo || "");
+}
+
+async function loadPrList(forceRefresh = false, preferredRepo = null) {
+  showError("");
+  const owner = normalizeOwnerInput(document.getElementById("ownerInput").value);
+  const state = document.getElementById("stateSelect").value || "open";
+  if (activePrKey && activePrKey.owner.toLowerCase() !== owner.toLowerCase()) {
+    activePrKey = null;
+    activePrData = null;
+    selectedFileFilter = "";
+    prReviewDraftText = "";
+  }
+  const reqId = ++prListReqSeq;
+  setStatus(forceRefresh ? "Refreshing PRs from GitHub..." : "Loading PRs...");
+  try {
+    const params = new URLSearchParams({ owner, state, refresh: String(!!forceRefresh) });
+    const data = await apiJson(`/api/prs?${params.toString()}`, null, "Failed to fetch pull requests");
+    if (reqId !== prListReqSeq) return;
+    allPrs = data.prs || [];
+    populateRepoSelect(data.repos || [], preferredRepo);
+    applyPrFilters();
+    if (activePrKey && !allPrs.some(p => p.owner === activePrKey.owner && p.repo === activePrKey.repo && p.number === activePrKey.number)) {
+      activePrKey = null;
+      activePrData = null;
+    }
+    if (!activePrKey && filteredPrs.length) {
+      const first = filteredPrs[0];
+      await openPr(first.owner, first.repo, first.number, false);
+    } else if (!filteredPrs.length) {
+      activePrData = null;
+      renderActivePr();
+    }
+    setStatus(forceRefresh ? "Refreshed" : "", 2000);
+  } catch (e) {
+    showError(e.message);
+    setStatus("");
+  }
+}
+
+function applyPrFilters() {
+  const repoVal = document.getElementById("repoSelect").value;
+  const q = (document.getElementById("prSearchInput").value || "").trim().toLowerCase();
+  filteredPrs = allPrs.filter(p => {
+    if (repoVal && p.repo !== repoVal) return false;
+    if (!q) return true;
+    return (
+      (p.repo || "").toLowerCase().includes(q) ||
+      (p.title || "").toLowerCase().includes(q) ||
+      (p.author || "").toLowerCase().includes(q) ||
+      String(p.number).includes(q)
+    );
+  });
+  renderPrSidebar();
+}
+
+function mergeStatusInfo(prLike, detail = null) {
+  const s = prLike?.summary || prLike || {};
+  const merged = Boolean(prLike?.merged || s.merged || s.state === "merged");
+  const state = (s.state || "open").toLowerCase();
+  const isDraft = Boolean(s.is_draft);
+  const mergeable = prLike?.mergeable !== undefined ? prLike.mergeable : s.mergeable;
+  const mState = String((prLike?.mergeable_state || s.mergeable_state || "")).toLowerCase();
+  const conflicts = detail?.conflicts || [];
+  const behindBy = detail?.behind_by;
+  const aheadBy = detail?.ahead_by;
+  const baseRef = s.base_ref || "base";
+  const cmpTxt = (aheadBy != null || behindBy != null)
+    ? ` (${aheadBy ?? 0} ahead · ${behindBy ?? 0} behind ${baseRef})`
+    : "";
+
+  if (merged) {
+    return {
+      cls: "merged",
+      pillCls: "pill-blue",
+      shortLabel: "Merged",
+      badgeHtml: `<span class="pill pill-blue" style="padding:0 5px;">✓ Merged</span>`,
+      headline: "Pull request has been merged.",
+      canMerge: false,
+      disabledReason: "Already merged",
+    };
+  }
+  if (state !== "open") {
+    return {
+      cls: "warn",
+      pillCls: "pill-amber",
+      shortLabel: "Closed",
+      badgeHtml: `<span class="pill pill-amber" style="padding:0 5px;">Closed</span>`,
+      headline: "Pull request is closed.",
+      canMerge: false,
+      disabledReason: "PR is closed",
+    };
+  }
+  if (mergeable === false || mState === "dirty" || conflicts.length > 0) {
+    const cntLabel = conflicts.length ? ` (${conflicts.length} file${conflicts.length === 1 ? "" : "s"})` : "";
+    return {
+      cls: "dirty",
+      pillCls: "pill-red",
+      shortLabel: `Conflicts${cntLabel}`,
+      badgeHtml: `<span class="pill pill-red" style="padding:0 5px;">⚠ Conflicts${esc(cntLabel)}</span>`,
+      headline: `Merge conflicts with ${baseRef}${cntLabel}${cmpTxt}. Resolve conflicts before merging.`,
+      canMerge: false,
+      disabledReason: "PR has merge conflicts",
+    };
+  }
+  if (isDraft || mState === "draft") {
+    return {
+      cls: "warn",
+      pillCls: "pill-amber",
+      shortLabel: "Draft",
+      badgeHtml: `<span class="pill pill-amber" style="padding:0 5px;">Draft</span>`,
+      headline: `Draft pull request${cmpTxt}. Mark ready for review before merging.`,
+      canMerge: false,
+      disabledReason: "Draft PR cannot be merged",
+    };
+  }
+  if (mState === "behind") {
+    return {
+      cls: "warn",
+      pillCls: "pill-amber",
+      shortLabel: "Behind",
+      badgeHtml: `<span class="pill pill-amber" style="padding:0 5px;">⏳ Behind</span>`,
+      headline: `No conflicts detected, but branch is behind ${baseRef}${cmpTxt}.`,
+      canMerge: true,
+      disabledReason: "",
+    };
+  }
+  if (mState === "blocked") {
+    return {
+      cls: "warn",
+      pillCls: "pill-amber",
+      shortLabel: "Blocked",
+      badgeHtml: `<span class="pill pill-amber" style="padding:0 5px;">🔒 Blocked</span>`,
+      headline: `Merging is blocked by branch protection or required reviews${cmpTxt}.`,
+      canMerge: true,
+      disabledReason: "",
+    };
+  }
+  if (mState === "unstable") {
+    return {
+      cls: "warn",
+      pillCls: "pill-amber",
+      shortLabel: "Checks fail",
+      badgeHtml: `<span class="pill pill-amber" style="padding:0 5px;">⚠ Checks fail</span>`,
+      headline: `Mergeable without conflicts, but status checks are failing or pending${cmpTxt}.`,
+      canMerge: true,
+      disabledReason: "",
+    };
+  }
+  if (mergeable === true) {
+    return {
+      cls: "clean",
+      pillCls: "pill-green",
+      shortLabel: "Mergeable",
+      badgeHtml: `<span class="pill pill-green" style="padding:0 5px;">✓ Mergeable</span>`,
+      headline: `Clean mergeability with ${baseRef} — no conflicts${cmpTxt}.`,
+      canMerge: true,
+      disabledReason: "",
+    };
+  }
+  return {
+    cls: "",
+    pillCls: "",
+    shortLabel: "Checking...",
+    badgeHtml: `<span class="pill" style="padding:0 5px;">⏳ Checking...</span>`,
+    headline: `GitHub is computing mergeability status${cmpTxt}. Click Refresh PR if needed.`,
+    canMerge: true,
+    disabledReason: "",
+  };
+}
+
+function renderPrSidebar() {
+  document.getElementById("prCountLabel").textContent = filteredPrs.length;
+  const el = document.getElementById("prList");
+  if (!filteredPrs.length) {
+    el.innerHTML = `<div style="color:var(--muted); font-size:12px;">No matching PRs.</div>`;
+    return;
+  }
+  el.innerHTML = filteredPrs.map((p, idx) => {
+    const isActive = activePrKey && activePrKey.owner === p.owner && activePrKey.repo === p.repo && activePrKey.number === p.number;
+    const decPill = p.review_decision === "CHANGES_REQUESTED"
+      ? `<span class="pill pill-red" style="padding:0 5px;">Changes req</span>`
+      : (p.review_decision === "APPROVED"
+        ? `<span class="pill pill-green" style="padding:0 5px;">Approved</span>`
+        : "");
+    const ms = mergeStatusInfo(p);
+    const commentsTotal = (p.comment_count || 0) + (p.thread_count || 0);
+    return `<div class="pr-item ${isActive ? 'active' : ''}" onclick="openPrIdx(${idx})">
+      <div class="pr-item-meta">
+        <span class="mono" style="font-weight:700; color:var(--blue);">${esc(p.repo)}#${p.number}</span>
+        ${ms.badgeHtml}
+        ${decPill}
+        ${commentsTotal ? `<span class="pill" style="padding:0 5px;">💬 ${commentsTotal}</span>` : ""}
+        <button class="small pr-item-browser-btn" title="Open ${esc(p.repo)}#${p.number} in main browser" onclick="event.stopPropagation(); openPrInBrowserIdx(${idx})">🌐</button>
+      </div>
+      <div class="pr-item-title">${esc(p.title)}</div>
+      <div class="pr-item-meta">
+        <span>@${esc(p.author)}</span>
+        <span style="color:var(--green);">+${p.additions}</span>
+        <span style="color:var(--red);">-${p.deletions}</span>
+        <span>${p.changed_files} files</span>
+        <span>${esc(shortDate(p.updated_at))}</span>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function openPrIdx(idx) {
+  const p = filteredPrs[idx];
+  if (p) openPr(p.owner, p.repo, p.number, false);
+}
+
+function refreshActivePr() {
+  if (!activePrKey) return;
+  openPr(activePrKey.owner, activePrKey.repo, activePrKey.number, true);
+}
+
+async function openPr(owner, repo, number, forceRefresh = false, { preserveUi = false } = {}) {
+  showError("");
+  const switchingPr = !activePrKey || activePrKey.owner !== owner || activePrKey.repo !== repo || activePrKey.number !== number;
+  activePrKey = { owner, repo, number };
+  if (switchingPr) {
+    selectedFileFilter = "";
+    openComposer = null;
+    prReviewDraftText = "";
+    selectedReviewAction = "issue_comment";
+    focusedFileIdx = 0;
+  } else if (!preserveUi) {
+    selectedFileFilter = "";
+    openComposer = null;
+  }
+  renderPrSidebar();
+  const reqId = ++prDetailReqSeq;
+  const opts = getDiffOptions();
+  setStatus(`Loading ${repo}#${number}...`);
+  try {
+    const params = new URLSearchParams({
+      refresh: String(!!forceRefresh),
+      diff_mode: opts.diff_mode,
+      normalize: opts.normalize,
+      ignore_punct: String(opts.ignore_punct),
+    });
+    const data = await apiJson(
+      `/api/pr/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}?${params.toString()}`,
+      null,
+      `Failed to load ${repo}#${number}`
+    );
+    if (reqId !== prDetailReqSeq) return;
+    activePrData = data;
+    renderActivePr();
+    setStatus(forceRefresh ? `Refreshed ${repo}#${number}` : "", 2000);
+  } catch (e) {
+    showError(e.message);
+    setStatus("");
+  }
+}
+
+async function refreshAll() {
+  showError("");
+  const owner = normalizeOwnerInput(document.getElementById("ownerInput").value);
+  const state = document.getElementById("stateSelect").value || "open";
+  const opts = getDiffOptions();
+  if (activePrKey && activePrKey.owner.toLowerCase() !== owner.toLowerCase()) {
+    activePrKey = null;
+    activePrData = null;
+    selectedFileFilter = "";
+    prReviewDraftText = "";
+  }
+  const reqId = ++prListReqSeq;
+  setStatus("Refreshing from GitHub...");
+  try {
+    const payload = {
+      owner,
+      state,
+      repo: "",
+      active_owner: activePrKey?.owner || null,
+      active_repo: activePrKey?.repo || null,
+      active_number: activePrKey?.number || null,
+      ...opts,
+    };
+    const data = await apiJson("/api/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }, "Refresh failed");
+    if (reqId !== prListReqSeq) return;
+    allPrs = data.prs || [];
+    populateRepoSelect(data.repos || []);
+    applyPrFilters();
+    if (data.active_pr) {
+      activePrData = data.active_pr;
+      renderActivePr();
+    } else if (!activePrKey && filteredPrs.length) {
+      const first = filteredPrs[0];
+      await openPr(first.owner, first.repo, first.number, false);
+    } else {
+      activePrData = null;
+      renderActivePr();
+    }
+    setStatus("Refreshed", 2500);
+  } catch (e) {
+    showError(e.message);
+    setStatus("");
+  }
+}
+
+async function changeDiffMode() {
+  const opts = getDiffOptions();
+  try {
+    localStorage.setItem("github_pr_review_diff_mode", opts.diff_mode);
+    localStorage.setItem("github_pr_review_normalize", opts.normalize);
+    localStorage.setItem("github_pr_review_ignore_punct", opts.ignore_punct ? "true" : "false");
+  } catch (_) {}
+  if (!activePrKey) return;
+  await openPr(activePrKey.owner, activePrKey.repo, activePrKey.number, false, { preserveUi: true });
+}
+
+function selectFileFilter(filename) {
+  selectedFileFilter = selectedFileFilter === filename ? "" : filename;
+  renderFileSidebar();
+  renderActivePrFiles();
+}
+
+function renderFileSidebar() {
+  const files = activePrData?.files || [];
+  const threads = activePrData?.review_threads || [];
+  const conflictPaths = new Set((activePrData?.conflicts || []).map(c => c.filename));
+  const threadCounts = {};
+  for (const t of threads) threadCounts[t.path] = (threadCounts[t.path] || 0) + 1;
+  document.getElementById("fileCountLabel").textContent = files.length;
+  const el = document.getElementById("fileList");
+  if (!files.length) {
+    el.innerHTML = `<div style="color:var(--muted); font-size:12px;">No active PR files.</div>`;
+    return;
+  }
+  el.innerHTML = files.map((f, fi) => {
+    const active = selectedFileFilter === f.filename ? "active" : "";
+    const tc = threadCounts[f.filename] || 0;
+    const isConflict = conflictPaths.has(f.filename);
+    return `<div class="file-item ${active}" onclick="selectFileFilterIdx(${fi})">
+      <div class="mono" style="font-size:11.5px; word-break:break-all; font-weight:600;">${esc(f.filename)}</div>
+      <div class="file-item-meta">
+        <span class="pill" style="padding:0 5px;">${esc(f.status)}</span>
+        <span style="color:var(--green);">+${f.additions}</span>
+        <span style="color:var(--red);">-${f.deletions}</span>
+        ${isConflict ? `<span class="pill pill-red" style="padding:0 5px;">⚠ Conflict</span>` : ""}
+        ${tc ? `<span class="pill pill-amber" style="padding:0 5px;">💬 ${tc}</span>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function selectFileFilterIdx(fi) {
+  const f = activePrData?.files?.[fi];
+  if (f) selectFileFilter(f.filename);
+}
+
+function conflictReasonLabel(c) {
+  const map = {
+    content_conflict: "Overlapping edits",
+    delete_modify: "Deleted in PR vs modified on base",
+    modify_delete: "Modified in PR vs deleted on base",
+    both_added: "Added differently on both branches",
+    both_modified: "Modified on both branches",
+  };
+  return map[c?.reason] || (c?.reason || "Conflict");
+}
+
+function jumpToConflictFile(idx) {
+  const c = activePrData?.conflicts?.[idx];
+  if (!c) return;
+  const fi = (activePrData?.files || []).findIndex(f => f.filename === c.filename);
+  if (fi < 0) return;
+  if (selectedFileFilter && selectedFileFilter !== c.filename) {
+    selectedFileFilter = "";
+    renderFileSidebar();
+    renderActivePrFiles();
+  }
+  if (collapsedFiles[c.filename]) {
+    delete collapsedFiles[c.filename];
+    renderActivePrFiles();
+  }
+  setFocusedFile(fi);
+  document.getElementById(`fileCard_${fi}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function renderConflictHunkRowsHtml(hunk) {
+  const wrapClass = document.getElementById("wrapLinesChk")?.checked ? "wrap-on" : "wrap-off";
+  if (isSinglePaneMode() && Array.isArray(hunk?.inline_rows) && hunk.inline_rows.length) {
+    const rowsHtml = hunk.inline_rows.map(r => `
+      <tr class="diff-row single-row-${esc(r.kind || 'modify')}">
+        <td class="ln">${r.left_num ?? ""}</td>
+        <td class="ln">${r.right_num ?? ""}</td>
+        <td class="code-cell single-code-cell">${renderDiffSegments(r.segments)}</td>
+      </tr>`).join("");
+    return `<table class="diff-table diff-table-single ${wrapClass}">
+      <colgroup><col class="col-num" /><col class="col-num" /><col style="width:calc(100% - 92px);" /></colgroup>
+      <tbody>${rowsHtml}</tbody>
+    </table>`;
+  }
+  const rows = hunk?.rows || [];
+  if (!rows.length) {
+    return `<div style="padding:6px 10px; font-size:12px; color:var(--muted);">No line-level conflict markers extracted.</div>`;
+  }
+  const rowsHtml = rows.map(r => {
+    const lhsHtml = r.left_text == null ? "" : renderDiffSegments(r.lhs_segments);
+    const rhsHtml = r.right_text == null ? "" : renderDiffSegments(r.rhs_segments);
+    const lhsCellCls = r.left_text == null ? "code-cell lhs-cell diff-empty" : "code-cell lhs-cell";
+    const rhsCellCls = r.right_text == null ? "code-cell rhs-cell diff-empty" : "code-cell rhs-cell";
+    return `<tr class="diff-row diff-row-${esc(r.kind || 'modify')}">
+      <td class="ln">${r.left_num ?? ""}</td>
+      <td class="${lhsCellCls}">${lhsHtml}</td>
+      <td class="ln">${r.right_num ?? ""}</td>
+      <td class="${rhsCellCls}">${rhsHtml}</td>
+    </tr>`;
+  }).join("");
+  return `<table class="diff-table ${wrapClass}">
+    <colgroup><col class="col-num" /><col style="width:calc(50% - 48px);" /><col class="col-num" /><col style="width:calc(50% - 48px);" /></colgroup>
+    <tbody>${rowsHtml}</tbody>
+  </table>`;
+}
+
+function renderMergeabilitySection(detail, ms) {
+  const s = detail.summary || {};
+  const conflicts = detail.conflicts || [];
+  const rebaseNote = detail.rebaseable === true ? "Rebaseable" : (detail.rebaseable === false ? "Not cleanly rebaseable" : "");
+  const conflictCards = conflicts.length
+    ? `<div style="display:flex; flex-direction:column; gap:7px;">
+        ${conflicts.map((c, ci) => {
+          const hunks = c.hunks || [];
+          const hunksHtml = hunks.map((h, hi) => `
+            <div style="border-top:1px solid #f5d8d6;">
+              <div class="hunk-bar" style="display:flex; justify-content:space-between;">
+                <span>Conflict #${hi + 1}: Base (${esc(s.base_ref || 'base')}) vs PR Head (${esc(s.head_ref || 'head')})</span>
+              </div>
+              ${renderConflictHunkRowsHtml(h)}
+            </div>`).join("");
+          return `<div class="conflict-item">
+            <div class="conflict-item-header">
+              <div class="row" style="gap:6px;">
+                <span class="mono" style="font-size:12px; font-weight:700; color:var(--red);">${esc(c.filename)}</span>
+                <span class="pill pill-red" style="padding:0 5px;">${esc(conflictReasonLabel(c))}</span>
+                ${hunks.length ? `<span class="pill" style="padding:0 5px;">${hunks.length} conflict hunk${hunks.length === 1 ? '' : 's'}</span>` : ""}
+              </div>
+              <button class="small" onclick="jumpToConflictFile(${ci})">Jump to File</button>
+            </div>
+            ${hunksHtml}
+          </div>`;
+        }).join("")}
+      </div>`
+    : (ms.cls === "dirty"
+      ? `<div style="font-size:12px; color:var(--red);">GitHub reports merge conflicts on this PR, but line-level details could not be fetched for these changes. Open on GitHub to resolve or click Refresh PR.</div>`
+      : "");
+
+  return `<div id="mergeabilityBox" class="merge-banner ${ms.cls}">
+    <div class="row" style="justify-content:space-between;">
+      <div class="row" style="gap:7px;">
+        ${ms.badgeHtml}
+        <span style="font-size:12.5px; font-weight:600;">${esc(ms.headline)}</span>
+      </div>
+      <div class="row" style="gap:6px;">
+        ${detail.mergeable_state ? `<span class="pill mono" style="padding:0 6px;">state: ${esc(detail.mergeable_state)}</span>` : ""}
+        ${rebaseNote ? `<span class="pill" style="padding:0 6px;">${esc(rebaseNote)}</span>` : ""}
+      </div>
+    </div>
+    ${conflictCards}
+  </div>`;
+}
+
+function renderActivePr() {
+  const existingBodyEl = document.getElementById("prReviewBody");
+  if (existingBodyEl && activePrData) prReviewDraftText = existingBodyEl.value || "";
+  const existingMergeSel = document.getElementById("mergeMethodSelect");
+  if (existingMergeSel) selectedMergeMethod = existingMergeSel.value || "merge";
+
+  renderFileSidebar();
+  const container = document.getElementById("prContainer");
+  if (!activePrData) {
+    container.innerHTML = `<div class="card">No pull requests match current filters.</div>`;
+    return;
+  }
+  const s = activePrData.summary;
+  const ms = mergeStatusInfo(activePrData, activePrData);
+  const drafts = activePrData.pending_drafts || [];
+  const issueComments = activePrData.issue_comments || [];
+  const reviews = activePrData.reviews || [];
+  const threads = activePrData.review_threads || [];
+
+  const convItemsHtml = [
+    ...issueComments.map(c => `<div class="thread-comment">
+      <div style="font-size:12px; color:var(--muted);"><strong>@${esc(c.author)}</strong> · ${esc(shortDate(c.created_at))}</div>
+      <div class="comment-body">${formatCommentBody(c.body)}</div>
+    </div>`),
+    ...reviews.filter(r => (r.body || "").trim()).map(r => `<div class="thread-comment">
+      <div style="font-size:12px; color:var(--muted);"><strong>@${esc(r.author)}</strong> <span class="pill" style="padding:0 5px;">${esc(r.state)}</span> · ${esc(shortDate(r.submitted_at))}</div>
+      <div class="comment-body">${formatCommentBody(r.body)}</div>
+    </div>`),
+  ].join("");
+
+  const draftsHtml = drafts.length
+    ? `<div style="display:flex; flex-direction:column; gap:5px;">
+        <div style="font-size:12px; font-weight:600; color:var(--amber);">Pending Inline Review Drafts (${drafts.length}):</div>
+        ${drafts.map((d, di) => `<div class="draft-chip">
+          <div style="min-width:0; flex:1;">
+            <div class="mono" style="font-size:11px; color:var(--blue);">${esc(d.path)} : L${d.start_line ? d.start_line + '-' : ''}${d.line} (${esc(d.side)})</div>
+            <div class="comment-body">${esc(d.body)}</div>
+          </div>
+          <button class="small" onclick="deleteDraftIdx(${di})">Remove</button>
+        </div>`).join("")}
+      </div>`
+    : "";
+
+  const mergeControlsHtml = s.state === "open"
+    ? `<select id="mergeMethodSelect" title="Merge strategy" style="font-size:11.5px; padding:3px 6px;" onchange="selectedMergeMethod=this.value">
+         <option value="merge" ${selectedMergeMethod === 'merge' ? 'selected' : ''}>Merge commit</option>
+         <option value="squash" ${selectedMergeMethod === 'squash' ? 'selected' : ''}>Squash &amp; merge</option>
+         <option value="rebase" ${selectedMergeMethod === 'rebase' ? 'selected' : ''}>Rebase &amp; merge</option>
+       </select>
+       <button id="mergePrBtn" class="small green" ${ms.canMerge ? "" : "disabled"} title="${esc(ms.canMerge ? 'Merge this pull request on GitHub (Alt+Shift+M)' : ms.disabledReason)}" onclick="mergeActivePr()">⛙ Merge PR <span class="kbd-hint" style="background:rgba(255,255,255,0.2); color:#fff;">Alt+Shift+M</span></button>`
+    : "";
+
+  const stateBtnHtml = s.state === "open"
+    ? `<button id="closePrBtn" class="small danger" title="Close this pull request on GitHub (Alt+Shift+C)" onclick="setActivePrState('closed')">✕ Close PR <span class="kbd-hint" style="background:rgba(255,255,255,0.2); color:#fff;">Alt+Shift+C</span></button>`
+    : (s.state === "closed" && !ms.cls.includes("merged")
+      ? `<button id="reopenPrBtn" class="small" title="Reopen this pull request on GitHub (Alt+Shift+C)" onclick="setActivePrState('open')">↺ Reopen PR <span class="kbd-hint">Alt+Shift+C</span></button>`
+      : "");
+
+  container.innerHTML = `
+    <div class="card">
+      <div class="row" style="justify-content:space-between; align-items:flex-start;">
+        <div style="min-width:0; flex:1;">
+          <div class="row" style="gap:6px;">
+            <a class="mono" style="font-size:13px; font-weight:700; color:var(--blue); text-decoration:none;" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.repo_full_name)}#${s.number} ↗</a>
+            <span class="pill ${s.state === 'open' ? 'pill-green' : 'pill-amber'}">${esc(s.state)}</span>
+            ${ms.badgeHtml}
+            ${s.is_draft ? `<span class="pill pill-amber">draft</span>` : ""}
+            <span class="pill mono">${esc(s.base_ref)} ← ${esc(s.head_ref)}</span>
+            <span class="pill pill-green">+${s.additions}</span>
+            <span class="pill pill-red">-${s.deletions}</span>
+            ${(activePrData.ahead_by != null || activePrData.behind_by != null) ? `<span class="pill">↑${activePrData.ahead_by ?? 0} ↓${activePrData.behind_by ?? 0}</span>` : ""}
+            <span class="pill">💬 ${threads.length} threads · ${issueComments.length} comments</span>
+          </div>
+          <h2 class="pr-title-heading">${esc(s.title)}</h2>
+          <div style="font-size:12px; color:var(--muted);">Author: <strong>@${esc(s.author)}</strong> · Updated: ${esc(shortDate(s.updated_at))} · Commits: ${activePrData.commits_count}</div>
+        </div>
+        <div class="row">
+          <button id="openPrBrowserBtn" class="small" title="Open PR on GitHub in main browser (Alt+B)" onclick="openActivePrInBrowser()">🌐 Open in Browser <span class="kbd-hint">Alt+B</span></button>
+          <button class="small" onclick="refreshActivePr()">↻ Refresh PR</button>
+          ${mergeControlsHtml}
+          ${stateBtnHtml}
+          <button class="small" onclick="toggleAllFiles(true)">Collapse All</button>
+          <button class="small" onclick="toggleAllFiles(false)">Expand All</button>
+        </div>
+      </div>
+
+      ${renderMergeabilitySection(activePrData, ms)}
+
+      ${(activePrData.body || "").trim() ? `<div class="pr-body-box">${formatCommentBody(activePrData.body)}</div>` : ""}
+
+      ${convItemsHtml ? `<details open style="border-top:1px solid var(--border); padding-top:8px;">
+        <summary style="cursor:pointer; font-weight:600; font-size:12.5px; color:var(--muted);">PR Conversation & Review Summaries (${issueComments.length + reviews.filter(r => (r.body || '').trim()).length})</summary>
+        <div style="margin-top:8px; display:flex; flex-direction:column; gap:8px;">${convItemsHtml}</div>
+      </details>` : ""}
+
+      <div class="review-panel">
+        <div class="pane-title">
+          <span>Submit PR Comment or Review</span>
+          ${drafts.length ? `<span class="pill pill-amber">${drafts.length} pending inline draft(s)</span>` : ""}
+        </div>
+        ${draftsHtml}
+        <div class="row" style="gap:8px;">
+          <div class="radio-group" id="reviewActionGroup">
+            <label class="${selectedReviewAction === 'APPROVE' ? 'sel-approve' : ''}">
+              <input type="radio" name="revAction" value="APPROVE" ${selectedReviewAction === 'APPROVE' ? 'checked' : ''} onchange="selectReviewAction('APPROVE')" /> Approve <span class="kbd-hint">Alt+1</span>
+            </label>
+            <label class="${selectedReviewAction === 'REQUEST_CHANGES' ? 'sel-request_changes' : ''}">
+              <input type="radio" name="revAction" value="REQUEST_CHANGES" ${selectedReviewAction === 'REQUEST_CHANGES' ? 'checked' : ''} onchange="selectReviewAction('REQUEST_CHANGES')" /> Request Changes <span class="kbd-hint">Alt+2</span>
+            </label>
+            <label class="${selectedReviewAction === 'COMMENT' ? 'sel-comment' : ''}">
+              <input type="radio" name="revAction" value="COMMENT" ${selectedReviewAction === 'COMMENT' ? 'checked' : ''} onchange="selectReviewAction('COMMENT')" /> Review Comment
+            </label>
+            <label class="${selectedReviewAction === 'issue_comment' ? 'sel-issue_comment' : ''}">
+              <input type="radio" name="revAction" value="issue_comment" ${selectedReviewAction === 'issue_comment' ? 'checked' : ''} onchange="selectReviewAction('issue_comment')" /> General Comment
+            </label>
+          </div>
+        </div>
+        <textarea id="prReviewBody" class="review-textarea" placeholder="Write a PR comment or review summary (Alt+3 focuses) · Ctrl+Enter submits" oninput="prReviewDraftText=this.value" onkeydown="if(event.key==='Enter'&&event.ctrlKey){event.preventDefault(); submitSelectedReviewAction();}">${esc(prReviewDraftText)}</textarea>
+        <div class="row">
+          <button class="primary" onclick="submitSelectedReviewAction()">Submit <span class="kbd-hint" style="background:rgba(255,255,255,0.2); color:#fff;">Ctrl+Enter</span></button>
+          <button onclick="submitIssueComment()">Post General Comment</button>
+          <button onclick="submitFullReview('COMMENT')">Review: Comment</button>
+          <button class="danger" onclick="submitFullReview('REQUEST_CHANGES')">Request Changes</button>
+          <button class="green" onclick="submitFullReview('APPROVE')">Approve PR</button>
+        </div>
+      </div>
+    </div>
+    <div id="filesDiffContainer" style="display:flex; flex-direction:column; gap:14px;"></div>
+  `;
+  renderActivePrFiles();
+}
+
+function selectReviewAction(action, toggle = false) {
+  const next = (toggle && selectedReviewAction === action) ? "issue_comment" : action;
+  selectedReviewAction = next;
+  const rg = document.getElementById("reviewActionGroup");
+  if (rg && rg.querySelectorAll) {
+    rg.querySelectorAll("label").forEach(lbl => {
+      const inp = lbl.querySelector("input");
+      lbl.classList.remove("sel-approve", "sel-request_changes", "sel-comment", "sel-issue_comment");
+      if (inp) {
+        inp.checked = (inp.value === next);
+        if (inp.checked) lbl.classList.add(`sel-${next.toLowerCase()}`);
+      }
+    });
+  }
+}
+
+function submitSelectedReviewAction() {
+  if (selectedReviewAction === "issue_comment") {
+    return submitIssueComment();
+  }
+  return submitFullReview(selectedReviewAction);
+}
+
+function focusFeedbackInput() {
+  const target = openComposer ? document.getElementById("compBody") : document.getElementById("prReviewBody");
+  if (target) {
+    if (target.scrollIntoView) target.scrollIntoView({ block: "nearest" });
+    target.focus();
+  }
+}
+
+function setFocusedFile(fi) {
+  if (fi < 0 || !activePrData?.files?.[fi]) return;
+  focusedFileIdx = fi;
+  if (document.querySelectorAll) {
+    document.querySelectorAll("#filesDiffContainer > .file-card").forEach(el => {
+      el.classList.toggle("focused", el.id === `fileCard_${fi}`);
+    });
+  }
+}
+
+function toggleAllFiles(collapse) {
+  for (const f of (activePrData?.files || [])) {
+    if (collapse) collapsedFiles[f.filename] = true;
+    else delete collapsedFiles[f.filename];
+  }
+  renderActivePrFiles();
+}
+
+function toggleFileCollapse(fi, forceState = null) {
+  const f = activePrData?.files?.[fi];
+  if (!f) return;
+  const next = typeof forceState === "boolean" ? forceState : !collapsedFiles[f.filename];
+  if (next) collapsedFiles[f.filename] = true;
+  else delete collapsedFiles[f.filename];
+  focusedFileIdx = fi;
+  renderActivePrFiles();
+}
+
+function renderThreadHtml(t) {
+  const tk = threadRegistry.length;
+  threadRegistry.push(t);
+  const resolvedCls = t.is_resolved ? "resolved" : "";
+  const rootCommentId = t.comments?.[0]?.id;
+  const statusPills = [
+    t.is_resolved ? `<span class="pill pill-green" style="padding:0 6px;">Resolved ✓</span>` : `<span class="pill pill-amber" style="padding:0 6px;">Open</span>`,
+    t.is_outdated ? `<span class="pill" style="padding:0 6px;">Outdated (orig L${t.original_line ?? '?'})</span>` : "",
+  ].join(" ");
+  const canResolve = t.id && !/^\d+$/.test(t.id);
+  const resolveBtn = canResolve
+    ? `<button class="small" onclick="toggleResolveThreadIdx(${tk})">${t.is_resolved ? 'Unresolve' : 'Resolve'}</button>`
+    : "";
+  const commentsHtml = (t.comments || []).map(c => `
+    <div class="thread-comment">
+      <div style="font-size:11.5px; color:var(--muted);"><strong>@${esc(c.author)}</strong> · ${esc(shortDate(c.created_at))}</div>
+      <div class="comment-body">${formatCommentBody(c.body)}</div>
+    </div>`).join("");
+  const replyHtml = rootCommentId
+    ? `<div class="row" style="margin-top:4px;">
+        <input id="replyInput_${tk}" type="text" placeholder="Reply to thread..." style="flex:1; font-family:var(--dev); font-size:calc(var(--dev-font-size) - 4px);" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault(); submitReplyIdx(${tk});}" />
+        <button class="small primary" onclick="submitReplyIdx(${tk})">Reply</button>
+      </div>`
+    : "";
+  return `<div class="thread-box ${resolvedCls}">
+    <div class="row" style="justify-content:space-between;">
+      <div class="row" style="gap:6px;">${statusPills}<span class="mono" style="font-size:11px; color:var(--muted);">${esc(t.side)} L${t.line ?? t.original_line ?? '?'}</span></div>
+      ${resolveBtn}
+    </div>
+    ${commentsHtml}
+    ${replyHtml}
+  </div>`;
+}
+
+function onComposerSideChange(nextSide) {
+  if (!openComposer) return;
+  openComposer.side = nextSide;
+  if (nextSide === "LEFT" && openComposer.leftLine != null) {
+    openComposer.line = openComposer.leftLine;
+  } else if (nextSide === "RIGHT" && openComposer.rightLine != null) {
+    openComposer.line = openComposer.rightLine;
+  }
+  const lbl = document.getElementById("compHeaderLoc");
+  if (lbl) lbl.textContent = `${openComposer.filename} : L${openComposer.line}`;
+}
+
+function renderComposerHtml(c) {
+  const rightDisabled = c.rightLine == null ? "disabled" : "";
+  const leftDisabled = c.leftLine == null ? "disabled" : "";
+  const sideOpts = `<option value="RIGHT" ${c.side === 'RIGHT' ? 'selected' : ''} ${rightDisabled}>RIGHT (Head)</option><option value="LEFT" ${c.side === 'LEFT' ? 'selected' : ''} ${leftDisabled}>LEFT (Base)</option>`;
+  return `<div class="inline-composer">
+    <div class="row" style="justify-content:space-between;">
+      <strong class="mono" style="font-size:12px;">New inline comment · <span id="compHeaderLoc">${esc(c.filename)} : L${c.line}</span></strong>
+      <div class="row" style="gap:6px;">
+        <label style="font-size:12px;">Side: <select id="compSide" onchange="onComposerSideChange(this.value)">${sideOpts}</select></label>
+        <label style="font-size:12px;">Start line (opt): <input id="compStartLine" type="number" min="1" value="${esc(c.startLine || '')}" style="width:72px;" oninput="openComposer.startLine=this.value" /></label>
+      </div>
+    </div>
+    <textarea id="compBody" class="review-textarea" placeholder="Write review comment (Ctrl+Enter posts immediately)..." oninput="openComposer.body=this.value" onkeydown="if(event.key==='Enter'&&event.ctrlKey){event.preventDefault(); postInlineComposer();}">${esc(c.body || '')}</textarea>
+    <div class="row">
+      <button class="primary" onclick="postInlineComposer()">Post Comment Now</button>
+      <button onclick="queueInlineDraft()">Add to Pending Review</button>
+      <button class="small" onclick="closeInlineComposer()">Cancel</button>
+    </div>
+  </div>`;
+}
+
+function collectRowExtrasHtml(f, r, anchoredByKey, seenExtras, colspan) {
+  const rowThreads = [];
+  if (r.left_num != null) {
+    const k = `LEFT:${r.left_num}`;
+    if (!seenExtras.has(k) && anchoredByKey[k]?.length) {
+      seenExtras.add(k);
+      rowThreads.push(...anchoredByKey[k]);
+    }
+  }
+  if (r.right_num != null) {
+    const k = `RIGHT:${r.right_num}`;
+    if (!seenExtras.has(k) && anchoredByKey[k]?.length) {
+      seenExtras.add(k);
+      rowThreads.push(...anchoredByKey[k]);
+    }
+  }
+  let compMatch = false;
+  if (openComposer && openComposer.filename === f.filename) {
+    const compKey = `COMP:${openComposer.side}:${openComposer.line}`;
+    if (!seenExtras.has(compKey) && (
+      (openComposer.side === "LEFT" && r.left_num === openComposer.line) ||
+      (openComposer.side === "RIGHT" && r.right_num === openComposer.line)
+    )) {
+      seenExtras.add(compKey);
+      compMatch = true;
+    }
+  }
+  if (!rowThreads.length && !compMatch) return "";
+  return `<tr class="thread-row"><td colspan="${colspan}">
+      ${rowThreads.map(renderThreadHtml).join("")}
+      ${compMatch ? renderComposerHtml(openComposer) : ""}
+    </td></tr>`;
+}
+
+function rowControlsForLine(fi, r) {
+  const lhsNum = r.left_num != null ? r.left_num : "";
+  const rhsNum = r.right_num != null ? r.right_num : "";
+  const canLeft = r.in_diff_hunk && r.left_num != null;
+  const canRight = r.in_diff_hunk && r.right_num != null;
+  const defaultSide = r.right_num != null ? "RIGHT" : "LEFT";
+  const defaultLine = r.right_num != null ? r.right_num : r.left_num;
+  const leftLnClick = canLeft ? `clickable" title="Comment on LEFT line ${r.left_num}" onclick="startInlineComposer(${fi}, ${r.left_num}, 'LEFT', ${r.left_num}, ${r.right_num ?? 'null'})"` : '"';
+  const rightLnClick = canRight ? `clickable" title="Comment on RIGHT line ${r.right_num}" onclick="startInlineComposer(${fi}, ${r.right_num}, 'RIGHT', ${r.left_num ?? 'null'}, ${r.right_num})"` : '"';
+  const actBtn = (r.in_diff_hunk && defaultLine != null)
+    ? `<button class="add-comment-btn" title="Add inline review comment at L${defaultLine} (${defaultSide})" onclick="startInlineComposer(${fi}, ${defaultLine}, '${defaultSide}', ${r.left_num ?? 'null'}, ${r.right_num ?? 'null'})">+💬</button>`
+    : "";
+  return { lhsNum, rhsNum, leftLnClick, rightLnClick, actBtn };
+}
+
+function renderSinglePaneRowHtml(fi, f, r, anchoredByKey, seenExtras) {
+  const rowCls = `diff-row single-row-${esc(r.kind || 'modify')}`;
+  const { lhsNum, rhsNum, leftLnClick, rightLnClick, actBtn } = rowControlsForLine(fi, r);
+  const contentHtml = renderDiffSegments(r.segments);
+  const extraRows = collectRowExtrasHtml(f, r, anchoredByKey, seenExtras, 4);
+  return `<tr class="${rowCls}">
+    <td class="ln ${leftLnClick}>${lhsNum}</td>
+    <td class="ln ${rightLnClick}>${rhsNum}</td>
+    <td class="code-cell single-code-cell">${contentHtml}</td>
+    <td class="act-cell">${actBtn}</td>
+  </tr>${extraRows}`;
+}
+
+function renderDiffRowHtml(fi, f, r, anchoredByKey, seenExtras) {
+  const rowCls = `diff-row diff-row-${esc(r.kind || 'modify')}`;
+  const { lhsNum, rhsNum, leftLnClick, rightLnClick, actBtn } = rowControlsForLine(fi, r);
+  const lhsHtml = r.left_text == null ? "" : renderDiffSegments(r.lhs_segments);
+  const rhsHtml = r.right_text == null ? "" : renderDiffSegments(r.rhs_segments);
+  const lhsCellCls = r.left_text == null ? "code-cell lhs-cell diff-empty" : "code-cell lhs-cell";
+  const rhsCellCls = r.right_text == null ? "code-cell rhs-cell diff-empty" : "code-cell rhs-cell";
+  const extraRows = collectRowExtrasHtml(f, r, anchoredByKey, seenExtras, 5);
+  return `<tr class="${rowCls}">
+    <td class="ln ${leftLnClick}>${lhsNum}</td>
+    <td class="${lhsCellCls}">${lhsHtml}</td>
+    <td class="ln ${rightLnClick}>${rhsNum}</td>
+    <td class="${rhsCellCls}">${rhsHtml}</td>
+    <td class="act-cell">${actBtn}</td>
+  </tr>${extraRows}`;
+}
+
+function renderActivePrFiles() {
+  const container = document.getElementById("filesDiffContainer");
+  if (!container || !activePrData) return;
+  threadRegistry = [];
+  const files = activePrData.files || [];
+  const allThreads = activePrData.review_threads || [];
+  const conflictMap = {};
+  for (const c of (activePrData.conflicts || [])) conflictMap[c.filename] = c;
+  const singlePane = isSinglePaneMode();
+  const changedOnly = document.getElementById("changedOnlyChk").checked;
+  const wrapClass = document.getElementById("wrapLinesChk").checked ? "wrap-on" : "wrap-off";
+
+  const visibleFiles = files
+    .map((f, fi) => ({ f, fi }))
+    .filter(({ f }) => !selectedFileFilter || f.filename === selectedFileFilter);
+  visibleFileIndices = visibleFiles.map(x => x.fi);
+  if (visibleFileIndices.length && !visibleFileIndices.includes(focusedFileIdx)) {
+    focusedFileIdx = visibleFileIndices[0];
+  } else if (!visibleFileIndices.length) {
+    focusedFileIdx = -1;
+  }
+
+  if (!visibleFiles.length) {
+    container.innerHTML = `<div class="card">No files to display.</div>`;
+    return;
+  }
+
+  const orphanThreads = !selectedFileFilter
+    ? allThreads.filter(t => !files.some(f => f.filename === t.path))
+    : [];
+  const orphanHtml = orphanThreads.length
+    ? `<div class="card">
+        <div class="pane-title"><span>Other File Review Threads (${orphanThreads.length})</span></div>
+        ${orphanThreads.map(t => `<div style="font-family:monospace; font-size:11px; color:var(--blue); margin-bottom:2px;">${esc(t.path)}</div>${renderThreadHtml(t)}`).join("")}
+      </div>`
+    : "";
+
+  container.innerHTML = visibleFiles.map(({ f, fi }) => {
+    const fileThreads = allThreads.filter(t => t.path === f.filename);
+    const anchoredByKey = {};
+    const unanchoredThreads = [];
+    const rowKeysPresent = new Set();
+    for (const h of (f.hunks || [])) {
+      const sourceRows = (singlePane && Array.isArray(h.inline_rows) && h.inline_rows.length) ? h.inline_rows : (h.rows || []);
+      for (const r of sourceRows) {
+        if (r.left_num != null) rowKeysPresent.add(`LEFT:${r.left_num}`);
+        if (r.right_num != null) rowKeysPresent.add(`RIGHT:${r.right_num}`);
+      }
+    }
+    for (const t of fileThreads) {
+      const key = t.line != null ? `${t.side}:${t.line}` : null;
+      if (key && rowKeysPresent.has(key)) (anchoredByKey[key] ||= []).push(t);
+      else unanchoredThreads.push(t);
+    }
+    const seenExtras = new Set();
+
+    const isCollapsed = !!collapsedFiles[f.filename];
+    const renameTxt = f.previous_filename ? ` <span style="color:var(--muted);">← ${esc(f.previous_filename)}</span>` : "";
+    const ideaBtn = f.local_file_path
+      ? `<button class="small" title="Open local file ${esc(f.local_file_path)} in IntelliJ IDEA" onclick="openFileInIdea(${fi})">Open in IDEA</button>`
+      : "";
+    const fullBtn = !f.is_binary
+      ? `<button class="small" onclick="loadFullFile(${fi})">${f.is_full_file ? 'Reload Full File' : 'Load Full File'}</button>`
+      : "";
+
+    let bodyHtml = "";
+    if (unanchoredThreads.length) {
+      bodyHtml += `<div class="outdated-box">
+        <div style="font-size:12px; font-weight:600; color:var(--amber); margin-bottom:5px;">Outdated / Unanchored File Threads (${unanchoredThreads.length}):</div>
+        ${unanchoredThreads.map(renderThreadHtml).join("")}
+      </div>`;
+    }
+
+    if (f.is_binary) {
+      bodyHtml += `<div style="padding:12px; color:var(--muted);">Binary or empty diff (${esc(f.status)}).</div>`;
+    } else if (!(f.hunks || []).length) {
+      bodyHtml += `<div style="padding:12px; color:var(--muted);">No textual diff lines (${esc(f.status)}). Click "Load Full File" if you want to inspect contents.</div>`;
+    } else {
+      bodyHtml += (f.hunks || []).map(h => {
+        const useInline = singlePane && Array.isArray(h.inline_rows) && h.inline_rows.length;
+        const baseRows = useInline ? h.inline_rows : (h.rows || []);
+        const rows = changedOnly
+          ? baseRows.filter(r => {
+              if (r.kind !== "context") return true;
+              const hasTh = (r.left_num != null && anchoredByKey[`LEFT:${r.left_num}`]?.length) ||
+                (r.right_num != null && anchoredByKey[`RIGHT:${r.right_num}`]?.length);
+              const hasComp = openComposer && openComposer.filename === f.filename && (
+                (openComposer.side === "LEFT" && r.left_num === openComposer.line) ||
+                (openComposer.side === "RIGHT" && r.right_num === openComposer.line)
+              );
+              return Boolean(hasTh || hasComp);
+            })
+          : baseRows;
+        if (changedOnly && !rows.length) return "";
+        if (useInline) {
+          const rowsHtml = rows.map(r => renderSinglePaneRowHtml(fi, f, r, anchoredByKey, seenExtras)).join("");
+          return `<div class="hunk-bar">${esc(h.header)}</div>
+            <table class="diff-table diff-table-single ${wrapClass}">
+              <colgroup><col class="col-num" /><col class="col-num" /><col class="col-single-code" /><col class="col-act" /></colgroup>
+              <tbody>${rowsHtml}</tbody>
+            </table>`;
+        }
+        const rowsHtml = rows.map(r => renderDiffRowHtml(fi, f, r, anchoredByKey, seenExtras)).join("");
+        return `<div class="hunk-bar">${esc(h.header)}</div>
+          <table class="diff-table ${wrapClass}">
+            <colgroup><col class="col-num" /><col class="col-code" /><col class="col-num" /><col class="col-code" /><col class="col-act" /></colgroup>
+            <tbody>${rowsHtml}</tbody>
+          </table>`;
+      }).join("");
+    }
+
+    const isFocused = fi === focusedFileIdx;
+    const fileConflict = conflictMap[f.filename];
+    return `<div class="file-card ${isFocused ? 'focused' : ''} ${isCollapsed ? 'collapsed' : ''}" id="fileCard_${fi}" onclick="setFocusedFile(${fi})">
+      <div class="file-card-header">
+        <div class="row" style="gap:7px;">
+          <span class="active-badge">Active</span>
+          <span class="mono" style="font-weight:700; font-size:13px;">${esc(f.filename)}</span>${renameTxt}
+          <span class="pill" style="padding:0 6px;">${esc(f.status)}</span>
+          <span style="color:var(--green); font-weight:600; font-size:12px;">+${f.additions}</span>
+          <span style="color:var(--red); font-weight:600; font-size:12px;">-${f.deletions}</span>
+          ${fileConflict ? `<span class="pill pill-red" style="padding:0 6px;">⚠ ${esc(conflictReasonLabel(fileConflict))}</span>` : ""}
+          ${fileThreads.length ? `<span class="pill pill-amber" style="padding:0 6px;">💬 ${fileThreads.length}</span>` : ""}
+        </div>
+        <div class="row" style="gap:6px;">
+          ${ideaBtn}
+          ${fullBtn}
+          <button class="small" onclick="event.stopPropagation(); toggleFileCollapse(${fi})">${isCollapsed ? '▸ Expand' : '▾ Collapse'}</button>
+        </div>
+      </div>
+      <div class="file-card-body">${bodyHtml}</div>
+    </div>`;
+  }).join("") + orphanHtml;
+
+  if (openComposer) {
+    const cb = document.getElementById("compBody");
+    if (cb) cb.focus();
+  }
+}
+
+function startInlineComposer(fi, line, side, leftLine = null, rightLine = null) {
+  const f = activePrData?.files?.[fi];
+  if (!f) return;
+  openComposer = {
+    filename: f.filename,
+    line,
+    side: side || "RIGHT",
+    leftLine: leftLine != null ? leftLine : (side === "LEFT" ? line : null),
+    rightLine: rightLine != null ? rightLine : (side === "RIGHT" ? line : null),
+    startLine: "",
+    body: "",
+  };
+  renderActivePrFiles();
+}
+
+function closeInlineComposer() {
+  openComposer = null;
+  renderActivePrFiles();
+}
+
+function _readComposerPayload() {
+  const body = (document.getElementById("compBody")?.value ?? openComposer.body ?? "").trim();
+  if (!body) throw new Error("Comment body cannot be empty.");
+  const side = document.getElementById("compSide")?.value || openComposer.side || "RIGHT";
+  const startRaw = (document.getElementById("compStartLine")?.value || "").trim();
+  const startLine = startRaw ? Number(startRaw) : null;
+  return { path: openComposer.filename, line: openComposer.line, side, body, start_line: startLine, start_side: startLine ? side : null };
+}
+
+async function postInlineComposer() {
+  if (!activePrKey || !openComposer) return;
+  showError("");
+  try {
+    const bodyObj = { ..._readComposerPayload(), ...getDiffOptions() };
+    setStatus("Posting inline comment...");
+    const { owner, repo, number } = activePrKey;
+    const data = await apiJson(
+      `/api/pr/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}/inline_comment`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(bodyObj) },
+      "Failed to submit inline comment"
+    );
+    openComposer = null;
+    activePrData = data.pr;
+    renderActivePr();
+    setStatus("Comment posted", 2500);
+  } catch (e) {
+    showError(e.message);
+    setStatus("");
+  }
+}
+
+async function queueInlineDraft() {
+  if (!activePrKey || !openComposer) return;
+  showError("");
+  try {
+    const bodyObj = _readComposerPayload();
+    const { owner, repo, number } = activePrKey;
+    const data = await apiJson(
+      `/api/pr/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}/draft_comment`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(bodyObj) },
+      "Failed to add draft comment"
+    );
+    openComposer = null;
+    activePrData.pending_drafts = data.pending_drafts || [];
+    renderActivePr();
+    setStatus("Added to pending review drafts", 2500);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function deleteDraftIdx(di) {
+  if (!activePrKey) return;
+  const draft = activePrData?.pending_drafts?.[di];
+  if (!draft) return;
+  showError("");
+  try {
+    const { owner, repo, number } = activePrKey;
+    const data = await apiJson(
+      `/api/pr/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}/draft_comment/${encodeURIComponent(draft.draft_id)}`,
+      { method: "DELETE" },
+      "Failed to remove draft"
+    );
+    activePrData.pending_drafts = data.pending_drafts || [];
+    renderActivePr();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function submitReplyIdx(tk) {
+  if (!activePrKey) return;
+  const t = threadRegistry[tk];
+  const rootCommentId = t?.comments?.[0]?.id;
+  if (!t || !rootCommentId) return;
+  const inp = document.getElementById(`replyInput_${tk}`);
+  const body = (inp?.value || "").trim();
+  if (!body) return showError("Reply body cannot be empty.");
+  showError("");
+  setStatus("Submitting reply...");
+  try {
+    const { owner, repo, number } = activePrKey;
+    const data = await apiJson(
+      `/api/pr/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}/reply`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ comment_id: rootCommentId, body, ...getDiffOptions() }) },
+      "Failed to post reply"
+    );
+    activePrData = data.pr;
+    renderActivePr();
+    setStatus("Reply posted", 2500);
+  } catch (e) {
+    showError(e.message);
+    setStatus("");
+  }
+}
+
+async function submitIssueComment() {
+  if (!activePrKey) return;
+  const body = (document.getElementById("prReviewBody")?.value || "").trim();
+  if (!body) return showError("Comment body cannot be empty.");
+  showError("");
+  setStatus("Posting PR comment...");
+  try {
+    const { owner, repo, number } = activePrKey;
+    const data = await apiJson(
+      `/api/pr/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}/issue_comment`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ body, ...getDiffOptions() }) },
+      "Failed to post comment"
+    );
+    prReviewDraftText = "";
+    const inp = document.getElementById("prReviewBody");
+    if (inp) inp.value = "";
+    activePrData = data.pr;
+    renderActivePr();
+    setStatus("Comment posted", 2500);
+  } catch (e) {
+    showError(e.message);
+    setStatus("");
+  }
+}
+
+async function submitFullReview(eventType) {
+  if (!activePrKey) return;
+  const body = (document.getElementById("prReviewBody")?.value || "").trim();
+  showError("");
+  setStatus(`Submitting ${eventType} review...`);
+  try {
+    const { owner, repo, number } = activePrKey;
+    const data = await apiJson(
+      `/api/pr/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}/review`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ event: eventType, body, include_drafts: true, ...getDiffOptions() }) },
+      "Failed to submit review"
+    );
+    prReviewDraftText = "";
+    const inp = document.getElementById("prReviewBody");
+    if (inp) inp.value = "";
+    activePrData = data.pr;
+    renderActivePr();
+    setStatus(`Review (${eventType}) submitted`, 2500);
+  } catch (e) {
+    showError(e.message);
+    setStatus("");
+  }
+}
+
+async function toggleResolveThreadIdx(tk) {
+  if (!activePrKey) return;
+  const t = threadRegistry[tk];
+  if (!t) return;
+  const resolve = !t.is_resolved;
+  showError("");
+  setStatus(resolve ? "Resolving thread..." : "Unresolving thread...");
+  try {
+    const { owner, repo, number } = activePrKey;
+    const data = await apiJson(
+      `/api/pr/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}/resolve_thread`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ thread_id: t.id, resolve, ...getDiffOptions() }) },
+      "Failed to update thread state"
+    );
+    activePrData = data.pr;
+    renderActivePr();
+    setStatus(resolve ? "Thread resolved" : "Thread reopened", 2000);
+  } catch (e) {
+    showError(e.message);
+    setStatus("");
+  }
+}
+
+async function loadFullFile(fi) {
+  if (!activePrKey || !activePrData) return;
+  const f = activePrData.files?.[fi];
+  if (!f) return;
+  const opts = getDiffOptions();
+  showError("");
+  setStatus(`Loading full file ${f.filename}...`);
+  try {
+    const { owner, repo, number } = activePrKey;
+    const params = new URLSearchParams({
+      filename: f.filename,
+      diff_mode: opts.diff_mode,
+      normalize: opts.normalize,
+      ignore_punct: String(opts.ignore_punct),
+    });
+    const data = await apiJson(
+      `/api/pr/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}/file_full?${params.toString()}`,
+      null,
+      "Failed to load full file"
+    );
+    activePrData.files[fi] = data.file;
+    renderActivePrFiles();
+    setStatus("Loaded full file", 2000);
+  } catch (e) {
+    showError(e.message);
+    setStatus("");
+  }
+}
+
+async function openFileInIdea(fi) {
+  if (!activePrKey || !activePrData) return;
+  const f = activePrData.files?.[fi];
+  if (!f) return;
+  const firstRow = f.hunks?.[0]?.rows?.find(r => r.kind !== "context") || f.hunks?.[0]?.rows?.[0];
+  const line = firstRow?.right_num || firstRow?.left_num || 1;
+  try {
+    await apiJson("/api/open_in_idea", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repo: activePrKey.repo, path: f.filename, line }),
+    }, "Failed to open in IDEA");
+    setStatus(`Opened ${f.filename}:${line} in IDEA`, 2500);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function openUrlInMainBrowser(url, statusLabel = "PR") {
+  if (!url) return showError("No PR URL to open.");
+  showError("");
+  try {
+    await apiJson("/api/open_in_browser", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    }, "Failed to open PR in browser");
+    setStatus(`Opened ${statusLabel} in main browser`, 2500);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function openActivePrInBrowser() {
+  const s = activePrData?.summary;
+  if (!s?.url) return showError("No active PR URL to open.");
+  return openUrlInMainBrowser(s.url, `#${s.number}`);
+}
+
+async function openPrInBrowserIdx(idx) {
+  const p = filteredPrs[idx];
+  if (!p?.url) return showError("No PR URL to open.");
+  return openUrlInMainBrowser(p.url, `${p.repo}#${p.number}`);
+}
+
+function syncPrSummaryListAfterUpdate(detail) {
+  const s = detail?.summary;
+  if (!s) return;
+  const curFilterState = document.getElementById("stateSelect").value || "open";
+  const newState = (s.state || "").toLowerCase();
+  const isMerged = Boolean(detail.merged || s.merged);
+  const remove =
+    (curFilterState === "open" && newState !== "open") ||
+    (curFilterState === "closed" && newState !== "closed") ||
+    (curFilterState === "merged" && !isMerged);
+  if (remove) {
+    allPrs = allPrs.filter(p => !(p.owner === s.owner && p.repo === s.repo && p.number === s.number));
+  } else {
+    allPrs = allPrs.map(p => (p.owner === s.owner && p.repo === s.repo && p.number === s.number) ? s : p);
+  }
+}
+
+async function setActivePrState(nextState) {
+  if (!activePrKey || !activePrData) return;
+  const { owner, repo, number } = activePrKey;
+  const verb = nextState === "closed" ? "Close" : "Reopen";
+  if (typeof window.confirm === "function" && !window.confirm(`${verb} ${repo}#${number}?`)) {
+    return;
+  }
+  showError("");
+  setStatus(`${verb === "Close" ? "Closing" : "Reopening"} ${repo}#${number}...`);
+  try {
+    const data = await apiJson(
+      `/api/pr/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}/state`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ state: nextState, ...getDiffOptions() }) },
+      `Failed to ${verb.toLowerCase()} PR`
+    );
+    activePrData = data.pr;
+    syncPrSummaryListAfterUpdate(data.pr);
+    applyPrFilters();
+    renderActivePr();
+    setStatus(`${verb === "Close" ? "Closed" : "Reopened"} ${repo}#${number}`, 2500);
+  } catch (e) {
+    showError(e.message);
+    setStatus("");
+  }
+}
+
+async function toggleActivePrState() {
+  if (!activePrData?.summary) return;
+  const s = activePrData.summary;
+  if (s.state === "open") return setActivePrState("closed");
+  if (s.state === "closed" && !activePrData.merged && !s.merged) return setActivePrState("open");
+}
+
+async function mergeActivePr() {
+  if (!activePrKey || !activePrData) return;
+  const ms = mergeStatusInfo(activePrData, activePrData);
+  if (!ms.canMerge) {
+    showError(ms.disabledReason || "PR cannot be merged right now.");
+    return;
+  }
+  const { owner, repo, number } = activePrKey;
+  const methodEl = document.getElementById("mergeMethodSelect");
+  const mergeMethod = (methodEl ? methodEl.value : selectedMergeMethod) || "merge";
+  selectedMergeMethod = mergeMethod;
+  if (typeof window.confirm === "function" && !window.confirm(`Merge ${repo}#${number} via ${mergeMethod}?`)) {
+    return;
+  }
+  showError("");
+  setStatus(`Merging ${repo}#${number} (${mergeMethod})...`);
+  try {
+    const data = await apiJson(
+      `/api/pr/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}/merge`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          merge_method: mergeMethod,
+          sha: activePrData.summary?.head_sha || null,
+          ...getDiffOptions(),
+        }),
+      },
+      "Failed to merge PR"
+    );
+    activePrData = data.pr;
+    syncPrSummaryListAfterUpdate(data.pr);
+    applyPrFilters();
+    renderActivePr();
+    setStatus(`Merged ${repo}#${number} (${mergeMethod})`, 3000);
+  } catch (e) {
+    showError(e.message);
+    setStatus("");
+  }
+}
+
+async function lookupSelectedGoldenDict() {
+  const sel = (window.getSelection ? window.getSelection().toString() : "").trim();
+  if (!sel) {
+    setStatus("Select a Sanskrit word first to look up in GoldenDict.", 2500);
+    return;
+  }
+  try {
+    const data = await apiJson("/api/open_in_goldendict", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ word: sel }),
+    }, "GoldenDict lookup failed");
+    setStatus(`GoldenDict: ${data.word}`, 2000);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+document.addEventListener("keydown", (ev) => {
+  const target = ev.target;
+  const id = (target && target.id) || "";
+  const tag = (target && target.tagName || "").toUpperCase();
+
+  // Ctrl+R refreshes PR list and active PR from GitHub even inside inputs
+  if ((ev.key === "r" || ev.key === "R") && ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey) {
+    ev.preventDefault();
+    refreshAll();
+    return;
+  }
+
+  // Alt+Shift+M Merge PR, Alt+Shift+C Close/Reopen PR; Alt+O/C/M/L/0 filters; Alt+B Open in Browser; Alt+1/2/3 review actions
+  if (ev.altKey && !ev.ctrlKey && !ev.metaKey) {
+    const ak = (ev.key || "").toLowerCase();
+    const ac = ev.code || "";
+    if (ev.shiftKey) {
+      if (ak === "m" || ac === "KeyM") {
+        ev.preventDefault();
+        mergeActivePr();
+        return;
+      }
+      if (ak === "c" || ac === "KeyC") {
+        ev.preventDefault();
+        toggleActivePrState();
+        return;
+      }
+      return;
+    }
+    if (ak === "b" || ac === "KeyB") {
+      ev.preventDefault();
+      openActivePrInBrowser();
+      return;
+    }
+    if (ak === "p" || ac === "KeyP") {
+      ev.preventDefault();
+      toggleSinglePane(!isSinglePaneMode());
+      return;
+    }
+    const stateShortcuts = { o: "open", c: "closed", m: "merged", l: "all", "0": "all" };
+    const codeShortcuts = { KeyO: "open", KeyC: "closed", KeyM: "merged", KeyL: "all", Digit0: "all" };
+    const nextState = stateShortcuts[ak] || codeShortcuts[ac];
+    if (nextState) {
+      ev.preventDefault();
+      setStateFilter(nextState);
+      return;
+    }
+    if (ev.key === "1" || ac === "Digit1") {
+      ev.preventDefault();
+      selectReviewAction("APPROVE", true);
+      return;
+    }
+    if (ev.key === "2" || ac === "Digit2") {
+      ev.preventDefault();
+      selectReviewAction("REQUEST_CHANGES", true);
+      return;
+    }
+    if (ev.key === "3" || ac === "Digit3") {
+      ev.preventDefault();
+      focusFeedbackInput();
+      return;
+    }
+  }
+
+  // Ctrl+Enter submits inline composer if open, else active PR review/comment
+  if (ev.key === "Enter" && ev.ctrlKey && !ev.altKey && !ev.metaKey) {
+    if (id !== "ownerInput") {
+      ev.preventDefault();
+      if (openComposer) postInlineComposer();
+      else submitSelectedReviewAction();
+      return;
+    }
+  }
+
+  if (ev.key === "Escape" && openComposer) {
+    ev.preventDefault();
+    closeInlineComposer();
+    return;
+  }
+
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+    if (ev.key === "Enter" && id === "ownerInput") {
+      ev.preventDefault();
+      loadPrList(true);
+    }
+    if (tag !== "INPUT" || target.type !== "radio") return;
+  }
+
+  // j/k/ArrowDown/ArrowUp navigate file cards; ArrowLeft/ArrowRight collapse/expand focused file card
+  if (ev.key === "j" || ev.key === "ArrowDown") {
+    if (visibleFileIndices.length) {
+      ev.preventDefault();
+      const pos = visibleFileIndices.indexOf(focusedFileIdx);
+      const nxt = visibleFileIndices[Math.min(visibleFileIndices.length - 1, pos + 1)];
+      setFocusedFile(nxt);
+      document.getElementById(`fileCard_${nxt}`)?.scrollIntoView({ block: "nearest" });
+    }
+    return;
+  }
+  if (ev.key === "k" || ev.key === "ArrowUp") {
+    if (visibleFileIndices.length) {
+      ev.preventDefault();
+      const pos = visibleFileIndices.indexOf(focusedFileIdx);
+      const prev = visibleFileIndices[Math.max(0, pos <= 0 ? 0 : pos - 1)];
+      setFocusedFile(prev);
+      document.getElementById(`fileCard_${prev}`)?.scrollIntoView({ block: "nearest" });
+    }
+    return;
+  }
+  if (ev.key === "ArrowLeft" && !ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey && focusedFileIdx >= 0) {
+    ev.preventDefault();
+    toggleFileCollapse(focusedFileIdx, true);
+    return;
+  }
+  if (ev.key === "ArrowRight" && !ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey && focusedFileIdx >= 0) {
+    ev.preventDefault();
+    toggleFileCollapse(focusedFileIdx, false);
+    return;
+  }
+
+  // [ / ] navigate PRs in sidebar
+  if (!filteredPrs.length) return;
+  const curIdx = activePrKey
+    ? filteredPrs.findIndex(p => p.owner === activePrKey.owner && p.repo === activePrKey.repo && p.number === activePrKey.number)
+    : -1;
+  if (ev.key === "]") {
+    ev.preventDefault();
+    const nxt = Math.min(filteredPrs.length - 1, curIdx + 1);
+    if (nxt >= 0) openPrIdx(nxt);
+  } else if (ev.key === "[") {
+    ev.preventDefault();
+    const prev = curIdx <= 0 ? 0 : curIdx - 1;
+    openPrIdx(prev);
+  }
+});
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,3 @@
+include README.md
+include LICENSE
+recursive-include pull_requests_san/templates *.html
