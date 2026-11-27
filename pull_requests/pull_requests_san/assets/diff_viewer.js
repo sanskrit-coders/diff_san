@@ -231,18 +231,139 @@ function closeSettingsPane() {
 }
 
 let _diffRowMouseBound = false;
+let _diffMouseDownPos = null;
+
+function _extractDiffInlineNodeText(node, isNlStandalone = false) {
+  if (!node) return "";
+  if (node.nodeType === 3) return String(node.nodeValue || "");
+  if (typeof node.getAttribute === "function") {
+    const dataCh = node.getAttribute("data-ch");
+    if (dataCh != null) return dataCh;
+  }
+  if (node.classList && (node.classList.contains("nl-del") || node.classList.contains("nl-ins"))) {
+    return isNlStandalone ? "↵" : "\n";
+  }
+  const children = node.childNodes;
+  if (children && children.length) {
+    let acc = "";
+    for (let i = 0; i < children.length; i++) {
+      acc += _extractDiffInlineNodeText(children[i], isNlStandalone);
+    }
+    return acc;
+  }
+  return String(node.textContent ?? node.innerText ?? "");
+}
+
+function findClickedDiffBox(targetEl) {
+  if (!targetEl || typeof targetEl.closest !== "function") return null;
+  if (targetEl.closest("button, a, input, textarea, select, summary, .thread-box, .inline-composer, #diffRowContextMenu, #diffFindBar, #settingsPane")) {
+    return null;
+  }
+  const rowEl = targetEl.closest("tr.diff-row");
+  if (!rowEl) return null;
+  const pair = targetEl.closest(".ch-pair");
+  if (pair && (!rowEl.contains || rowEl.contains(pair))) return pair;
+  const single = targetEl.closest(".ch-del, .ch-ins, .nl-del, .nl-ins");
+  if (single && (!rowEl.contains || rowEl.contains(single)) && (!single.closest || !single.closest(".ch-pair"))) {
+    return single;
+  }
+  return null;
+}
+
+function extractDiffBoxOldNewText(boxEl) {
+  if (!boxEl || !boxEl.classList) return "";
+  let oldText = "";
+  let newText = "";
+  if (boxEl.classList.contains("ch-pair")) {
+    const rawOld = typeof boxEl.getAttribute === "function" ? boxEl.getAttribute("data-old") : null;
+    const rawNew = typeof boxEl.getAttribute === "function" ? boxEl.getAttribute("data-new") : null;
+    if (rawOld != null && rawNew != null) {
+      oldText = rawOld;
+      newText = rawNew;
+    } else {
+      const oldParts = [];
+      const newParts = [];
+      const children = boxEl.childNodes || [];
+      for (let i = 0; i < children.length; i++) {
+        const child = children[i];
+        if (child && child.classList) {
+          if (child.classList.contains("ch-del")) oldParts.push(_extractDiffInlineNodeText(child, false));
+          else if (child.classList.contains("ch-ins")) newParts.push(_extractDiffInlineNodeText(child, false));
+          else if (child.classList.contains("nl-del")) oldParts.push("\n");
+          else if (child.classList.contains("nl-ins")) newParts.push("\n");
+          else {
+            const neutral = _extractDiffInlineNodeText(child, false);
+            oldParts.push(neutral);
+            newParts.push(neutral);
+          }
+        } else {
+          const neutral = _extractDiffInlineNodeText(child, false);
+          oldParts.push(neutral);
+          newParts.push(neutral);
+        }
+      }
+      oldText = oldParts.join("");
+      newText = newParts.join("");
+    }
+  } else if (boxEl.classList.contains("ch-del")) {
+    oldText = _extractDiffInlineNodeText(boxEl, false);
+  } else if (boxEl.classList.contains("ch-ins")) {
+    newText = _extractDiffInlineNodeText(boxEl, false);
+  } else if (boxEl.classList.contains("nl-del")) {
+    oldText = "↵";
+  } else if (boxEl.classList.contains("nl-ins")) {
+    newText = "↵";
+  } else {
+    return "";
+  }
+  return `OLD:\n${oldText}\nNEW:\n${newText}`;
+}
+
+async function copyDiffBoxOldNew(boxEl) {
+  const txt = extractDiffBoxOldNewText(boxEl);
+  if (!txt) return false;
+  const ok = await copyTextToClipboard(txt);
+  if (ok && boxEl && boxEl.classList) {
+    boxEl.classList.add("diff-box-copied");
+    setTimeout(() => { if (boxEl.classList) boxEl.classList.remove("diff-box-copied"); }, 900);
+  }
+  setStatus(ok ? "Copied diff box (OLD / NEW)" : "Copy failed — check clipboard permissions", 2500);
+  return ok;
+}
 
 function initDiffRowMouseBehavior() {
   if (_diffRowMouseBound || typeof document === "undefined" || typeof document.addEventListener !== "function") return;
   _diffRowMouseBound = true;
   document.addEventListener("mousedown", (ev) => {
-    if (!ev || !ev.shiftKey || ev.ctrlKey || ev.altKey || ev.metaKey) return;
+    if (!ev) return;
+    if (!ev.shiftKey && !ev.ctrlKey && !ev.altKey && !ev.metaKey && (!ev.button || ev.button === 0)) {
+      _diffMouseDownPos = { x: Number(ev.clientX || 0), y: Number(ev.clientY || 0) };
+    } else {
+      _diffMouseDownPos = null;
+    }
+    if (!ev.shiftKey || ev.ctrlKey || ev.altKey || ev.metaKey) return;
     const tgt = ev.target;
     if (!tgt || typeof tgt.closest !== "function") return;
     if (tgt.closest("button, a, input, textarea, select, summary, .thread-box, .inline-composer")) return;
     if (tgt.closest("tr.diff-row") && typeof ev.preventDefault === "function") {
       ev.preventDefault();
     }
+  });
+  document.addEventListener("click", (ev) => {
+    const downPos = _diffMouseDownPos;
+    _diffMouseDownPos = null;
+    if (!ev || ev.shiftKey || ev.ctrlKey || ev.altKey || ev.metaKey || (ev.button && ev.button !== 0)) return;
+    if (downPos) {
+      const dist = Math.hypot(Number(ev.clientX || 0) - downPos.x, Number(ev.clientY || 0) - downPos.y);
+      if (dist > 5) return;
+    }
+    const sel = (typeof window !== "undefined" && window.getSelection) ? String(window.getSelection().toString() || "") : "";
+    if (sel) return;
+    const menu = document.getElementById("diffRowContextMenu");
+    if (menu && menu.style && menu.style.display && menu.style.display !== "none") return;
+    const boxEl = findClickedDiffBox(ev.target);
+    if (!boxEl) return;
+    void copyDiffBoxOldNew(boxEl);
   });
 }
 
@@ -282,7 +403,7 @@ function renderVisibleTextWithInvisibles(text, tip) {
   let inner = "";
   for (const ch of String(text || "")) {
     if (invMap[ch]) {
-      inner += `<span class="ch-inv" title="${tip}">${invMap[ch]}</span>`;
+      inner += `<span class="ch-inv" data-ch="${esc(ch)}" title="${tip}">${invMap[ch]}</span>`;
     } else if (ch === "\t") {
       inner += "  ";
     } else {
@@ -398,7 +519,7 @@ function _getDiffSanEngine() {
   return null;
 }
 
-function _wrapOldNewPairHtml(innerHtml, isSandhi) {
+function _wrapOldNewPairHtml(innerHtml, isSandhi, oldRaw = null, newRaw = null) {
   if (!innerHtml) return "";
   const mLead = innerHtml.match(/^([ \t]*)([\s\S]*)$/);
   const leadWs = (mLead && mLead[2]) ? mLead[1] : "";
@@ -407,7 +528,10 @@ function _wrapOldNewPairHtml(innerHtml, isSandhi) {
   const coreHtml = (mTrail && mTrail[1]) ? mTrail[1] : afterLead;
   const trailWs = (mTrail && mTrail[1]) ? mTrail[2] : "";
   const cls = isSandhi ? "ch-pair ch-sandhi" : "ch-pair";
-  return `${leadWs}<span class="${cls}">${coreHtml}</span>${trailWs}`;
+  const attrs = (oldRaw != null && newRaw != null)
+    ? ` data-old="${esc(oldRaw)}" data-new="${esc(newRaw)}"`
+    : "";
+  return `${leadWs}<span class="${cls}"${attrs}>${coreHtml}</span>${trailWs}`;
 }
 
 function findFirstVisibleRowMeta(rows, paneEl = null) {
@@ -494,9 +618,9 @@ function renderDiffSegments(segments, diffMode = null, sandhiContext = null) {
   const renderOneSegment = (idx) => {
     const s = segments[idx];
     if (s.op === "eq") return esc(s.text);
-    if (s.op === "del_nl") return `<span class="nl-badge nl-del" title="Removed line break">↵</span>`;
-    if (s.op === "ins_nl") return `<span class="nl-badge nl-ins" title="Inserted line break">↵</span>`;
     const isS = !!(sandhiMarks && sandhiMarks.has(idx));
+    if (s.op === "del_nl") return `<span class="nl-badge nl-del${isS ? " ch-sandhi" : ""}" title="${isS ? "Interword sandhi change | Removed line break" : "Removed line break"}">↵</span>`;
+    if (s.op === "ins_nl") return `<span class="nl-badge nl-ins${isS ? " ch-sandhi" : ""}" title="${isS ? "Interword sandhi change | Inserted line break" : "Inserted line break"}">↵</span>`;
     return renderChangedText(
       s.text,
       s.op,
@@ -577,12 +701,19 @@ function renderDiffSegments(segments, diffMode = null, sandhiContext = null) {
           }
         }
         let pairHtml = "";
+        let oldParts = [];
+        let newParts = [];
         let pairIsSandhi = false;
         for (let p = i; p <= lastContentIdx; p++) {
           if (sandhiMarks && sandhiMarks.has(p)) pairIsSandhi = true;
+          const ps = segments[p];
+          if (ps.op === "del") oldParts.push(ps.text || "");
+          else if (ps.op === "del_nl") oldParts.push("\n");
+          else if (ps.op === "ins") newParts.push(ps.text || "");
+          else if (ps.op === "ins_nl") newParts.push("\n");
           pairHtml += renderOneSegment(p);
         }
-        out += _wrapOldNewPairHtml(pairHtml, pairIsSandhi);
+        out += _wrapOldNewPairHtml(pairHtml, pairIsSandhi, oldParts.join(""), newParts.join(""));
         i = lastContentIdx;
         continue;
       }
@@ -961,6 +1092,7 @@ function _ensureDiffRowContextMenuEl() {
       .join("");
     menu.innerHTML = `
       ${extraHtml}
+      <button id="ctxCopyBoxDiffBtn" class="diff-ctx-item" type="button">📋 Copy this diff box (OLD / NEW)</button>
       <button id="ctxCopyBugDiffBtn" class="diff-ctx-item" type="button">📋 Copy diff for bug report</button>
       <button id="ctxSelectLineBtn" class="diff-ctx-item" type="button">☑ Select line</button>
     `;
@@ -975,6 +1107,15 @@ function _ensureDiffRowContextMenuEl() {
           if (meta && typeof it.onClick === "function") await it.onClick(meta, tgt);
         };
       }
+    }
+    const copyBoxBtn = document.getElementById("ctxCopyBoxDiffBtn");
+    if (copyBoxBtn) {
+      copyBoxBtn.onclick = async () => {
+        const tgt = _activeCtxTarget;
+        closeDiffRowContextMenu();
+        const boxEl = findClickedDiffBox(tgt);
+        if (boxEl) await copyDiffBoxOldNew(boxEl);
+      };
     }
     const copyBtn = document.getElementById("ctxCopyBugDiffBtn");
     if (copyBtn) {
@@ -1023,6 +1164,10 @@ function bindDiffRowContextMenu(getRowsFn, selectRowFn, getAppLabelFn = () => "d
     ev.preventDefault();
     _activeCtxMeta = meta;
     _activeCtxTarget = tgt;
+    const boxBtn = document.getElementById("ctxCopyBoxDiffBtn");
+    if (boxBtn && boxBtn.style) {
+      boxBtn.style.display = findClickedDiffBox(tgt) ? "block" : "none";
+    }
     for (const it of (_ctxExtraItems || [])) {
       const btn = document.getElementById(it.id);
       if (btn && btn.style) {
@@ -1292,8 +1437,8 @@ function _ensureDiffFindBarEl() {
     bar.innerHTML = `
       <input id="diffFindInput" type="text" placeholder="Find (supports ँ, ᳓, spans)..." oninput="runDiffFind(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault(); stepDiffFind(event.shiftKey ? -1 : 1);}else if(event.key==='Escape'){event.preventDefault(); closeDiffFindBar();}" />
       <span id="diffFindCount" class="diff-find-count"></span>
-      <button id="diffFindPrevBtn" class="small" type="button" title="Previous match (Shift+Enter)" onclick="stepDiffFind(-1)">▲</button>
-      <button id="diffFindNextBtn" class="small" type="button" title="Next match (Enter)" onclick="stepDiffFind(1)">▼</button>
+      <button id="diffFindPrevBtn" class="small" type="button" title="Previous match (Shift+Enter / Ctrl+Shift+G)" onclick="stepDiffFind(-1)">▲</button>
+      <button id="diffFindNextBtn" class="small" type="button" title="Next match (Enter / Ctrl+G)" onclick="stepDiffFind(1)">▼</button>
       <button id="diffFindCloseBtn" class="small" type="button" title="Close (Esc)" onclick="closeDiffFindBar()">✕</button>
     `;
     document.body.appendChild(bar);
@@ -1648,6 +1793,16 @@ function handleSharedDiffKeydown(ev, navCtx = null) {
   if ((ev.key === "f" || ev.key === "F") && ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey) {
     if (typeof ev.preventDefault === "function") ev.preventDefault();
     openDiffFindBar();
+    return true;
+  }
+  if ((ev.key === "g" || ev.key === "G") && ev.ctrlKey && !ev.altKey && !ev.metaKey) {
+    if (typeof ev.preventDefault === "function") ev.preventDefault();
+    const delta = ev.shiftKey ? -1 : 1;
+    if (!isDiffFindBarOpen()) {
+      openDiffFindBar();
+      return true;
+    }
+    stepDiffFind(delta);
     return true;
   }
   if (ev.key === "Escape") {

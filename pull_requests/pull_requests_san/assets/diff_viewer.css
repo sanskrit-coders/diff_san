@@ -360,7 +360,7 @@
     color: var(--sandhi-text);
     border-bottom: 2px solid var(--sandhi-border);
     border-radius: 3px;
-    padding: 0 2px;
+    padding: 0 3px;
     margin: 0 1px;
   }
   .ch-del.ch-has-sub.ch-sandhi,
@@ -703,4 +703,16 @@
   .checked-until-jump-btn:hover, .checked-until-clear-btn:hover {
     background: rgba(21, 128, 61, 0.14);
     border-radius: 4px;
+  }
+  td.code-cell .ch-pair,
+  td.code-cell .ch-del,
+  td.code-cell .ch-ins,
+  td.code-cell .nl-del,
+  td.code-cell .nl-ins {
+    cursor: pointer;
+  }
+  .diff-box-copied {
+    box-shadow: 0 0 0 2px #16a34a !important;
+    background: #dcfce7 !important;
+    transition: box-shadow 0.15s ease, background 0.15s ease;
   }

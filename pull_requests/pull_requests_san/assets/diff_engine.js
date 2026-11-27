@@ -980,6 +980,28 @@
     return [s1, s2];
   }
 
+  function _stripCommonCompoundEdges(a, b) {
+    let s1 = String(a || "");
+    let s2 = String(b || "");
+    while (true) {
+      const idx1 = s1.search(/[-\u2010]/);
+      const idx2 = s2.search(/[-\u2010]/);
+      if (idx1 <= 0 || idx1 !== idx2) break;
+      const pref = s1.slice(0, idx1 + 1);
+      if (pref !== s2.slice(0, idx2 + 1) || /\s/.test(pref)) break;
+      s1 = s1.slice(idx1 + 1);
+      s2 = s2.slice(idx2 + 1);
+    }
+    while (true) {
+      const m1 = s1.match(/([-\u2010][^\s-\u2010]+)$/);
+      const m2 = s2.match(/([-\u2010][^\s-\u2010]+)$/);
+      if (!m1 || !m2 || m1[1] !== m2[1]) break;
+      s1 = s1.slice(0, s1.length - m1[1].length);
+      s2 = s2.slice(0, s2.length - m2[1].length);
+    }
+    return [s1, s2];
+  }
+
   function _parseDevaWordList(text) {
     const cleaned = _cleanDevaForSandhi(text).trim();
     if (!cleaned) return [];
@@ -1080,9 +1102,11 @@
           outs.add(stem2 + voicedStop + "\u094d " + r);
         }
       }
-      if (c === "न" || c === "ङ" || c === "ण") {
-        const jg = _joinConsHalantWithVowel(l + c + "\u094d", r);
+      if ((c === "न" || c === "ङ" || c === "ण") && !l.endsWith(c + "\u094d" + c + "\u094d")) {
+        const dbl = l + c + "\u094d";
+        const jg = _joinConsHalantWithVowel(dbl, r);
         if (jg) outs.add(jg);
+        outs.add(dbl + " " + r);
       }
     }
 
@@ -1230,7 +1254,8 @@
   }
 
   function isInterwordSandhiPair(lhsText, rhsText, prevEqWord = "", nextEqWord = "") {
-    const [rawL, rawR] = _stripCommonNonDevaEdges(_cleanDevaForSandhi(lhsText).trim(), _cleanDevaForSandhi(rhsText).trim());
+    const [ndL, ndR] = _stripCommonNonDevaEdges(_cleanDevaForSandhi(lhsText).trim(), _cleanDevaForSandhi(rhsText).trim());
+    const [rawL, rawR] = _stripCommonCompoundEdges(ndL.trim(), ndR.trim());
     const cleanL = rawL.trim();
     const cleanR = rawR.trim();
     if (!cleanL || !cleanR || _canonDevaNasal(cleanL) === _canonDevaNasal(cleanR)) return false;
@@ -1258,10 +1283,8 @@
     if (wA.length >= 2 || wB.length >= 2) {
       if (tryWindow(wA, wB)) return true;
     }
-    const prevClean = prevEqWord ? _parseDevaWordList(prevEqWord) : [];
-    const nextClean = nextEqWord ? _parseDevaWordList(nextEqWord) : [];
-    const pW = prevClean.length ? prevClean[prevClean.length - 1] : "";
-    const nW = nextClean.length ? nextClean[0] : "";
+    const pW = prevEqWord ? (_trailingWordFromEq(prevEqWord).prefixWord || "") : "";
+    const nW = nextEqWord ? (_leadingWordFromEq(nextEqWord).suffixWord || "") : "";
     if (nW && tryWindow([...wA, nW], [...wB, nW])) return true;
     if (pW && tryWindow([pW, ...wA], [pW, ...wB])) return true;
     if (pW && nW && tryWindow([pW, ...wA, nW], [pW, ...wB, nW])) return true;
@@ -1302,12 +1325,22 @@
           if (streamSegs[idx] && streamSegs[idx].op === wantOp) {
             const t = (streamSegs[idx].text || "").trim();
             if (t) sandhiPieces.push(t);
+            else if (streamSegs[idx].text) sandhiPieces.push(streamSegs[idx].text);
           }
         }
         for (let i = 0; i < segments.length; i++) {
           if (segments[i].op !== wantOp) continue;
-          const t = (segments[i].text || "").trim();
-          if (t && sandhiPieces.some(p => p === t || p.includes(t) || t.includes(p))) marked.add(i);
+          const rawT = segments[i].text || "";
+          const t = rawT.trim();
+          if (t && sandhiPieces.some(p => p === t || p.includes(t) || t.includes(p))) {
+            marked.add(i);
+          } else if (!t && rawT) {
+            const pW = (i > 0 && segments[i - 1].op === "eq") ? _trailingWordFromEq(segments[i - 1].text).prefixWord : "";
+            const nW = (i + 1 < segments.length && segments[i + 1].op === "eq") ? _leadingWordFromEq(segments[i + 1].text).suffixWord : "";
+            if (pW && nW && sandhiPieces.some(p => p.includes(pW + " " + nW) || p.includes(pW + rawT + nW))) {
+              marked.add(i);
+            }
+          }
         }
       }
       return marked;
@@ -1315,26 +1348,27 @@
 
     let i = 0;
     const n = segments.length;
+    const isEditOrNl = op => op === "del" || op === "ins" || op === "del_nl" || op === "ins_nl";
     while (i < n) {
       const seg = segments[i];
-      if (seg.op !== "del" && seg.op !== "ins") {
+      if (!isEditOrNl(seg.op)) {
         i += 1;
         continue;
       }
       const runStart = i;
       let lhsMid = "";
       let rhsMid = "";
-      while (i < n && (segments[i].op === "del" || segments[i].op === "ins")) {
-        if (segments[i].op === "del") lhsMid += segments[i].text || "";
-        else rhsMid += segments[i].text || "";
+      let hasCharDiff = false;
+      while (i < n && isEditOrNl(segments[i].op)) {
+        const curOp = segments[i].op;
+        if (curOp === "del") { lhsMid += segments[i].text || ""; hasCharDiff = true; }
+        else if (curOp === "ins") { rhsMid += segments[i].text || ""; hasCharDiff = true; }
+        else if (curOp === "del_nl") lhsMid += " ";
+        else if (curOp === "ins_nl") rhsMid += " ";
         i += 1;
       }
-      let runEnd = i;
-      while (runEnd < n && (segments[runEnd].op === "del_nl" || segments[runEnd].op === "ins_nl")) runEnd += 1;
-      let pIdx = runStart - 1;
-      while (pIdx >= 0 && (segments[pIdx].op === "del_nl" || segments[pIdx].op === "ins_nl")) pIdx -= 1;
-      const prevSeg = pIdx >= 0 && segments[pIdx].op === "eq" ? segments[pIdx] : null;
-      const nextSeg = runEnd < n && segments[runEnd].op === "eq" ? segments[runEnd] : null;
+      const prevSeg = runStart > 0 && segments[runStart - 1].op === "eq" ? segments[runStart - 1] : null;
+      const nextSeg = i < n && segments[i].op === "eq" ? segments[i] : null;
       const prevInfo = prevSeg ? _trailingWordFromEq(prevSeg.text) : { prefixWord: "", touched: false };
       const nextInfo = nextSeg ? _leadingWordFromEq(nextSeg.text) : { suffixWord: "", touched: false };
 
@@ -1342,20 +1376,20 @@
       let testR = rhsMid;
       let pCtx = "";
       let nCtx = "";
-      if (prevInfo.touched && pIdx === runStart - 1 && prevInfo.prefixWord) {
+      if (prevInfo.touched && prevInfo.prefixWord) {
         testL = prevInfo.prefixWord + testL;
         testR = prevInfo.prefixWord + testR;
       } else if (prevInfo.prefixWord) {
         pCtx = prevInfo.prefixWord;
       }
-      if (nextInfo.touched && runEnd === i && nextInfo.suffixWord) {
+      if (nextInfo.touched && nextInfo.suffixWord) {
         testL = testL + nextInfo.suffixWord;
         testR = testR + nextInfo.suffixWord;
       } else if (nextInfo.suffixWord) {
         nCtx = nextInfo.suffixWord;
       }
 
-      if (isInterwordSandhiPair(testL, testR, pCtx, nCtx)) {
+      if ((hasCharDiff || prevInfo.touched || nextInfo.touched) && isInterwordSandhiPair(testL, testR, pCtx, nCtx)) {
         for (let k = runStart; k < i; k++) marked.add(k);
       }
     }
