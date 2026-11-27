@@ -1178,7 +1178,7 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     <input id="searchInput" type="text" placeholder="Filter Devanagari / path / sūtra..." style="width:210px;" oninput="debouncedSearch()" />
     <button id="undoBtn" class="small" title="Undo last review action (Ctrl+Z)" onclick="undoLastAction()" disabled>↶ Undo <span class="kbd-hint">Ctrl+Z</span></button>
     <button type="button" class="stat-pill filter-pill" id="statTotal" data-status-filter="all" title="Show all matching suggestions (Alt+L / Alt+0)" onclick="setStatusFilter('all')">0 suggestions <span class="kbd-hint">Alt+L</span></button>
-    <button type="button" class="stat-pill filter-pill pill-pending active" id="statPending" data-status-filter="pending" title="Show only pending suggestions without !! (Alt+P)" onclick="setStatusFilter('pending')">Pending: 0 <span class="kbd-hint">Alt+P</span></button>
+    <button type="button" class="stat-pill filter-pill pill-pending active" id="statPending" data-status-filter="pending" title="Show only pending suggestions without !! (Alt+U)" onclick="setStatusFilter('pending')">Pending: 0 <span class="kbd-hint">Alt+U</span></button>
     <button type="button" class="stat-pill filter-pill pill-accept" id="statAccept" data-status-filter="accept" title="Show only accepted suggestions (Alt+A)" onclick="setStatusFilter('accept')">Accepted: 0 <span class="kbd-hint">Alt+A</span></button>
     <button type="button" class="stat-pill filter-pill" id="statReject" data-status-filter="reject" title="Show only rejected suggestions (Alt+R)" style="background:var(--red-soft); color:var(--red); border-color:#f5b7b1;" onclick="setStatusFilter('reject')">Rejected: 0 <span class="kbd-hint">Alt+R</span></button>
     <button type="button" class="stat-pill filter-pill pill-hold" id="statHold" data-status-filter="has_feedback" title="Show only suggestions with !! comments (Alt+W)" onclick="setStatusFilter('has_feedback')">With !!: 0 <span class="kbd-hint">Alt+W</span></button>
@@ -1205,7 +1205,7 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     </div>
     <div id="cardsContainer"></div>
     <div class="pager">
-      <div style="color:var(--muted); font-size:11px;">Shortcuts: Alt+P Pending • Alt+A Accepted • Alt+R Rejected • Alt+W With !! • Alt+L/0 All • Alt+1 Accept • Alt+2 Reject • Alt+3 Feedback • Enter Submit • Ctrl+Enter Accept+Submit • Ctrl+R Rescan • Ctrl+Z Undo • j/k/↑/↓ navigate • ←/→ Collapse/Expand</div>
+      <div style="color:var(--muted); font-size:11px;">Shortcuts: Alt+U Pending • Alt+A Accepted • Alt+R Rejected • Alt+W With !! • Alt+L/0 All • Alt+1 Accept • Alt+2 Reject • Alt+3 Feedback • Enter Submit • Ctrl+Enter Accept+Submit • Ctrl+R Rescan • Ctrl+Z Undo • j/k/↑/↓ navigate • ←/→ Collapse/Expand</div>
       <div class="row">
         <button class="small" onclick="changePage(-1)">← Prev</button>
         <span id="pageLabelBottom" style="font-size:12px;">1 / 1</span>
@@ -2108,12 +2108,12 @@ document.addEventListener("keydown", (ev) => {
     }
   }
 
-  // Alt+P Pending, Alt+A Accepted, Alt+R Rejected, Alt+W With !!, Alt+L/0 All (work even when list is empty)
+  // Alt+U Pending, Alt+A Accepted, Alt+R Rejected, Alt+W With !!, Alt+L/0 All (work even when list is empty)
   if (ev.altKey && !ev.ctrlKey && !ev.metaKey) {
     const ak = (ev.key || "").toLowerCase();
     const ac = ev.code || "";
     const statusShortcuts = {
-      p: "pending",
+      u: "pending",
       a: "accept",
       r: "reject",
       w: "has_feedback",
@@ -2121,7 +2121,7 @@ document.addEventListener("keydown", (ev) => {
       "0": "all",
     };
     const codeShortcuts = {
-      KeyP: "pending",
+      KeyU: "pending",
       KeyA: "accept",
       KeyR: "reject",
       KeyW: "has_feedback",

@@ -597,11 +597,13 @@ def test_parse_patch_hunks_aligns_multiedits_and_edge_cases():
   deleted_fn = [r for r in ds_word[0].rows if r.left_num == 341]
   assert len(deleted_fn) == 1 and deleted_fn[0].kind == "del" and deleted_fn[0].right_num is None
 
-  # Single-pane space-separated word mode keeps changed space-separated strings atomic & matches across reflowed lines
+  # Single-pane space-separated word mode keeps changed space-separated strings atomic, matches across reflowed lines, and annotates intra-word sub_segments
   flow_para = [r for r in ds_word[0].inline_rows if r["left_num"] == 339]
   assert len(flow_para) == 1
-  assert {"op": "del", "text": "[^v5]आविध्याऽऽलोल्य[^v5]"} in flow_para[0]["segments"]
-  assert {"op": "ins", "text": "आविध्याऽऽलोल्य"} in flow_para[0]["segments"]
+  del_seg = next(s for s in flow_para[0]["segments"] if s["op"] == "del" and s["text"] == "[^v5]आविध्याऽऽलोल्य[^v5]")
+  assert any(s["op"] == "ins" and s["text"] == "आविध्याऽऽलोल्य" for s in flow_para[0]["segments"])
+  assert del_seg["sub_segments"][0] == {"op": "del", "text": "[^v5]"}
+  assert any(ss == {"op": "eq", "text": "आविध्याऽऽलोल्य"} for ss in del_seg["sub_segments"])
 
   reflow_patch = (
     "@@ -1,4 +1,3 @@\n"
@@ -932,9 +934,13 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
 
   assert '--dev: "Adishila SanVedic", "Tiro Devanagari Sanskrit", "Noto Sans Devanagari", "Annapurna SIL", serif;' in html_src
   assert "--dev-font-size: 26px;" in html_src
-  # Comment & review typography matches the main diff pane (--dev-font-size without -3px/-4px shrinking)
-  assert "calc(var(--dev-font-size) - 3px)" not in html_src
-  assert "calc(var(--dev-font-size) - 4px)" not in html_src
+  assert "font-size: 20px;" in html_src
+  assert "--ins-char: #fef3c7;" in html_src
+  assert "#9ef0b5" not in html_src
+  assert "Alt+P" not in html_src and "KeyP" not in html_src
+  # Comment & review typography matches the main diff pane (var(--dev-font-size))
+  for css_rule in (".comment-body {", ".review-textarea {", ".pr-body-box {", "input.reply-input {", ".thread-resolved-preview {"):
+    assert "font-size: var(--dev-font-size);" in html_src.split(css_rule)[1].split("}")[0]
   assert 'id="reloadBtn"' in html_src and 'onclick="reloadUi()"' in html_src
   assert 'id="singlePaneChk" type="checkbox" checked' in html_src
   assert '<option value="word" selected>Word (space-separated)</option>' in html_src
@@ -1047,8 +1053,20 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
                 "right_num": 2,
                 "in_diff_hunk": True,
                 "segments": [
-                  {"op": "del", "text": "प्रणयो \u200bऽस्येति"},
-                  {"op": "ins", "text": "प्रणयोऽस्येति"},
+                  {
+                    "op": "del",
+                    "text": "प्रणयो \u200bऽस्येति",
+                    "sub_segments": [
+                      {"op": "eq", "text": "प्रणयो"},
+                      {"op": "del", "text": " \u200b"},
+                      {"op": "eq", "text": "ऽस्येति"},
+                    ],
+                  },
+                  {
+                    "op": "ins",
+                    "text": "प्रणयोऽस्येति",
+                    "sub_segments": [{"op": "eq", "text": "प्रणयोऽस्येति"}],
+                  },
                 ],
               },
               {
@@ -1131,21 +1149,28 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
     + "\n(async () => {\n"
     "  await init();\n"
     "  const html = elems['filesDiffContainer'].innerHTML;\n"
-    "  if (!html.includes('diff-table-single') || !html.includes('class=\"ch-del\"') || !html.includes('class=\"ch-ins\"') || html.includes('class=\"ch-ws\"')) {\n"
-    "    throw new Error('Default single-pane word diff / space highlight removal check failed: ' + html);\n"
+    "  if (!html.includes('diff-table-single') || !html.includes('class=\"ch-del ch-has-sub\"') || !html.includes('class=\"ch-ins ch-has-sub\"') || !html.includes('class=\"ch-sub\"') || html.includes('class=\"ch-ws\"')) {\n"
+    "    throw new Error('Default single-pane word diff / intra-word sub-highlight / space highlight removal check failed: ' + html);\n"
+    "  }\n"
+    "  if (!html.includes('Reply</button>') || !html.split('Reply</button>')[1].split('</div>')[0].includes('Resolve</button>')) {\n"
+    "    throw new Error('Resolve button is not placed next to Reply button: ' + html);\n"
     "  }\n"
     "  const trimmedSpan = renderChangedText(' newword ', 'ins');\n"
     "  if (!html.includes('[ZWSP]') || !html.includes('class=\"ch-inv\"') || !trimmedSpan.startsWith(' <span class=\"ch-ins\"') || !trimmedSpan.includes('>newword</span> ')) {\n"
     "    throw new Error('ch-inv or leading/trailing space trimming check failed: ' + trimmedSpan);\n"
     "  }\n"
-    "  // Toggle to 2-Pane LHS/RHS with Alt+P and back to Single pane\n"
+    "  // Toggle to 2-Pane LHS/RHS with Alt+S (NOT Alt+P) and back to Single pane\n"
     "  listeners['keydown']({ key: 'p', code: 'KeyP', altKey: true, ctrlKey: false, metaKey: false, shiftKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
+    "  if (elems['filesDiffContainer'].innerHTML.includes('lhs-cell')) {\n"
+    "    throw new Error('Alt+P unexpectedly toggled 2-pane mode');\n"
+    "  }\n"
+    "  listeners['keydown']({ key: 's', code: 'KeyS', altKey: true, ctrlKey: false, metaKey: false, shiftKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
     "  const twoPaneHtml = elems['filesDiffContainer'].innerHTML;\n"
     "  if (twoPaneHtml.includes('diff-table-single') || !twoPaneHtml.includes('lhs-cell') || !twoPaneHtml.includes('rhs-cell') || twoPaneHtml.includes('class=\"ch-ws\"')) {\n"
-    "    throw new Error('Alt+P 2-pane switch failed: ' + twoPaneHtml);\n"
+    "    throw new Error('Alt+S 2-pane switch failed: ' + twoPaneHtml);\n"
     "  }\n"
-    "  listeners['keydown']({ key: 'p', code: 'KeyP', altKey: true, ctrlKey: false, metaKey: false, shiftKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
-    "  if (!elems['filesDiffContainer'].innerHTML.includes('diff-table-single')) throw new Error('Alt+P did not switch back to single pane');\n"
+    "  listeners['keydown']({ key: 's', code: 'KeyS', altKey: true, ctrlKey: false, metaKey: false, shiftKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
+    "  if (!elems['filesDiffContainer'].innerHTML.includes('diff-table-single')) throw new Error('Alt+S did not switch back to single pane');\n"
     "  if (!html.includes('<img src=\"https://github.com/user-attachments/assets/abc?x=1&amp;y=2&amp;k=`v`\"') || html.includes('<script>')) {\n"
     "    throw new Error('Image attachment or script escaping failed: ' + html);\n"
     "  }\n"

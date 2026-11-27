@@ -548,6 +548,59 @@ def _combine_aligned_pair_segments(r: AlignedDiffRow) -> list[dict[str, str]]:
   return _merge_segments(out)
 
 
+def _split_outer_ws(text: str) -> tuple[str, str, str]:
+  m = re.match(r"^([ \t]*)(.*?)([ \t]*)$", text, re.S)
+  if not m:
+    return "", text, ""
+  return m.group(1), m.group(2), m.group(3)
+
+
+def _annotate_word_sub_segments(
+  flow_rows: list[dict[str, Any]],
+  *,
+  normalize: str = "none",
+  ignore_punct: bool = False,
+) -> None:
+  """Attach intra-word grapheme ``sub_segments`` to paired del/ins spans in word diff mode."""
+  for fr in flow_rows:
+    segs = fr.get("segments") or []
+    i = 0
+    while i < len(segs):
+      if segs[i].get("op") != "del":
+        i += 1
+        continue
+      j = i + 1
+      while j < len(segs) and segs[j].get("op") in ("del_nl", "ins_nl"):
+        j += 1
+      if j >= len(segs) or segs[j].get("op") != "ins":
+        i += 1
+        continue
+      l_lead, l_core, l_trail = _split_outer_ws(segs[i].get("text") or "")
+      r_lead, r_core, r_trail = _split_outer_ws(segs[j].get("text") or "")
+      if l_core and r_core:
+        l_sub, r_sub = compute_char_diff(
+          l_core,
+          r_core,
+          mode="grapheme",
+          normalize=normalize,
+          ignore_punct=ignore_punct,
+        )
+        if any(s.get("op") == "eq" and (s.get("text") or "").strip() for s in l_sub):
+          full_l = (
+            ([{"op": "eq", "text": l_lead}] if l_lead else [])
+            + l_sub
+            + ([{"op": "eq", "text": l_trail}] if l_trail else [])
+          )
+          full_r = (
+            ([{"op": "eq", "text": r_lead}] if r_lead else [])
+            + r_sub
+            + ([{"op": "eq", "text": r_trail}] if r_trail else [])
+          )
+          segs[i]["sub_segments"] = _merge_segments(full_l)
+          segs[j]["sub_segments"] = _merge_segments(full_r)
+      i = j + 1
+
+
 def build_inline_flow_rows(
   rows: list[AlignedDiffRow],
   *,
@@ -596,6 +649,8 @@ def build_inline_flow_rows(
     for fr in flow_rows:
       fr["in_diff_hunk"] = any_in_hunk
     out.extend(flow_rows)
+  if char_diff_mode == "word":
+    _annotate_word_sub_segments(out, normalize=normalize, ignore_punct=ignore_punct)
   return out
 
 

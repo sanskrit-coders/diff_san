@@ -380,7 +380,7 @@ def main() -> None:
   try:
     with sync_playwright() as p:
       browser = p.chromium.launch()
-      page = browser.new_page(viewport={"width": 1440, "height": 960}, device_scale_factor=2)
+      page = browser.new_page(viewport={"width": 1440, "height": 1080}, device_scale_factor=2)
       page.set_default_timeout(8000)
       page.goto(base_url, wait_until="networkidle")
       page.wait_for_selector(".diff-table-single")

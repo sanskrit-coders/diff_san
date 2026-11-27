@@ -16,12 +16,18 @@
     --accent-soft: #fdf3e7;
     --green: #156236;
     --green-soft: #eafaf1;
-    --green-row: #f3fff6;
-    --green-char: #9ef0b5;
+    --ins-row: #fefce8;
+    --ins-char: #fef3c7;
+    --ins-word-base: #fef9c3;
+    --ins-char-sub: #fde047;
+    --ins-border: #ca8a04;
+    --ins-text: #713f12;
     --red: #943126;
     --red-soft: #fdeeee;
     --red-row: #fff5f5;
-    --red-char: #ffb8b8;
+    --red-char: #ffd6d6;
+    --del-word-base: #fff0f0;
+    --del-char-sub: #fca5a5;
     --amber: #9c5700;
     --amber-soft: #fff8e1;
     --blue: #1b4f72;
@@ -35,7 +41,7 @@
     background: var(--bg);
     color: var(--text);
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    font-size: 14px;
+    font-size: 20px;
     line-height: 1.45;
     display: flex;
     flex-direction: column;
@@ -58,17 +64,17 @@
     border-radius: 6px;
     background: #fff;
     color: var(--text);
-    font-size: 13px;
+    font-size: 18px;
     font-family: inherit;
   }
   button {
-    padding: 5px 11px;
+    padding: 6px 12px;
     border: 1px solid var(--border);
     border-radius: 6px;
     background: var(--surface-2);
     color: var(--text);
     cursor: pointer;
-    font-size: 12.5px;
+    font-size: 17px;
     font-weight: 500;
   }
   button:hover:not(:disabled) { background: #efeae0; }
@@ -79,15 +85,15 @@
   button.green:hover:not(:disabled) { background: #104b29; }
   button.danger { background: var(--red); color: #fff; border-color: var(--red); }
   button.danger:hover:not(:disabled) { background: #74251c; }
-  button.small { padding: 3px 7px; font-size: 11.5px; }
+  button.small { padding: 4px 9px; font-size: 15.5px; }
 
   .pill {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    padding: 2px 8px;
+    padding: 2px 9px;
     border-radius: 999px;
-    font-size: 11.5px;
+    font-size: 15px;
     font-weight: 600;
     border: 1px solid var(--border);
     background: var(--surface-2);
@@ -98,9 +104,9 @@
   .pill-amber { background: var(--amber-soft); color: var(--amber); border-color: #f9e79f; }
   .pill-blue { background: var(--blue-soft); color: var(--blue); border-color: #aed6f1; }
   button.filter-pill {
-    padding: 3px 9px;
+    padding: 4px 11px;
     border-radius: 999px;
-    font-size: 12px;
+    font-size: 16px;
     font-weight: 600;
     cursor: pointer;
     transition: box-shadow 0.12s, filter 0.12s;
@@ -108,7 +114,7 @@
   button.filter-pill:hover { filter: brightness(0.96); }
   button.filter-pill.active { box-shadow: 0 0 0 2px var(--accent); }
   .kbd-hint {
-    font-size: 10px;
+    font-size: 13px;
     font-family: monospace;
     color: var(--muted);
     background: rgba(0,0,0,0.05);
@@ -118,7 +124,7 @@
 
   .workspace {
     display: grid;
-    grid-template-columns: 330px minmax(0, 1fr);
+    grid-template-columns: 375px minmax(0, 1fr);
     flex: 1;
     min-height: 0;
   }
@@ -153,7 +159,7 @@
     flex: 1;
   }
   .pane-title {
-    font-size: 11.5px;
+    font-size: 16px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -164,14 +170,14 @@
   }
 
   .pr-item, .file-item {
-    padding: 7px 9px;
+    padding: 8px 10px;
     border-radius: 7px;
     border: 1px solid var(--border);
     background: var(--surface-2);
     cursor: pointer;
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 4px;
   }
   .pr-item:hover, .file-item:hover { background: #f2ede2; }
   .pr-item.active, .file-item.active {
@@ -179,10 +185,10 @@
     border-color: var(--accent);
     box-shadow: inset 3px 0 0 var(--accent);
   }
-  .pr-item-title { font-family: var(--dev); font-weight: 600; font-size: calc(var(--dev-font-size) - 6px); word-break: break-word; }
+  .pr-item-title { font-family: var(--dev); font-weight: 600; font-size: calc(var(--dev-font-size) - 3px); word-break: break-word; }
   .pr-title-heading { margin: 6px 0 2px 0; font-family: var(--dev); font-size: var(--dev-font-size); line-height: 1.35; }
   .pr-item-meta, .file-item-meta {
-    font-size: 11px;
+    font-size: 15px;
     color: var(--muted);
     display: flex;
     gap: 6px;
@@ -215,7 +221,7 @@
     color: var(--red);
     border-radius: 7px;
     padding: 8px 12px;
-    font-size: 13px;
+    font-size: 17px;
     display: none;
   }
   .pr-body-box {
@@ -250,8 +256,8 @@
     background: var(--amber-soft);
     border: 1px solid #f5cba7;
     border-radius: 6px;
-    padding: 5px 8px;
-    font-size: 12px;
+    padding: 6px 10px;
+    font-size: 16px;
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
@@ -266,9 +272,9 @@
     background: var(--surface-2);
   }
   .radio-group label {
-    padding: 4px 11px;
+    padding: 5px 12px;
     cursor: pointer;
-    font-size: 12.5px;
+    font-size: 17px;
     font-weight: 500;
     display: inline-flex;
     align-items: center;
@@ -297,12 +303,12 @@
   .active-badge {
     display: none;
     align-items: center;
-    padding: 1px 7px;
+    padding: 1px 8px;
     border-radius: 999px;
     background: var(--accent);
     color: #fff;
     font-family: system-ui, sans-serif;
-    font-size: 10px;
+    font-size: 13px;
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -324,7 +330,7 @@
     background: #edf2f7;
     color: var(--blue);
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 11.5px;
+    font-size: 15px;
     padding: 4px 10px;
     border-top: 1px solid var(--border);
     border-bottom: 1px solid var(--border);
@@ -335,9 +341,9 @@
     border-collapse: collapse;
     table-layout: fixed;
   }
-  table.diff-table col.col-num { width: 48px; }
-  table.diff-table col.col-code { width: calc(50% - 65px); }
-  table.diff-table col.col-act { width: 34px; }
+  table.diff-table col.col-num { width: 58px; }
+  table.diff-table col.col-code { width: calc(50% - 78px); }
+  table.diff-table col.col-act { width: 40px; }
 
   table.diff-table td {
     vertical-align: top;
@@ -346,7 +352,7 @@
   }
   td.ln {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 11.5px;
+    font-size: 15px;
     color: var(--muted);
     text-align: right;
     user-select: none;
@@ -375,9 +381,9 @@
     color: var(--muted);
     border-radius: 4px;
     padding: 1px 4px;
-    font-size: 12px;
+    font-size: 16px;
     cursor: pointer;
-    opacity: 0.45;
+    opacity: 0.5;
   }
   tr.diff-row:hover .add-comment-btn,
   .add-comment-btn:focus {
@@ -389,9 +395,9 @@
 
   tr.diff-row-context td.code-cell { background: #ffffff; }
   tr.diff-row-modify td.lhs-cell { background: var(--red-row); }
-  tr.diff-row-modify td.rhs-cell { background: var(--green-row); }
+  tr.diff-row-modify td.rhs-cell { background: var(--ins-row); }
   tr.diff-row-del td.lhs-cell { background: #ffecec; color: #78281f; }
-  tr.diff-row-add td.rhs-cell { background: #e6ffed; color: #145a32; }
+  tr.diff-row-add td.rhs-cell { background: var(--ins-row); color: var(--ins-text); }
   td.diff-empty {
     background: repeating-linear-gradient(
       -45deg,
@@ -411,17 +417,39 @@
     margin: 0 1px;
   }
   .ch-ins {
-    background: var(--green-char);
-    color: #0f5132;
-    border-bottom: 2px solid #16a34a;
+    background: var(--ins-char);
+    color: var(--ins-text);
+    border-bottom: 2px solid var(--ins-border);
     border-radius: 3px;
     padding: 0 2px;
     margin: 0 1px;
   }
+  .ch-del.ch-has-sub {
+    background: var(--del-word-base);
+    border-bottom: 1px dashed #dc2626;
+  }
+  .ch-ins.ch-has-sub {
+    background: var(--ins-word-base);
+    border-bottom: 1px dashed var(--ins-border);
+  }
+  .ch-del .ch-sub {
+    background: var(--del-char-sub);
+    color: #7f1d1d;
+    border-bottom: 2px solid #dc2626;
+    border-radius: 2px;
+    padding: 0 1px;
+  }
+  .ch-ins .ch-sub {
+    background: var(--ins-char-sub);
+    color: #713f12;
+    border-bottom: 2px solid #b45309;
+    border-radius: 2px;
+    padding: 0 1px;
+  }
   .nl-badge {
     display: inline-block;
     font-family: ui-monospace, monospace;
-    font-size: 11px;
+    font-size: 14px;
     font-weight: 700;
     border-radius: 3px;
     padding: 0 3px;
@@ -429,18 +457,18 @@
     vertical-align: middle;
   }
   .nl-del { background: var(--red-char); color: #7f1d1d; }
-  .nl-ins { background: var(--green-char); color: #0f5132; }
-  table.diff-table-single col.col-num { width: 46px; }
-  table.diff-table-single col.col-single-code { width: calc(100% - 126px); }
-  table.diff-table-single col.col-act { width: 34px; }
+  .nl-ins { background: var(--ins-char); color: var(--ins-text); }
+  table.diff-table-single col.col-num { width: 56px; }
+  table.diff-table-single col.col-single-code { width: calc(100% - 152px); }
+  table.diff-table-single col.col-act { width: 40px; }
   tr.single-row-modify td.single-code-cell { background: #ffffff; border-right: 1px solid #e7e1d3; }
   tr.single-row-del td.single-code-cell { background: #ffecec; color: #78281f; border-right: 1px solid #e7e1d3; }
-  tr.single-row-add td.single-code-cell { background: #e6ffed; color: #145a32; border-right: 1px solid #e7e1d3; }
+  tr.single-row-add td.single-code-cell { background: var(--ins-row); color: var(--ins-text); border-right: 1px solid #e7e1d3; }
   tr.single-row-context td.single-code-cell { background: #ffffff; border-right: 1px solid #e7e1d3; }
   .ch-inv {
     display: inline-block;
     font-family: ui-monospace, monospace;
-    font-size: 10px;
+    font-size: 13px;
     font-weight: 700;
     background: var(--amber-soft);
     color: var(--amber);
@@ -478,7 +506,7 @@
   details.thread-box.resolved > summary::-webkit-details-marker { display: none; }
   .res-caret {
     display: inline-block;
-    font-size: 11px;
+    font-size: 15px;
     color: var(--muted);
     transition: transform 0.12s ease;
   }
@@ -537,8 +565,8 @@
   }
   .pr-item-browser-btn {
     margin-left: auto;
-    padding: 1px 5px;
-    font-size: 11px;
+    padding: 2px 7px;
+    font-size: 15px;
     line-height: 1.2;
   }
   .merge-banner {
@@ -587,8 +615,8 @@
 <body>
 <header>
   <div class="row">
-    <strong style="font-size:15px;">GitHub PR Character-Level Reviewer</strong>
-    <label>Owner/Org: <input id="ownerInput" type="text" value="vishvAsa" style="width:155px;" /></label>
+    <strong style="font-size:21px;">GitHub PR Character-Level Reviewer</strong>
+    <label>Owner/Org: <input id="ownerInput" type="text" value="vishvAsa" style="width:170px;" /></label>
     <label>State:
       <select id="stateSelect" onchange="setStateFilter(this.value)">
         <option value="open" selected>Open</option>
@@ -602,11 +630,11 @@
         <option value="">All repos</option>
       </select>
     </label>
-    <input id="prSearchInput" type="text" placeholder="Filter PRs (repo / title / author)..." style="width:200px;" oninput="applyPrFilters()" />
+    <input id="prSearchInput" type="text" placeholder="Filter PRs (repo / title / author)..." style="width:230px;" oninput="applyPrFilters()" />
     <button id="refreshAllBtn" class="primary" title="Refresh PRs from GitHub (Ctrl+R)" onclick="refreshAll()">↻ Refresh <span class="kbd-hint" style="background:rgba(255,255,255,0.2); color:#fff;">Ctrl+R</span></button>
     <button id="reloadBtn" class="small" title="Reload UI (Ctrl+R refreshes from GitHub)" onclick="reloadUi()">↻ Reload</button>
     <span id="authBadge" class="pill">Checking auth...</span>
-    <span id="statusText" style="color:var(--muted); font-size:12px;"></span>
+    <span id="statusText" style="color:var(--muted); font-size:16px;"></span>
   </div>
   <div class="row">
     <label>Diff unit:
@@ -625,17 +653,17 @@
         <option value="nfkd">NFKD</option>
       </select>
     </label>
-    <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;" title="Ignore Unicode punctuation differences when comparing words/lines">
+    <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;" title="Ignore Unicode punctuation differences when comparing words/lines">
       <input id="ignorePunctChk" type="checkbox" onchange="changeDiffMode()" /> Ignore punct
     </label>
-    <label title="Matches VS Code (25) / IntelliJ IDEA (28)">Editor font (px): <input id="fontPxInput" type="number" min="14" max="42" value="26" style="width:62px;" onchange="applyEditorFont(this.value)" /></label>
-    <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;" title="Single pane inline word flow without line matching (Alt+P)">
-      <input id="singlePaneChk" type="checkbox" checked onchange="toggleSinglePane(this.checked)" /> Single pane <span class="kbd-hint">Alt+P</span>
+    <label title="Matches VS Code (25) / IntelliJ IDEA (28)">Editor font (px): <input id="fontPxInput" type="number" min="14" max="42" value="26" style="width:74px;" onchange="applyEditorFont(this.value)" /></label>
+    <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;" title="Single pane inline word flow without line matching (Alt+S)">
+      <input id="singlePaneChk" type="checkbox" checked onchange="toggleSinglePane(this.checked)" /> Single pane <span class="kbd-hint">Alt+S</span>
     </label>
-    <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;">
+    <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;">
       <input id="changedOnlyChk" type="checkbox" onchange="renderActivePrFiles()" /> Changed lines only
     </label>
-    <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;">
+    <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;">
       <input id="wrapLinesChk" type="checkbox" checked onchange="renderActivePrFiles()" /> Wrap long lines
     </label>
     <button id="gdSelectionBtn" class="small" title="Look up currently selected text in GoldenDict" onclick="lookupSelectedGoldenDict()">📖 GoldenDict Selection</button>
@@ -669,7 +697,7 @@
     <div id="prContainer">
       <div class="card">Loading pull requests...</div>
     </div>
-    <div style="color:var(--muted); font-size:11px; padding:4px 0;">Shortcuts: Alt+P Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+Enter Submit • Ctrl+R Refresh • j/k/↑/↓ navigate files • ←/→ Collapse/Expand • [/] Prev/Next PR • Esc Close composer</div>
+    <div style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+Enter Submit • Ctrl+R Refresh • j/k/↑/↓ navigate files • ←/→ Collapse/Expand • [/] Prev/Next PR • Esc Close composer</div>
   </main>
 </div>
 
@@ -802,7 +830,28 @@ function codepointTitle(txt) {
   return pts.join(" | ");
 }
 
-function renderChangedText(txt, op) {
+function renderVisibleTextWithInvisibles(text, tip) {
+  const invMap = {
+    "\u200b": "[ZWSP]",
+    "\u200c": "[ZWNJ]",
+    "\u200d": "[ZWJ]",
+    "\ufeff": "[BOM]",
+    "\u00a0": "[NBSP]",
+  };
+  let inner = "";
+  for (const ch of String(text || "")) {
+    if (invMap[ch]) {
+      inner += `<span class="ch-inv" title="${tip}">${invMap[ch]}</span>`;
+    } else if (ch === "\t") {
+      inner += "  ";
+    } else {
+      inner += esc(ch);
+    }
+  }
+  return inner;
+}
+
+function renderChangedText(txt, op, subSegments = null) {
   const cls = op === "del" ? "ch-del" : "ch-ins";
   const raw = String(txt || "");
   let lead = "";
@@ -815,24 +864,36 @@ function renderChangedText(txt, op) {
     trail = m[3];
   }
   const tip = esc(codepointTitle(core));
-  const invMap = {
-    "\u200b": "[ZWSP]",
-    "\u200c": "[ZWNJ]",
-    "\u200d": "[ZWJ]",
-    "\ufeff": "[BOM]",
-    "\u00a0": "[NBSP]",
-  };
-  let inner = "";
-  for (const ch of core) {
-    if (invMap[ch]) {
-      inner += `<span class="ch-inv" title="${tip}">${invMap[ch]}</span>`;
-    } else if (ch === "\t") {
-      inner += "  ";
-    } else {
-      inner += esc(ch);
+  const fmtWs = s => esc(s.replace(/\t/g, "  "));
+
+  if (Array.isArray(subSegments) && subSegments.length && core) {
+    const trimmed = subSegments.map(s => ({ op: s.op, text: String(s.text || "") })).filter(s => s.text);
+    let subLead = "";
+    let subTrail = "";
+    if (trimmed.length && trimmed[0].op === "eq") {
+      const ml = trimmed[0].text.match(/^([ \t]*)([\s\S]*)$/);
+      if (ml) {
+        subLead = ml[1];
+        trimmed[0].text = ml[2];
+      }
+    }
+    if (trimmed.length && trimmed[trimmed.length - 1].op === "eq") {
+      const mt = trimmed[trimmed.length - 1].text.match(/^([\s\S]*?)([ \t]*)$/);
+      if (mt) {
+        trimmed[trimmed.length - 1].text = mt[1];
+        subTrail = mt[2];
+      }
+    }
+    const innerSub = trimmed.filter(s => s.text).map(s => {
+      const htmlPart = renderVisibleTextWithInvisibles(s.text, tip);
+      return (s.op === "del" || s.op === "ins") ? `<span class="ch-sub">${htmlPart}</span>` : htmlPart;
+    }).join("");
+    if (innerSub) {
+      return `${fmtWs(subLead || lead)}<span class="${cls} ch-has-sub" title="${tip}">${innerSub}</span>${fmtWs(subTrail || trail)}`;
     }
   }
-  const fmtWs = s => esc(s.replace(/\t/g, "  "));
+
+  const inner = renderVisibleTextWithInvisibles(core, tip);
   return `${fmtWs(lead)}<span class="${cls}" title="${tip}">${inner}</span>${fmtWs(trail)}`;
 }
 
@@ -847,7 +908,7 @@ function renderDiffSegments(segments) {
     } else if (seg.op === "ins_nl") {
       out += `<span class="nl-badge nl-ins" title="Inserted line break">↵</span>`;
     } else {
-      out += renderChangedText(seg.text, seg.op);
+      out += renderChangedText(seg.text, seg.op, seg.sub_segments);
     }
   }
   return out;
@@ -1155,7 +1216,7 @@ function renderPrSidebar() {
   document.getElementById("prCountLabel").textContent = filteredPrs.length;
   const el = document.getElementById("prList");
   if (!filteredPrs.length) {
-    el.innerHTML = `<div style="color:var(--muted); font-size:12px;">No matching PRs.</div>`;
+    el.innerHTML = `<div style="color:var(--muted); font-size:16px;">No matching PRs.</div>`;
     return;
   }
   el.innerHTML = filteredPrs.map((p, idx) => {
@@ -1378,7 +1439,7 @@ function renderFileSidebar() {
   document.getElementById("fileCountLabel").textContent = files.length;
   const el = document.getElementById("fileList");
   if (!files.length) {
-    el.innerHTML = `<div style="color:var(--muted); font-size:12px;">No active PR files.</div>`;
+    el.innerHTML = `<div style="color:var(--muted); font-size:16px;">No active PR files.</div>`;
     return;
   }
   el.innerHTML = files.map((f, fi) => {
@@ -1386,7 +1447,7 @@ function renderFileSidebar() {
     const tc = threadCounts[f.filename] || 0;
     const isConflict = conflictPaths.has(f.filename);
     return `<div class="file-item ${active}" onclick="selectFileFilterIdx(${fi})">
-      <div class="mono" style="font-size:11.5px; word-break:break-all; font-weight:600;">${esc(f.filename)}</div>
+      <div class="mono" style="font-size:15.5px; word-break:break-all; font-weight:600;">${esc(f.filename)}</div>
       <div class="file-item-meta">
         <span class="pill" style="padding:0 5px;">${esc(f.status)}</span>
         <span style="color:var(--green);">+${f.additions}</span>
@@ -1447,13 +1508,13 @@ function renderConflictHunkRowsHtml(hunk) {
         <td class="code-cell single-code-cell">${renderDiffSegments(r.segments)}</td>
       </tr>`).join("");
     return `<table class="diff-table diff-table-single ${wrapClass}">
-      <colgroup><col class="col-num" /><col class="col-num" /><col style="width:calc(100% - 92px);" /></colgroup>
+      <colgroup><col class="col-num" /><col class="col-num" /><col style="width:calc(100% - 112px);" /></colgroup>
       <tbody>${rowsHtml}</tbody>
     </table>`;
   }
   const rows = hunk?.rows || [];
   if (!rows.length) {
-    return `<div style="padding:6px 10px; font-size:12px; color:var(--muted);">No line-level conflict markers extracted.</div>`;
+    return `<div style="padding:6px 10px; font-size:16px; color:var(--muted);">No line-level conflict markers extracted.</div>`;
   }
   const rowsHtml = rows.map(r => {
     const lhsHtml = r.left_text == null ? "" : renderDiffSegments(r.lhs_segments);
@@ -1468,7 +1529,7 @@ function renderConflictHunkRowsHtml(hunk) {
     </tr>`;
   }).join("");
   return `<table class="diff-table ${wrapClass}">
-    <colgroup><col class="col-num" /><col style="width:calc(50% - 48px);" /><col class="col-num" /><col style="width:calc(50% - 48px);" /></colgroup>
+    <colgroup><col class="col-num" /><col style="width:calc(50% - 58px);" /><col class="col-num" /><col style="width:calc(50% - 58px);" /></colgroup>
     <tbody>${rowsHtml}</tbody>
   </table>`;
 }
@@ -1491,9 +1552,9 @@ function renderMergeabilitySection(detail, ms) {
           return `<div class="conflict-item">
             <div class="conflict-item-header">
               <div class="row" style="gap:6px;">
-                <span class="mono" style="font-size:12px; font-weight:700; color:var(--red);">${esc(c.filename)}</span>
-                <span class="pill pill-red" style="padding:0 5px;">${esc(conflictReasonLabel(c))}</span>
-                ${hunks.length ? `<span class="pill" style="padding:0 5px;">${hunks.length} conflict hunk${hunks.length === 1 ? '' : 's'}</span>` : ""}
+                <span class="mono" style="font-size:16px; font-weight:700; color:var(--red);">${esc(c.filename)}</span>
+                <span class="pill pill-red" style="padding:0 6px;">${esc(conflictReasonLabel(c))}</span>
+                ${hunks.length ? `<span class="pill" style="padding:0 6px;">${hunks.length} conflict hunk${hunks.length === 1 ? '' : 's'}</span>` : ""}
               </div>
               <button class="small" onclick="jumpToConflictFile(${ci})">Jump to File</button>
             </div>
@@ -1502,14 +1563,14 @@ function renderMergeabilitySection(detail, ms) {
         }).join("")}
       </div>`
     : (ms.cls === "dirty"
-      ? `<div style="font-size:12px; color:var(--red);">GitHub reports merge conflicts on this PR, but line-level details could not be fetched for these changes. Open on GitHub to resolve or click Refresh PR.</div>`
+      ? `<div style="font-size:16px; color:var(--red);">GitHub reports merge conflicts on this PR, but line-level details could not be fetched for these changes. Open on GitHub to resolve or click Refresh PR.</div>`
       : "");
 
   return `<div id="mergeabilityBox" class="merge-banner ${ms.cls}">
     <div class="row" style="justify-content:space-between;">
       <div class="row" style="gap:7px;">
         ${ms.badgeHtml}
-        <span style="font-size:12.5px; font-weight:600;">${esc(ms.headline)}</span>
+        <span style="font-size:17px; font-weight:600;">${esc(ms.headline)}</span>
       </div>
       <div class="row" style="gap:6px;">
         ${detail.mergeable_state ? `<span class="pill mono" style="padding:0 6px;">state: ${esc(detail.mergeable_state)}</span>` : ""}
@@ -1540,8 +1601,8 @@ function renderChangelistBarHtml() {
     const sha7 = ac?.short_sha || selectedChangelistSha.slice(0, 7);
     const dt = shortDate(ac?.committed_at || "");
     const linkHtml = ac?.url
-      ? `<a class="mono" style="font-size:12px; font-weight:700; color:var(--blue); text-decoration:none;" href="${esc(ac.url)}" target="_blank" rel="noopener">${esc(sha7)} ↗</a>`
-      : `<span class="mono" style="font-size:12px; font-weight:700;">${esc(sha7)}</span>`;
+      ? `<a class="mono" style="font-size:16px; font-weight:700; color:var(--blue); text-decoration:none;" href="${esc(ac.url)}" target="_blank" rel="noopener">${esc(sha7)} ↗</a>`
+      : `<span class="mono" style="font-size:16px; font-weight:700;">${esc(sha7)}</span>`;
     activeMetaHtml = `
       <span class="pill pill-blue">${linkHtml}${dt ? ` · ${esc(dt)}` : ""}${ac?.author ? ` · @${esc(ac.author)}` : ""}</span>
       <span class="pill">${displayed.length} file${displayed.length === 1 ? '' : 's'}</span>
@@ -1550,8 +1611,8 @@ function renderChangelistBarHtml() {
   }
   return `<div class="changelist-bar">
     <div class="row" style="gap:8px; flex:1; min-width:260px;">
-      <label style="font-size:12.5px; font-weight:600; color:var(--muted);">Changelist:</label>
-      <select id="changelistSelect" style="flex:1; max-width:760px; font-size:12.5px;" onchange="selectChangelist(this.value)">
+      <label style="font-size:17px; font-weight:600; color:var(--muted);">Changelist:</label>
+      <select id="changelistSelect" style="flex:1; max-width:780px; font-size:17px;" onchange="selectChangelist(this.value)">
         <option value="" ${!selectedChangelistSha ? 'selected' : ''}>${esc(allLabel)}</option>
         ${commitOpts}
       </select>
@@ -1581,21 +1642,21 @@ function renderActivePr() {
 
   const convItemsHtml = [
     ...issueComments.map(c => `<div class="thread-comment">
-      <div style="font-size:12px; color:var(--muted);"><strong>@${esc(c.author)}</strong> · ${esc(shortDate(c.created_at))}</div>
+      <div style="font-size:16px; color:var(--muted);"><strong>@${esc(c.author)}</strong> · ${esc(shortDate(c.created_at))}</div>
       <div class="comment-body">${formatCommentBody(c.body)}</div>
     </div>`),
     ...reviews.filter(r => (r.body || "").trim()).map(r => `<div class="thread-comment">
-      <div style="font-size:12px; color:var(--muted);"><strong>@${esc(r.author)}</strong> <span class="pill" style="padding:0 5px;">${esc(r.state)}</span> · ${esc(shortDate(r.submitted_at))}</div>
+      <div style="font-size:16px; color:var(--muted);"><strong>@${esc(r.author)}</strong> <span class="pill" style="padding:0 6px;">${esc(r.state)}</span> · ${esc(shortDate(r.submitted_at))}</div>
       <div class="comment-body">${formatCommentBody(r.body)}</div>
     </div>`),
   ].join("");
 
   const draftsHtml = drafts.length
     ? `<div style="display:flex; flex-direction:column; gap:5px;">
-        <div style="font-size:12px; font-weight:600; color:var(--amber);">Pending Inline Review Drafts (${drafts.length}):</div>
+        <div style="font-size:16px; font-weight:600; color:var(--amber);">Pending Inline Review Drafts (${drafts.length}):</div>
         ${drafts.map((d, di) => `<div class="draft-chip">
           <div style="min-width:0; flex:1;">
-            <div class="mono" style="font-size:11px; color:var(--blue);">${esc(d.path)} : L${d.start_line ? d.start_line + '-' : ''}${d.line} (${esc(d.side)})</div>
+            <div class="mono" style="font-size:15px; color:var(--blue);">${esc(d.path)} : L${d.start_line ? d.start_line + '-' : ''}${d.line} (${esc(d.side)})</div>
             <div class="comment-body">${esc(d.body)}</div>
           </div>
           <button class="small" onclick="deleteDraftIdx(${di})">Remove</button>
@@ -1604,7 +1665,7 @@ function renderActivePr() {
     : "";
 
   const mergeControlsHtml = s.state === "open"
-    ? `<select id="mergeMethodSelect" title="Merge strategy" style="font-size:11.5px; padding:3px 6px;" onchange="selectedMergeMethod=this.value">
+    ? `<select id="mergeMethodSelect" title="Merge strategy" style="font-size:15.5px; padding:4px 8px;" onchange="selectedMergeMethod=this.value">
          <option value="merge" ${selectedMergeMethod === 'merge' ? 'selected' : ''}>Merge commit</option>
          <option value="squash" ${selectedMergeMethod === 'squash' ? 'selected' : ''}>Squash &amp; merge</option>
          <option value="rebase" ${selectedMergeMethod === 'rebase' ? 'selected' : ''}>Rebase &amp; merge</option>
@@ -1623,7 +1684,7 @@ function renderActivePr() {
       <div class="row" style="justify-content:space-between; align-items:flex-start;">
         <div style="min-width:260px; flex:1 1 340px;">
           <div class="row" style="gap:6px;">
-            <a class="mono" style="font-size:13px; font-weight:700; color:var(--blue); text-decoration:none;" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.repo_full_name)}#${s.number} ↗</a>
+            <a class="mono" style="font-size:18px; font-weight:700; color:var(--blue); text-decoration:none;" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.repo_full_name)}#${s.number} ↗</a>
             <span class="pill ${s.state === 'open' ? 'pill-green' : 'pill-amber'}">${esc(s.state)}</span>
             ${ms.badgeHtml}
             ${s.is_draft ? `<span class="pill pill-amber">draft</span>` : ""}
@@ -1634,7 +1695,7 @@ function renderActivePr() {
             <span class="pill">💬 ${threads.length} threads · ${issueComments.length} comments</span>
           </div>
           <h2 class="pr-title-heading">${esc(s.title)}</h2>
-          <div style="font-size:12px; color:var(--muted);">Author: <strong>@${esc(s.author)}</strong> · Updated: ${esc(shortDate(s.updated_at))} · Commits: ${activePrData.commits_count}</div>
+          <div style="font-size:16px; color:var(--muted);">Author: <strong>@${esc(s.author)}</strong> · Updated: ${esc(shortDate(s.updated_at))} · Commits: ${activePrData.commits_count}</div>
         </div>
         <div class="row">
           <button id="openPrBrowserBtn" class="small" title="Open PR on GitHub in main browser (Alt+B)" onclick="openActivePrInBrowser()">🌐 Open in Browser <span class="kbd-hint">Alt+B</span></button>
@@ -1651,7 +1712,7 @@ function renderActivePr() {
       ${(activePrData.body || "").trim() ? `<div class="pr-body-box">${formatCommentBody(activePrData.body)}</div>` : ""}
 
       ${convItemsHtml ? `<details open style="border-top:1px solid var(--border); padding-top:8px;">
-        <summary style="cursor:pointer; font-weight:600; font-size:12.5px; color:var(--muted);">PR Conversation & Review Summaries (${issueComments.length + reviews.filter(r => (r.body || '').trim()).length})</summary>
+        <summary style="cursor:pointer; font-weight:600; font-size:17px; color:var(--muted);">PR Conversation & Review Summaries (${issueComments.length + reviews.filter(r => (r.body || '').trim()).length})</summary>
         <div style="margin-top:8px; display:flex; flex-direction:column; gap:8px;">${convItemsHtml}</div>
       </details>` : ""}
 
@@ -1767,19 +1828,23 @@ function renderThreadHtml(item) {
   ].join(" ");
   const canResolve = t.id && !/^\d+$/.test(t.id);
   const resolveBtn = canResolve
-    ? `<button class="small" onclick="${t.is_resolved ? 'event.preventDefault(); event.stopPropagation(); ' : ''}toggleResolveThreadIdx(${tk})">${t.is_resolved ? 'Unresolve' : 'Resolve'}</button>`
+    ? `<button class="small" onclick="toggleResolveThreadIdx(${tk})">${t.is_resolved ? 'Unresolve' : 'Resolve'}</button>`
+    : "";
+  const resolveSummaryBtn = canResolve
+    ? `<button class="small" onclick="event.preventDefault(); event.stopPropagation(); toggleResolveThreadIdx(${tk})">${t.is_resolved ? 'Unresolve' : 'Resolve'}</button>`
     : "";
   const commentsHtml = (t.comments || []).map(c => `
     <div class="thread-comment">
-      <div style="font-size:11.5px; color:var(--muted);"><strong>@${esc(c.author)}</strong> · ${esc(shortDate(c.created_at))}</div>
+      <div style="font-size:15px; color:var(--muted);"><strong>@${esc(c.author)}</strong> · ${esc(shortDate(c.created_at))}</div>
       <div class="comment-body">${formatCommentBody(c.body)}</div>
     </div>`).join("");
   const replyHtml = rootCommentId
     ? `<div class="row" style="margin-top:4px;">
         <input id="replyInput_${tk}" class="reply-input" type="text" placeholder="Reply to thread..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault(); submitReplyIdx(${tk});}" />
         <button class="small primary" onclick="submitReplyIdx(${tk})">Reply</button>
+        ${resolveBtn}
       </div>`
-    : "";
+    : (resolveBtn ? `<div class="row" style="justify-content:flex-end; margin-top:4px;">${resolveBtn}</div>` : "");
 
   if (t.is_resolved) {
     const first = t.comments?.[0];
@@ -1792,11 +1857,11 @@ function renderThreadHtml(item) {
         <div class="row" style="gap:6px; flex:1; min-width:0; flex-wrap:nowrap;">
           <span class="res-caret">▸</span>
           ${statusPills}
-          <span class="mono" style="font-size:11px; color:var(--muted); flex-shrink:0;">${locText}</span>
+          <span class="mono" style="font-size:15px; color:var(--muted); flex-shrink:0;">${locText}</span>
           ${nearPill}
           ${first ? `<span class="thread-resolved-preview"><strong>@${esc(first.author)}</strong>${esc(countNote)}: ${esc(previewTxt)}</span>` : ""}
         </div>
-        ${resolveBtn}
+        ${resolveSummaryBtn}
       </summary>
       <div style="display:flex; flex-direction:column; gap:6px; margin-top:4px;">
         ${commentsHtml}
@@ -1807,8 +1872,7 @@ function renderThreadHtml(item) {
 
   return `<div class="thread-box ${resolvedCls}">
     <div class="row" style="justify-content:space-between;">
-      <div class="row" style="gap:6px;">${statusPills}<span class="mono" style="font-size:11px; color:var(--muted);">${locText}</span>${nearPill}</div>
-      ${resolveBtn}
+      <div class="row" style="gap:6px;">${statusPills}<span class="mono" style="font-size:15px; color:var(--muted);">${locText}</span>${nearPill}</div>
     </div>
     ${commentsHtml}
     ${replyHtml}
@@ -1898,10 +1962,10 @@ function renderComposerHtml(c) {
   const sideOpts = `<option value="RIGHT" ${c.side === 'RIGHT' ? 'selected' : ''} ${rightDisabled}>RIGHT (Head)</option><option value="LEFT" ${c.side === 'LEFT' ? 'selected' : ''} ${leftDisabled}>LEFT (Base)</option>`;
   return `<div class="inline-composer">
     <div class="row" style="justify-content:space-between;">
-      <strong class="mono" style="font-size:12px;">New inline comment · <span id="compHeaderLoc">${esc(c.filename)} : L${c.line}</span></strong>
+      <strong class="mono" style="font-size:16px;">New inline comment · <span id="compHeaderLoc">${esc(c.filename)} : L${c.line}</span></strong>
       <div class="row" style="gap:6px;">
-        <label style="font-size:12px;">Side: <select id="compSide" onchange="onComposerSideChange(this.value)">${sideOpts}</select></label>
-        <label style="font-size:12px;">Start line (opt): <input id="compStartLine" type="number" min="1" value="${esc(c.startLine || '')}" style="width:72px;" oninput="openComposer.startLine=this.value" /></label>
+        <label style="font-size:16px;">Side: <select id="compSide" onchange="onComposerSideChange(this.value)">${sideOpts}</select></label>
+        <label style="font-size:16px;">Start line (opt): <input id="compStartLine" type="number" min="1" value="${esc(c.startLine || '')}" style="width:80px;" oninput="openComposer.startLine=this.value" /></label>
       </div>
     </div>
     <textarea id="compBody" class="review-textarea" placeholder="Write review comment (Ctrl+Enter posts immediately)..." oninput="openComposer.body=this.value" onkeydown="if(event.key==='Enter'&&event.ctrlKey){event.preventDefault(); postInlineComposer();}">${esc(c.body || '')}</textarea>
@@ -2016,7 +2080,7 @@ function renderActivePrFiles() {
   const orphanHtml = orphanThreads.length
     ? `<div class="card">
         <div class="pane-title"><span>Other File Review Threads (${orphanThreads.length})</span></div>
-        ${orphanThreads.map(t => `<div style="font-family:monospace; font-size:11px; color:var(--blue); margin-bottom:2px;">${esc(t.path)}</div>${renderThreadHtml(t)}`).join("")}
+        ${orphanThreads.map(t => `<div style="font-family:monospace; font-size:15px; color:var(--blue); margin-bottom:2px;">${esc(t.path)}</div>${renderThreadHtml(t)}`).join("")}
       </div>`
     : "";
 
@@ -2041,7 +2105,7 @@ function renderActivePrFiles() {
         : "";
       bodyHtml += `<div class="outdated-box">
         <div class="row" style="justify-content:space-between; margin-bottom:5px;">
-          <span style="font-size:12px; font-weight:600; color:var(--amber);">Threads Outside Diff Hunks (${unanchoredThreads.length}):</span>
+          <span style="font-size:16px; font-weight:600; color:var(--amber);">Threads Outside Diff Hunks (${unanchoredThreads.length}):</span>
           ${loadFullHint}
         </div>
         ${unanchoredThreads.map(renderThreadHtml).join("")}
@@ -2092,10 +2156,10 @@ function renderActivePrFiles() {
       <div class="file-card-header">
         <div class="row" style="gap:7px;">
           <span class="active-badge">Active</span>
-          <span class="mono" style="font-weight:700; font-size:13px;">${esc(f.filename)}</span>${renameTxt}
+          <span class="mono" style="font-weight:700; font-size:17px;">${esc(f.filename)}</span>${renameTxt}
           <span class="pill" style="padding:0 6px;">${esc(f.status)}</span>
-          <span style="color:var(--green); font-weight:600; font-size:12px;">+${f.additions}</span>
-          <span style="color:var(--red); font-weight:600; font-size:12px;">-${f.deletions}</span>
+          <span style="color:var(--green); font-weight:600; font-size:16px;">+${f.additions}</span>
+          <span style="color:var(--red); font-weight:600; font-size:16px;">-${f.deletions}</span>
           ${fileConflict ? `<span class="pill pill-red" style="padding:0 6px;">⚠ ${esc(conflictReasonLabel(fileConflict))}</span>` : ""}
           ${fileThreads.length ? `<span class="pill pill-amber" style="padding:0 6px;">💬 ${fileThreads.length}</span>` : ""}
         </div>
@@ -2524,7 +2588,7 @@ document.addEventListener("keydown", (ev) => {
       openActivePrInBrowser();
       return;
     }
-    if (ak === "p" || ac === "KeyP") {
+    if (ak === "s" || ac === "KeyS") {
       ev.preventDefault();
       toggleSinglePane(!isSinglePaneMode());
       return;

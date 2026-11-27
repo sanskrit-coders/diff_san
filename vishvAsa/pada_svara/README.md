@@ -48,7 +48,7 @@ Inspect per-file unified git diffs directly from the review workspace before run
 ## Features
 
 - **Aligned three-layer context**: Renders `विश्वास-प्रस्तुतिः` with active/inactive `[[OLD|NEW]]` diffs, collapsible `मूलम्`, and paired or embedded `पद-पाठः` provenance bullets (`±n` configurable context lines).
-- **Zero-clutter `Pending` queue**: Excludes items carrying `!!` comments from the `Pending` filter (`Alt+P`) into a dedicated `With !!` queue (`Alt+W`).
+- **Zero-clutter `Pending` queue**: Excludes items carrying `!!` comments from the `Pending` filter (`Alt+U`) into a dedicated `With !!` queue (`Alt+W`).
 - **Keyboard-first review**: `Alt+1` (Accept), `Alt+2` (Reject), `Alt+3` (Focus feedback), `Enter` (Submit), `Ctrl+Enter` (Accept + Submit), `←`/`→` (Collapse/Expand card), `Ctrl+Z` (Undo), and `Ctrl+R` (Rescan directory after external edits).
 - **Vedic dictionary & IDE links**: One-click GoldenDict prātipadika/stem lookup chips and IntelliJ IDEA `--line` navigation for `विश्वास-प्रस्तुतिः`, `पद-पाठः`, and host include files.
 - **Prefill sync & scoped git commits**: Propagates edits across nested `<div class="js_include">` host prefills and commits only checked dirty files via `git commit --only`.
