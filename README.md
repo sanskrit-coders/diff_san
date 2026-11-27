@@ -77,6 +77,13 @@ pada_svara --dir /path/to/vedAH_yajuH/content/maitrAyaNIyam/saMhitA/sarva-prastu
 
 ![Scoped Git Diff Modal](vishvAsa/pada_svara/docs/screenshots/file_diff_modal.png)
 
+## IDE Integrations
+
+Launch [`local-diff-san`](local_diff/README.md) directly from IDE context menus (diff selected files/folders against `HEAD`, or compare two selected files):
+
+- **JetBrains IDEs (IntelliJ IDEA, etc.):** [`sanskrit-coders/jetbrains_san`](https://github.com/sanskrit-coders/jetbrains_san) — **Github-san tools** ([JetBrains Marketplace](https://plugins.jetbrains.com/plugin/36520-github-san-tools))
+- **VS Code / Open VSX IDEs (VS Code, Cursor, VSCodium, Windsurf, Antigravity):** [`sanskrit-coders/vscode_san`](https://github.com/sanskrit-coders/vscode_san) — **Github-san tools** ([VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=sanskrit-coders.github-san), [Open VSX](https://open-vsx.org/extension/sanskrit-coders/github-san))
+
 ## Acknowledgements
 
 - [`bhashika-org-in/wordiff`](https://github.com/bhashika-org-in/wordiff) for Unicode normalization, punctuation-ignoring comparison keys, and whole-block inline diffing ideas.
