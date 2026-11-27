@@ -148,6 +148,29 @@ def _diff_raw_tokens(
   return chunks
 
 
+def _refine_word_pure_edits(
+  chunks: list[tuple[str, str, str]],
+  *,
+  ignore_punct: bool = False,
+) -> list[tuple[str, str, str]]:
+  """Expand word ``replace`` spans that are pure character deletions or insertions without repetition."""
+  out: list[tuple[str, str, str]] = []
+  for tag, l_part, r_part in chunks:
+    if tag != "replace" or not l_part or not r_part or max(len(l_part), len(r_part)) > 4000:
+      out.append((tag, l_part, r_part))
+      continue
+    sub = _diff_raw_tokens(l_part, r_part, mode="grapheme", ignore_punct=ignore_punct)
+    has_del = any(st == "delete" for st, _, _ in sub)
+    has_ins = any(st == "insert" for st, _, _ in sub)
+    has_rep = any(st == "replace" for st, _, _ in sub)
+    has_non_ws_eq = any(st == "equal" and (sl.strip() or sr.strip()) for st, sl, sr in sub)
+    if not has_rep and has_non_ws_eq and (has_del != has_ins):
+      out.extend(sub)
+    else:
+      out.append((tag, l_part, r_part))
+  return out
+
+
 def _iter_diff_chunks(
   lhs: str,
   rhs: str,
@@ -169,7 +192,12 @@ def _iter_diff_chunks(
   if not rhs_n:
     return [("delete", lhs_n, "")] if lhs_n else []
 
-  if mode == "word" or max(len(lhs_n), len(rhs_n)) <= 120:
+  if mode == "word":
+    return _refine_word_pure_edits(
+      _diff_raw_tokens(lhs_n, rhs_n, mode=mode, ignore_punct=ignore_punct),
+      ignore_punct=ignore_punct,
+    )
+  if max(len(lhs_n), len(rhs_n)) <= 120:
     return _diff_raw_tokens(lhs_n, rhs_n, mode=mode, ignore_punct=ignore_punct)
 
   # On longer text/blocks, anchor words first and refine only genuinely similar short spans to avoid character confetti.

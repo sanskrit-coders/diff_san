@@ -311,7 +311,7 @@ def test_local_diff_frontend_js_renders_settings_and_diff(tmp_path: Path):
 def test_pure_js_diff_engine_parity_and_static_export_with_gap_expand(tmp_path: Path):
   if not shutil.which("node"):
     pytest.skip("node binary not installed")
-  from pull_requests_san.diff import build_full_file_hunk, compute_char_diff
+  from pull_requests_san.diff import build_full_file_hunk, compute_char_diff, compute_stream_diff
 
   # 1. Verify pure-JS DiffSanEngine matches Python diff logic on Sanskrit/Vedic cases
   engine_path = (
@@ -320,6 +320,18 @@ def test_pure_js_diff_engine_parity_and_static_export_with_gap_expand(tmp_path: 
   py_lhs, py_rhs = compute_char_diff("इमा᳓म् अ᳓रण्या पा०", "इमा᳓म् अर᳓ण्या पा॰", mode="grapheme")
   py_nfc_l, py_nfc_r = compute_char_diff("क\u093c", "\u0958", mode="codepoint", normalize="nfc")
   py_ip = build_full_file_hunk("राम।\nपा० ख\n", "राम॥\nपा॰ ख\n", char_diff_mode="word", ignore_punct=True)
+  py_pure_del = compute_stream_diff("<details><summary>वीरराघवः [यान्त्रिकम्]</summary>", "<details><summary>वीरराघवः</summary>", mode="word")
+  py_pure_ins = compute_stream_diff("<details><summary>वीरराघवः</summary>", "<details><summary>वीरराघवः [यान्त्रिकम्]</summary>", mode="word")
+  assert py_pure_del == [
+    {"op": "eq", "text": "<details><summary>वीरराघवः"},
+    {"op": "del", "text": " [यान्त्रिकम्]"},
+    {"op": "eq", "text": "</summary>"},
+  ]
+  assert py_pure_ins == [
+    {"op": "eq", "text": "<details><summary>वीरराघवः"},
+    {"op": "ins", "text": " [यान्त्रिकम्]"},
+    {"op": "eq", "text": "</summary>"},
+  ]
 
   parity_script = (
     f"const E = require({json.dumps(str(engine_path))});\n"
@@ -332,6 +344,10 @@ def test_pure_js_diff_engine_parity_and_static_export_with_gap_expand(tmp_path: 
     "const wordH = E.buildFullFileHunk('पा०\\n', 'पा॰\\n', { charDiffMode: 'word' });\n"
     "const delSeg = wordH.inline_rows[0].segments.find(s => s.op === 'del');\n"
     "if (!delSeg || !delSeg.sub_segments.some(ss => ss.op === 'del' && ss.text === '०')) throw new Error('Intra-word ० missing in JS');\n"
+    "const pd = E.computeStreamDiff('<details><summary>वीरराघवः [यान्त्रिकम्]</summary>', '<details><summary>वीरराघवः</summary>', { mode: 'word' });\n"
+    f"if (JSON.stringify(pd) !== JSON.stringify({json.dumps(py_pure_del)})) throw new Error('Pure deletion mismatch in JS: ' + JSON.stringify(pd));\n"
+    "const pi = E.computeStreamDiff('<details><summary>वीरराघवः</summary>', '<details><summary>वीरराघवः [यान्त्रिकम्]</summary>', { mode: 'word' });\n"
+    f"if (JSON.stringify(pi) !== JSON.stringify({json.dumps(py_pure_ins)})) throw new Error('Pure insertion mismatch in JS: ' + JSON.stringify(pi));\n"
   )
   parity_js = tmp_path / "parity.js"
   parity_js.write_text(parity_script, encoding="utf-8")
@@ -380,6 +396,9 @@ def test_pure_js_diff_engine_parity_and_static_export_with_gap_expand(tmp_path: 
     + "\n(async () => {\n"
     "  await init();\n"
     "  if (!elems['diffContainer'].innerHTML.includes('आविध्याऽऽलोल्य')) throw new Error('Sample did not render in static mode');\n"
+    "  if (elems['diffContainer'].innerHTML.split('वीरराघवः').length !== 2 || !elems['diffContainer'].innerHTML.includes('>[यान्त्रिकम्]</span>')) {\n"
+    "    throw new Error('Sample repeated वीरराघवः on pure deletion: ' + elems['diffContainer'].innerHTML);\n"
+    "  }\n"
     f"  elems['staticLeftText'].value = {json.dumps(long_left)};\n"
     f"  elems['staticRightText'].value = {json.dumps(long_right)};\n"
     "  computeStaticTextDiff();\n"

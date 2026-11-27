@@ -356,9 +356,49 @@ function renderDiffSegments(segments, diffMode = null) {
       }
     }
   }
+  const renderSubParts = parts => parts.map(p => (
+    p.op === "eq" ? esc(p.text) : renderChangedText(p.text, p.op)
+  )).join("");
   let out = "";
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
+    if (
+      activeMode === "word" &&
+      seg.op === "del" &&
+      i + 1 < segments.length &&
+      segments[i + 1].op === "ins"
+    ) {
+      const nxt = segments[i + 1];
+      let dSub = seg.sub_segments || fallbackSubs[i];
+      let iSub = nxt.sub_segments || fallbackSubs[i + 1];
+      if (!dSub || !iSub) {
+        const pair = computeClientWordSubPair(seg.text, nxt.text);
+        if (pair) {
+          dSub = pair.l;
+          iSub = pair.r;
+        }
+      }
+      if (dSub && iSub) {
+        const pureDel = iSub.every(p => p.op === "eq") &&
+          dSub.some(p => p.op === "del") &&
+          dSub.some(p => p.op === "eq" && String(p.text || "").trim()) &&
+          dSub.filter(p => p.op === "eq").map(p => p.text).join("") === String(nxt.text || "");
+        if (pureDel) {
+          out += renderSubParts(dSub);
+          i += 1;
+          continue;
+        }
+        const pureIns = dSub.every(p => p.op === "eq") &&
+          iSub.some(p => p.op === "ins") &&
+          iSub.some(p => p.op === "eq" && String(p.text || "").trim()) &&
+          iSub.filter(p => p.op === "eq").map(p => p.text).join("") === String(seg.text || "");
+        if (pureIns) {
+          out += renderSubParts(iSub);
+          i += 1;
+          continue;
+        }
+      }
+    }
     if (seg.op === "eq") {
       out += esc(seg.text);
     } else if (seg.op === "del_nl") {

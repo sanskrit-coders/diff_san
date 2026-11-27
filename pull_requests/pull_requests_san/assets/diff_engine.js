@@ -332,6 +332,33 @@
     return chunks;
   }
 
+  function _refineWordPureEdits(chunks, ignorePunct = false) {
+    const out = [];
+    for (const [tag, lPart, rPart] of chunks) {
+      if (tag !== "replace" || !lPart || !rPart || Math.max(lPart.length, rPart.length) > 4000) {
+        out.push([tag, lPart, rPart]);
+        continue;
+      }
+      const sub = _diffRawTokens(lPart, rPart, "grapheme", ignorePunct);
+      let hasDel = false;
+      let hasIns = false;
+      let hasRep = false;
+      let hasNonWsEq = false;
+      for (const [st, sl, sr] of sub) {
+        if (st === "delete") hasDel = true;
+        else if (st === "insert") hasIns = true;
+        else if (st === "replace") hasRep = true;
+        else if (st === "equal" && (sl.trim() || sr.trim())) hasNonWsEq = true;
+      }
+      if (!hasRep && hasNonWsEq && (hasDel !== hasIns)) {
+        out.push(...sub);
+      } else {
+        out.push([tag, lPart, rPart]);
+      }
+    }
+    return out;
+  }
+
   function _iterDiffChunks(lhs, rhs, { mode = "grapheme", normalize = "none", ignorePunct = false } = {}) {
     if (!VALID_DIFF_MODES.includes(mode)) {
       throw new Error(`Unsupported diff mode ${JSON.stringify(mode)}`);
@@ -345,7 +372,10 @@
     }
     if (!lhsN) return rhsN ? [["insert", "", rhsN]] : [];
     if (!rhsN) return lhsN ? [["delete", lhsN, ""]] : [];
-    if (mode === "word" || Math.max(lhsN.length, rhsN.length) <= 120) {
+    if (mode === "word") {
+      return _refineWordPureEdits(_diffRawTokens(lhsN, rhsN, mode, ignorePunct), ignorePunct);
+    }
+    if (Math.max(lhsN.length, rhsN.length) <= 120) {
       return _diffRawTokens(lhsN, rhsN, mode, ignorePunct);
     }
     const wordChunks = _diffRawTokens(lhsN, rhsN, "word", ignorePunct);

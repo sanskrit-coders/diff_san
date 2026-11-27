@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 
+from pull_requests_san.diff import compute_stream_diff
 from pull_requests_san import (
   GitHubAPIError,
   GitHubClient,
@@ -597,13 +598,31 @@ def test_parse_patch_hunks_aligns_multiedits_and_edge_cases():
   deleted_fn = [r for r in ds_word[0].rows if r.left_num == 341]
   assert len(deleted_fn) == 1 and deleted_fn[0].kind == "del" and deleted_fn[0].right_num is None
 
-  # Single-pane space-separated word mode keeps changed space-separated strings atomic, matches across reflowed lines, and annotates intra-word sub_segments
+  # Single-pane space-separated word mode keeps substituted words atomic while highlighting mere deletions/insertions without repetition
+  flow_summary = [r for r in ds_word[0].inline_rows if r["left_num"] == 337]
+  assert len(flow_summary) == 1
+  assert flow_summary[0]["segments"] == [
+    {"op": "eq", "text": "<details><summary>वीरराघवः"},
+    {"op": "del", "text": " [यान्त्रिकम्]"},
+    {"op": "eq", "text": "</summary>"},
+  ]
   flow_para = [r for r in ds_word[0].inline_rows if r["left_num"] == 339]
   assert len(flow_para) == 1
-  del_seg = next(s for s in flow_para[0]["segments"] if s["op"] == "del" and s["text"] == "[^v5]आविध्याऽऽलोल्य[^v5]")
-  assert any(s["op"] == "ins" and s["text"] == "आविध्याऽऽलोल्य" for s in flow_para[0]["segments"])
-  assert del_seg["sub_segments"][0] == {"op": "del", "text": "[^v5]"}
-  assert any(ss == {"op": "eq", "text": "आविध्याऽऽलोल्य"} for ss in del_seg["sub_segments"])
+  assert any(s == {"op": "del", "text": "[^v5]"} for s in flow_para[0]["segments"])
+  assert any(s == {"op": "eq", "text": "आविध्याऽऽलोल्य"} for s in flow_para[0]["segments"])
+  assert not any(s["op"] == "ins" and "आविध्याऽऽलोल्य" in s["text"] for s in flow_para[0]["segments"])
+
+  # Mere insertion inside a word-chunk also avoids repeating the unchanged prefix/suffix
+  ins_only_segs = compute_stream_diff(
+    "<details><summary>वीरराघवः</summary>",
+    "<details><summary>वीरराघवः [यान्त्रिकम्]</summary>",
+    mode="word",
+  )
+  assert ins_only_segs == [
+    {"op": "eq", "text": "<details><summary>वीरराघवः"},
+    {"op": "ins", "text": " [यान्त्रिकम्]"},
+    {"op": "eq", "text": "</summary>"},
+  ]
 
   reflow_patch = (
     "@@ -1,4 +1,3 @@\n"
@@ -1079,6 +1098,17 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
                     "text": "प्रणयोऽस्येति",
                     "sub_segments": [{"op": "eq", "text": "प्रणयोऽस्येति"}],
                   },
+                  {"op": "eq", "text": " "},
+                  {
+                    "op": "del",
+                    "text": "पा०",
+                    "sub_segments": [{"op": "eq", "text": "पा"}, {"op": "del", "text": "०"}],
+                  },
+                  {
+                    "op": "ins",
+                    "text": "पा॰",
+                    "sub_segments": [{"op": "eq", "text": "पा"}, {"op": "ins", "text": "॰"}],
+                  },
                 ],
               },
               {
@@ -1173,6 +1203,9 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
     "  const html = elems['filesDiffContainer'].innerHTML;\n"
     "  if (!html.includes('diff-table-single') || !html.includes('class=\"ch-del ch-has-sub\"') || !html.includes('class=\"ch-ins ch-has-sub\"') || !html.includes('class=\"ch-sub\"') || html.includes('class=\"ch-ws\"')) {\n"
     "    throw new Error('Default single-pane word diff / intra-word sub-highlight / space highlight removal check failed: ' + html);\n"
+    "  }\n"
+    "  if (html.includes('प्रणयोऽस्येति<')) {\n"
+    "    throw new Error('Pure-deletion [ZWSP] repeated unchanged text instead of highlighting only deleted span: ' + html);\n"
     "  }\n"
     "  if (!html.includes('Reply</button>') || !html.split('Reply</button>')[1].split('</div>')[0].includes('Resolve</button>')) {\n"
     "    throw new Error('Resolve button is not placed next to Reply button: ' + html);\n"

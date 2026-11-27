@@ -1035,6 +1035,33 @@
     return chunks;
   }
 
+  function _refineWordPureEdits(chunks, ignorePunct = false) {
+    const out = [];
+    for (const [tag, lPart, rPart] of chunks) {
+      if (tag !== "replace" || !lPart || !rPart || Math.max(lPart.length, rPart.length) > 4000) {
+        out.push([tag, lPart, rPart]);
+        continue;
+      }
+      const sub = _diffRawTokens(lPart, rPart, "grapheme", ignorePunct);
+      let hasDel = false;
+      let hasIns = false;
+      let hasRep = false;
+      let hasNonWsEq = false;
+      for (const [st, sl, sr] of sub) {
+        if (st === "delete") hasDel = true;
+        else if (st === "insert") hasIns = true;
+        else if (st === "replace") hasRep = true;
+        else if (st === "equal" && (sl.trim() || sr.trim())) hasNonWsEq = true;
+      }
+      if (!hasRep && hasNonWsEq && (hasDel !== hasIns)) {
+        out.push(...sub);
+      } else {
+        out.push([tag, lPart, rPart]);
+      }
+    }
+    return out;
+  }
+
   function _iterDiffChunks(lhs, rhs, { mode = "grapheme", normalize = "none", ignorePunct = false } = {}) {
     if (!VALID_DIFF_MODES.includes(mode)) {
       throw new Error(`Unsupported diff mode ${JSON.stringify(mode)}`);
@@ -1048,7 +1075,10 @@
     }
     if (!lhsN) return rhsN ? [["insert", "", rhsN]] : [];
     if (!rhsN) return lhsN ? [["delete", lhsN, ""]] : [];
-    if (mode === "word" || Math.max(lhsN.length, rhsN.length) <= 120) {
+    if (mode === "word") {
+      return _refineWordPureEdits(_diffRawTokens(lhsN, rhsN, mode, ignorePunct), ignorePunct);
+    }
+    if (Math.max(lhsN.length, rhsN.length) <= 120) {
       return _diffRawTokens(lhsN, rhsN, mode, ignorePunct);
     }
     const wordChunks = _diffRawTokens(lhsN, rhsN, "word", ignorePunct);
@@ -1979,9 +2009,49 @@ function renderDiffSegments(segments, diffMode = null) {
       }
     }
   }
+  const renderSubParts = parts => parts.map(p => (
+    p.op === "eq" ? esc(p.text) : renderChangedText(p.text, p.op)
+  )).join("");
   let out = "";
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
+    if (
+      activeMode === "word" &&
+      seg.op === "del" &&
+      i + 1 < segments.length &&
+      segments[i + 1].op === "ins"
+    ) {
+      const nxt = segments[i + 1];
+      let dSub = seg.sub_segments || fallbackSubs[i];
+      let iSub = nxt.sub_segments || fallbackSubs[i + 1];
+      if (!dSub || !iSub) {
+        const pair = computeClientWordSubPair(seg.text, nxt.text);
+        if (pair) {
+          dSub = pair.l;
+          iSub = pair.r;
+        }
+      }
+      if (dSub && iSub) {
+        const pureDel = iSub.every(p => p.op === "eq") &&
+          dSub.some(p => p.op === "del") &&
+          dSub.some(p => p.op === "eq" && String(p.text || "").trim()) &&
+          dSub.filter(p => p.op === "eq").map(p => p.text).join("") === String(nxt.text || "");
+        if (pureDel) {
+          out += renderSubParts(dSub);
+          i += 1;
+          continue;
+        }
+        const pureIns = dSub.every(p => p.op === "eq") &&
+          iSub.some(p => p.op === "ins") &&
+          iSub.some(p => p.op === "eq" && String(p.text || "").trim()) &&
+          iSub.filter(p => p.op === "eq").map(p => p.text).join("") === String(seg.text || "");
+        if (pureIns) {
+          out += renderSubParts(iSub);
+          i += 1;
+          continue;
+        }
+      }
+    }
     if (seg.op === "eq") {
       out += esc(seg.text);
     } else if (seg.op === "del_nl") {
