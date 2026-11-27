@@ -344,7 +344,7 @@
     <div id="prContainer">
       <div class="card">Loading pull requests...</div>
     </div>
-    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • Tab / Shift+Tab Step diffs • Ctrl+Space Checked until here • Click diff box Copy OLD/NEW • Right-click Copy diff / PR line link • Ctrl+F Find (supports ँ) • Ctrl+G / Ctrl+Shift+G Next/Prev find • Ctrl+D / Ctrl+Shift+D Next/Prev comment • Alt+W Word/Char diff • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Shift+Enter Multiline reply • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • ←/→ Collapse/Expand • [/] Prev/Next PR • Esc Close bar/composer/settings</div>
+    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • Tab / Shift+Tab Step diffs • Ctrl+Space Checked until here • Click diff box Copy OLD/NEW • Right-click Copy diff / PR line link • Ctrl+F Find (supports ँ) • Ctrl+G / Ctrl+Shift+G Next/Prev find • Ctrl+D / Ctrl+Shift+D Next/Prev comment • Alt+R Reply selected comment • Alt+V Resolve/Unresolve selected comment • Alt+W Word/Char diff • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Shift+Enter Multiline reply • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • ←/→ Collapse/Expand • [/] Prev/Next PR • Esc Close bar/composer/settings</div>
     <footer id="aboutFooter" class="about-footer">
       <div>
         <strong>diff_san — Pull Requests</strong> (<a href="https://github.com/sanskrit-coders/diff_san" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) —
@@ -1603,10 +1603,10 @@ function renderThreadHtml(item) {
   ].join(" ");
   const canResolve = t.id && !/^\d+$/.test(t.id);
   const resolveBtn = canResolve
-    ? `<button class="small" onclick="toggleResolveThreadIdx(${tk})">${t.is_resolved ? 'Unresolve' : 'Resolve'}</button>`
+    ? `<button class="small" title="${t.is_resolved ? 'Unresolve' : 'Resolve'} thread (Alt+V)" onclick="toggleResolveThreadIdx(${tk})">${t.is_resolved ? 'Unresolve' : 'Resolve'}</button>`
     : "";
   const resolveSummaryBtn = canResolve
-    ? `<button class="small" onclick="event.preventDefault(); event.stopPropagation(); toggleResolveThreadIdx(${tk})">${t.is_resolved ? 'Unresolve' : 'Resolve'}</button>`
+    ? `<button class="small" title="${t.is_resolved ? 'Unresolve' : 'Resolve'} thread (Alt+V)" onclick="event.preventDefault(); event.stopPropagation(); toggleResolveThreadIdx(${tk})">${t.is_resolved ? 'Unresolve' : 'Resolve'}</button>`
     : "";
   const commentsHtml = (t.comments || []).map(c => `
     <div class="thread-comment">
@@ -1618,7 +1618,7 @@ function renderThreadHtml(item) {
     </div>`).join("");
   const replyHtml = rootCommentId
     ? `<div class="row" style="margin-top:4px; align-items:flex-end;">
-        <textarea id="replyInput_${tk}" class="reply-input" rows="1" placeholder="Reply to thread (Shift+Enter for newline, Enter to send)..." oninput="autoResizeReplyBox(this)" onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!event.altKey&&!event.metaKey){event.preventDefault(); event.stopPropagation(); submitReplyIdx(${tk});}"></textarea>
+        <textarea id="replyInput_${tk}" class="reply-input" rows="1" title="Reply to thread (Alt+R selects, Enter sends, Shift+Enter newline)" placeholder="Reply to thread (Alt+R selects, Shift+Enter for newline, Enter to send)..." onfocus="const b=this.closest('.thread-box'); if(b && b!==_activePrCommentEl) selectActivePrCommentEl(b);" oninput="autoResizeReplyBox(this)" onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!event.altKey&&!event.metaKey){event.preventDefault(); event.stopPropagation(); submitReplyIdx(${tk});}"></textarea>
         <button class="small primary" onclick="submitReplyIdx(${tk})">Reply</button>
         ${resolveBtn}
       </div>`
@@ -1630,7 +1630,7 @@ function renderThreadHtml(item) {
     const previewTxt = previewRaw.length > 80 ? previewRaw.slice(0, 80) + "…" : previewRaw;
     const countNote = (t.comments || []).length > 1 ? ` (${t.comments.length})` : "";
     const isExpanded = Boolean(expandedResolvedThreads[String(t.id)]);
-    return `<details class="thread-box resolved" data-thread-id="${esc(String(t.id))}" ${isExpanded ? "open" : ""} ontoggle="setResolvedThreadExpanded(this.dataset.threadId, this.open)">
+    return `<details class="thread-box resolved" data-thread-id="${esc(String(t.id))}" data-tk="${tk}" ${isExpanded ? "open" : ""} onclick="if(!event.target.closest('button,a,input,textarea,select')) selectActivePrCommentEl(this)" ontoggle="setResolvedThreadExpanded(this.dataset.threadId, this.open)">
       <summary>
         <div class="row" style="gap:6px; flex:1; min-width:0; flex-wrap:nowrap;">
           <span class="res-caret">▸</span>
@@ -1648,7 +1648,7 @@ function renderThreadHtml(item) {
     </details>`;
   }
 
-  return `<div class="thread-box ${resolvedCls}">
+  return `<div class="thread-box ${resolvedCls}" data-thread-id="${esc(String(t.id ?? ''))}" data-tk="${tk}" onclick="if(!event.target.closest('button,a,input,textarea,select')) selectActivePrCommentEl(this)">
     <div class="row" style="justify-content:space-between;">
       <div class="row" style="gap:6px;">${statusPills}<span class="mono" style="font-size:15px; color:var(--muted);">${locText}</span>${nearPill}</div>
     </div>
@@ -1885,6 +1885,107 @@ function updateCommentNavUi(items = null, activeIdx = -1) {
   }
 }
 
+function selectActivePrCommentEl(el) {
+  if (!el) return null;
+  const items = getNavigablePrComments();
+  const idx = items.indexOf(el);
+  clearActivePrCommentHighlight();
+  _activePrCommentEl = el;
+  if (el.classList) el.classList.add("diff-comment-cur");
+  updateCommentNavUi(items, idx);
+  return el;
+}
+
+function resolveSelectedPrCommentBox() {
+  if (_activePrCommentEl) {
+    const box = (_activePrCommentEl.classList && _activePrCommentEl.classList.contains("thread-box"))
+      ? _activePrCommentEl
+      : (typeof _activePrCommentEl.closest === "function" ? _activePrCommentEl.closest(".thread-box") : null);
+    if (box && (box.isConnected === undefined || box.isConnected)) return box;
+  }
+  const activeEl = typeof document !== "undefined" ? document.activeElement : null;
+  const focusedBox = (activeEl && typeof activeEl.closest === "function") ? activeEl.closest(".thread-box") : null;
+  if (focusedBox) return focusedBox;
+  if (selectedDiffRowKey && typeof document !== "undefined" && typeof document.getElementById === "function") {
+    const selMeta = renderedDiffRows.find(r => r.rowKey === selectedDiffRowKey);
+    const rowEl = selMeta ? document.getElementById(selMeta.domId) : null;
+    let nxt = rowEl ? rowEl.nextElementSibling : null;
+    while (nxt && nxt.classList && nxt.classList.contains("thread-row")) {
+      const box = typeof nxt.querySelector === "function" ? nxt.querySelector(".thread-box") : null;
+      if (box) return box;
+      nxt = nxt.nextElementSibling;
+    }
+  }
+  return null;
+}
+
+function _getThreadIdxForBox(box) {
+  if (!box) return -1;
+  const raw = box.dataset?.tk ?? (typeof box.getAttribute === "function" ? box.getAttribute("data-tk") : null);
+  if (raw !== null && raw !== undefined && raw !== "") {
+    const num = Number(raw);
+    if (!Number.isNaN(num)) return num;
+  }
+  const tid = box.dataset?.threadId ?? (typeof box.getAttribute === "function" ? box.getAttribute("data-thread-id") : null);
+  if (tid) {
+    return threadRegistry.findIndex(x => x && String(x.id) === String(tid));
+  }
+  return -1;
+}
+
+function focusReplyBoxForSelectedComment() {
+  const box = resolveSelectedPrCommentBox();
+  if (!box) {
+    if (_activePrCommentEl && _activePrCommentEl.classList && _activePrCommentEl.classList.contains("thread-comment")) {
+      focusFeedbackInput();
+      return true;
+    }
+    setStatus("No review thread selected — use Comments ◀/▶ (Ctrl+D) first.", 2200);
+    return false;
+  }
+  if (box.classList && box.classList.contains("pending-draft")) {
+    setStatus("Pending draft has no reply box — edit or submit pending review.", 2200);
+    return false;
+  }
+  const tk = _getThreadIdxForBox(box);
+  const inp = (!Number.isNaN(tk) && tk >= 0 && typeof document !== "undefined" && typeof document.getElementById === "function"
+    ? document.getElementById(`replyInput_${tk}`)
+    : null) || (typeof box.querySelector === "function" ? box.querySelector("textarea.reply-input") : null);
+  if (!inp) {
+    setStatus("No reply box on selected comment.", 2000);
+    return false;
+  }
+  if (String(box.tagName || "").toUpperCase() === "DETAILS" && !box.open) {
+    box.open = true;
+    const tid = box.dataset?.threadId ?? (typeof box.getAttribute === "function" ? box.getAttribute("data-thread-id") : null);
+    if (tid) setResolvedThreadExpanded(tid, true);
+  }
+  selectActivePrCommentEl(box);
+  if (typeof inp.scrollIntoView === "function") inp.scrollIntoView({ block: "nearest" });
+  if (typeof inp.focus === "function") inp.focus();
+  return true;
+}
+
+function toggleResolveSelectedComment() {
+  const box = resolveSelectedPrCommentBox();
+  if (!box) {
+    setStatus("No review thread selected — use Comments ◀/▶ (Ctrl+D) first.", 2200);
+    return false;
+  }
+  if (box.classList && box.classList.contains("pending-draft")) {
+    setStatus("Pending draft cannot be resolved — submit pending review first.", 2200);
+    return false;
+  }
+  const tk = _getThreadIdxForBox(box);
+  const t = tk >= 0 ? threadRegistry[tk] : null;
+  if (!t || !t.id || /^\d+$/.test(String(t.id))) {
+    setStatus("Selected thread cannot be resolved via API.", 2200);
+    return false;
+  }
+  selectActivePrCommentEl(box);
+  return toggleResolveThreadIdx(tk);
+}
+
 function clearActivePrCommentHighlight() {
   if (_activePrCommentEl && _activePrCommentEl.classList) {
     _activePrCommentEl.classList.remove("diff-comment-cur");
@@ -1970,6 +2071,16 @@ function cyclePrComments(step = 1) {
     }
   }
   const chosen = items[nextIdx];
+  const activeEl = typeof document !== "undefined" ? document.activeElement : null;
+  if (
+    activeEl
+    && typeof activeEl.blur === "function"
+    && typeof activeEl.closest === "function"
+    && activeEl.closest(".thread-box")
+    && (!chosen.contains || !chosen.contains(activeEl))
+  ) {
+    activeEl.blur();
+  }
   clearActivePrCommentHighlight();
   _activePrCommentEl = chosen;
   if (chosen.classList) chosen.classList.add("diff-comment-cur");
@@ -2736,6 +2847,12 @@ async function toggleResolveThreadIdx(tk) {
   const t = threadRegistry[tk];
   if (!t) return;
   const resolve = !t.is_resolved;
+  const threadIdStr = String(t.id ?? "");
+  const wasFocusedThread = Boolean(
+    _activePrCommentEl
+    && ((_activePrCommentEl.dataset?.threadId && String(_activePrCommentEl.dataset.threadId) === threadIdStr)
+      || (_activePrCommentEl.dataset?.tk != null && Number(_activePrCommentEl.dataset.tk) === tk))
+  );
   showError("");
   setStatus(resolve ? "Resolving thread..." : "Unresolving thread...");
   try {
@@ -2745,9 +2862,14 @@ async function toggleResolveThreadIdx(tk) {
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ thread_id: t.id, resolve, ...getDiffOptions() }) },
       "Failed to update thread state"
     );
-    if (resolve) delete expandedResolvedThreads[String(t.id)];
+    if (resolve) delete expandedResolvedThreads[threadIdStr];
     activePrData = data.pr;
     renderActivePr();
+    if (wasFocusedThread && threadIdStr && typeof document !== "undefined" && typeof document.querySelectorAll === "function") {
+      const refreshed = Array.from(document.querySelectorAll(".thread-box[data-thread-id]"))
+        .find(el => String(el.dataset?.threadId ?? "") === threadIdStr);
+      if (refreshed) selectActivePrCommentEl(refreshed);
+    }
     setStatus(resolve ? "Thread resolved" : "Thread reopened", 2000);
   } catch (e) {
     showError(e.message);
@@ -2984,7 +3106,7 @@ document.addEventListener("keydown", (ev) => {
     return;
   }
 
-  // Alt+Shift+M Merge PR, Alt+Shift+C Close/Reopen PR, Alt+Shift+Up/Down Sandhi jump; Alt+W Word/Char diff; Alt+O/C/M/L/0 filters; Alt+B Browser; Alt+1/2/3 review actions
+  // Alt+Shift+M Merge PR, Alt+Shift+C Close/Reopen PR, Alt+Shift+Up/Down Sandhi jump; Alt+R Reply comment, Alt+V Resolve comment, Alt+W Word/Char diff; Alt+O/C/M/L/0 filters; Alt+B Browser; Alt+1/2/3 review actions
   if (ev.altKey && !ev.ctrlKey && !ev.metaKey) {
     const ak = (ev.key || "").toLowerCase();
     const ac = ev.code || "";
@@ -3004,6 +3126,16 @@ document.addEventListener("keydown", (ev) => {
         toggleActivePrState();
         return;
       }
+      return;
+    }
+    if (ak === "r" || ac === "KeyR") {
+      ev.preventDefault();
+      focusReplyBoxForSelectedComment();
+      return;
+    }
+    if (ak === "v" || ac === "KeyV") {
+      ev.preventDefault();
+      toggleResolveSelectedComment();
       return;
     }
     if (ak === "w" || ac === "KeyW") {
