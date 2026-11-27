@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from pull_requests_san.auth import DEFAULT_OWNER, normalize_owner
-from pull_requests_san.client import GitHubClient, _validate_comment_line_args
+from pull_requests_san.client import GitHubClient, _validate_comment_line_args, default_pr_list_limit
 from pull_requests_san.models import PullRequestDetail, PullRequestFileDiff, PullRequestSummary
 
 
@@ -28,15 +28,16 @@ class PRReviewSession:
     state: str = "open",
     repo: str = "",
     refresh: bool = False,
-    limit: int = 100,
+    limit: int | None = None,
   ) -> list[PullRequestSummary]:
     norm_owner = normalize_owner(owner or self.default_owner)
     norm_state = (state or "open").strip().lower()
     norm_repo = (repo or "").strip().strip("/")
-    key = (norm_owner, norm_state, norm_repo, int(limit))
+    resolved_limit = int(limit) if limit is not None else default_pr_list_limit(norm_state)
+    key = (norm_owner, norm_state, norm_repo, resolved_limit)
     if refresh or key not in self.pr_list_cache:
       self.pr_list_cache[key] = self.client.list_org_pull_requests(
-        norm_owner, state=norm_state, repo=norm_repo or None, limit=int(limit)
+        norm_owner, state=norm_state, repo=norm_repo or None, limit=resolved_limit
       )
     return self.pr_list_cache[key]
 
@@ -92,7 +93,7 @@ class PRReviewSession:
     char_diff_mode: str = "grapheme",
     normalize: str = "none",
     ignore_punct: bool = False,
-    limit: int = 100,
+    limit: int | None = None,
   ) -> dict[str, Any]:
     """Invalidate cached PR data and fetch fresh listings (plus active PR if specified)."""
     self.pr_list_cache.clear()

@@ -723,6 +723,12 @@ def test_client_fallback_v3_diff_and_unauth_guards():
   assert len(prs) == 1
   assert prs[0].repo_full_name == "vishvAsa/mahAbhAratam"
   assert prs[0].number == 192
+  assert fake.calls[-1]["json"]["variables"]["first"] == 100
+
+  for past_state in ("closed", "merged", "all"):
+    client.list_org_pull_requests("vishvAsa", state=past_state)
+    assert fake.calls[-1]["json"]["variables"]["first"] == 10
+    assert f"sort:updated-desc" in fake.calls[-1]["json"]["variables"]["q"]
 
   detail = client.get_pull_request_detail("vishvAsa", "mahAbhAratam", 192)
   assert len(detail.files) == 1
@@ -736,6 +742,9 @@ def test_client_fallback_v3_diff_and_unauth_guards():
   assert client_no_tok.token is None
   prs_rest = client_no_tok.list_org_pull_requests("vishvAsa")
   assert len(prs_rest) == 1 and prs_rest[0].number == 192
+  assert fake.calls[-1]["params"]["per_page"] == 100
+  client_no_tok.list_org_pull_requests("vishvAsa", state="closed")
+  assert fake.calls[-1]["params"]["per_page"] == 10
   with pytest.raises(GitHubAPIError):
     client_no_tok.create_issue_comment("vishvAsa", "mahAbhAratam", 192, "hi")
 
@@ -798,6 +807,11 @@ def test_gui_endpoints_diff_comments_refresh_and_local_helpers(tmp_path: Path, m
   r_prs = tc.get("/api/prs?owner=vishvAsa&state=open")
   assert r_prs.status_code == 200
   assert r_prs.json()["repos"] == ["mahAbhAratam"]
+  assert fake.calls[-1]["json"]["variables"]["first"] == 100
+
+  for past_state in ("closed", "merged", "all"):
+    assert tc.get(f"/api/prs?owner=vishvAsa&state={past_state}").status_code == 200
+    assert fake.calls[-1]["json"]["variables"]["first"] == 10
 
   r_pr = tc.get("/api/pr/vishvAsa/mahAbhAratam/192?diff_mode=grapheme")
   assert r_pr.status_code == 200
@@ -1338,11 +1352,15 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
     "  await new Promise(r => setTimeout(r, 20));\n"
     "  const revCall = fetched.find(c => c.url.endsWith('/review'));\n"
     "  if (!revCall || !revCall.body.includes('\"event\":\"REQUEST_CHANGES\"')) throw new Error('Ctrl+Enter did not submit selected review');\n"
-    "  // Alt+C / Alt+M / Alt+L / Alt+O state filter shortcuts\n"
+    "  // Alt+C / Alt+M / Alt+L / Alt+O state filter shortcuts (past 10 limit for closed/merged/all)\n"
     "  for (const [key, code, exp] of [['c', 'KeyC', 'closed'], ['m', 'KeyM', 'merged'], ['l', 'KeyL', 'all'], ['o', 'KeyO', 'open']]) {\n"
+    "    const beforeN = fetched.length;\n"
     "    listeners['keydown']({ key, code, altKey: true, ctrlKey: false, metaKey: false, shiftKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
     "    await new Promise(r => setTimeout(r, 10));\n"
     "    if (elems['stateSelect'].value !== exp) throw new Error('Alt+' + key + ' failed state filter');\n"
+    "    const prCall = fetched.slice(beforeN).find(c => c.url.includes('/api/prs?'));\n"
+    "    if (exp === 'open' && (!prCall || prCall.url.includes('limit=10'))) throw new Error('open state unexpectedly capped: ' + JSON.stringify(prCall));\n"
+    "    if (exp !== 'open' && (!prCall || !prCall.url.includes('limit=10'))) throw new Error(exp + ' state did not request limit=10: ' + JSON.stringify(prCall));\n"
     "  }\n"
     "  // Open inline composer on row (left=1, right=2), verify side toggle updates target line\n"
     "  startInlineComposer(0, 2, 'RIGHT', 1, 2);\n"
@@ -1857,6 +1875,10 @@ def test_static_pr_export_and_github_rest_adapter(tmp_path: Path):
     "  if (url.includes('/pulls/9/commits')) return mk([{ sha: 'h9', html_url: '', author: { login: 'u' }, commit: { message: 'Update', committer: { date: '2026-11-27T09:00:00Z' } }, parents: [{ sha: 'b9' }] }]);\n"
     "  if (url.includes('/pulls/9/comments')) return mk([{ id: 701, path: 'a.md', line: 2, original_line: 2, side: 'RIGHT', position: 1, user: { login: 'rev' }, body: 'Nice!', created_at: '2026-11-27T09:05:00Z' }]);\n"
     "  if (url.includes('/issues/9/comments') || url.includes('/pulls/9/reviews')) return mk([]);\n"
+    "  if (url.includes('/repos/vishvAsa/test/pulls?')) {\n"
+    "    const mkPr = (n, m) => ({ number: n, title: 'PR ' + n, html_url: 'https://github.com/vishvAsa/test/pull/' + n, state: 'closed', merged: m, merged_at: m ? '2026-11-26T00:00:00Z' : null, draft: false, user: { login: 'u' }, created_at: '2026-11-26T00:00:00Z', updated_at: '2026-11-26T00:00:00Z', comments: 0 });\n"
+    "    return mk(Array.from({length: 25}, (_, i) => mkPr(i === 0 ? 9 : 100 + i, i % 2 === 0)));\n"
+    "  }\n"
     f"  if (url.includes('/contents/a.md?ref=b9')) return mk({{ encoding: 'base64', content: {json.dumps(b64_left)} }});\n"
     f"  if (url.includes('/contents/a.md?ref=h9')) return mk({{ encoding: 'base64', content: {json.dumps(b64_right)} }});\n"
     "  throw new Error('Unexpected fetch URL: ' + url);\n"
@@ -1909,6 +1931,12 @@ def test_static_pr_export_and_github_rest_adapter(tmp_path: Path):
     "  await init();\n"
     "  if (!selectedDiffRowKey || !selectedDiffRowKey.startsWith('skandha_10/01.md:') || !renderedDiffRows.some(r => r.rowKey === selectedDiffRowKey && r.rightNum === 17)) {\n"
     "    throw new Error('Deep link did not select target row: ' + selectedDiffRowKey);\n"
+    "  }\n"
+    "  // Static repo listing for closed, merged, all returns at most past 10 PRs\n"
+    "  await openStaticPrRef('vishvAsa/test');\n"
+    "  for (const st of ['closed', 'merged', 'all']) {\n"
+    "    const res = await handleStaticPrApi('/api/prs?state=' + st + '&limit=10');\n"
+    "    if (!res.prs || res.prs.length !== 10) throw new Error('Static state ' + st + ' returned ' + res.prs?.length + ' PRs instead of 10');\n"
     "  }\n"
     "})().catch(err => { console.error(err); process.exit(1); });\n"
   )

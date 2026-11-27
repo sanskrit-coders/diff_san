@@ -968,9 +968,9 @@
     <span id="stateFilterPills" class="row" style="gap:4px;">
       <input type="hidden" id="stateSelect" value="open" />
       <button type="button" class="pill filter-pill pill-green active" id="stateOpenPill" data-state-filter="open" title="Show Open PRs (Alt+O)" onclick="setStateFilter('open')">Open <span class="kbd-hint">Alt+O</span></button>
-      <button type="button" class="pill filter-pill pill-amber" id="stateClosedPill" data-state-filter="closed" title="Show Closed PRs (Alt+C)" onclick="setStateFilter('closed')">Closed <span class="kbd-hint">Alt+C</span></button>
-      <button type="button" class="pill filter-pill pill-blue" id="stateMergedPill" data-state-filter="merged" title="Show Merged PRs (Alt+M)" onclick="setStateFilter('merged')">Merged <span class="kbd-hint">Alt+M</span></button>
-      <button type="button" class="pill filter-pill" id="stateAllPill" data-state-filter="all" title="Show All PRs (Alt+L / Alt+0)" onclick="setStateFilter('all')">All <span class="kbd-hint">Alt+L</span></button>
+      <button type="button" class="pill filter-pill pill-amber" id="stateClosedPill" data-state-filter="closed" title="Show past 10 Closed PRs (Alt+C)" onclick="setStateFilter('closed')">Closed <span class="kbd-hint">Alt+C</span></button>
+      <button type="button" class="pill filter-pill pill-blue" id="stateMergedPill" data-state-filter="merged" title="Show past 10 Merged PRs (Alt+M)" onclick="setStateFilter('merged')">Merged <span class="kbd-hint">Alt+M</span></button>
+      <button type="button" class="pill filter-pill" id="stateAllPill" data-state-filter="all" title="Show past 10 PRs (Alt+L / Alt+0)" onclick="setStateFilter('all')">All <span class="kbd-hint">Alt+L</span></button>
     </span>
     <label>Repo:
       <select id="repoSelect" onchange="applyPrFilters()">
@@ -5200,12 +5200,16 @@ function handleSharedDiffKeydown(ev, navCtx = null) {
 
     if (path === "/api/prs") {
       const state = (params.get("state") || "open").toLowerCase();
+      const rawLimit = params.get("limit");
+      const prLimit = rawLimit ? Math.max(1, Number(rawLimit)) : (state === "open" ? 30 : 10);
       if (staticRepoTarget && staticRepoTarget.owner && staticRepoTarget.repo) {
         const ghState = (state === "closed" || state === "merged") ? "closed" : (state === "all" ? "all" : "open");
-        const rawList = await _ghRequest(`/repos/${encodeURIComponent(staticRepoTarget.owner)}/${encodeURIComponent(staticRepoTarget.repo)}/pulls?state=${ghState}&per_page=30`);
+        const fetchPerPage = (state === "closed" || state === "merged") ? Math.max(30, prLimit) : prLimit;
+        const rawList = await _ghRequest(`/repos/${encodeURIComponent(staticRepoTarget.owner)}/${encodeURIComponent(staticRepoTarget.repo)}/pulls?state=${ghState}&sort=updated&direction=desc&per_page=${fetchPerPage}`);
         let summaries = (rawList || []).map(p => _normalizePrSummary(staticRepoTarget.owner, staticRepoTarget.repo, p));
         if (state === "merged") summaries = summaries.filter(p => p.merged);
         else if (state === "closed") summaries = summaries.filter(p => !p.merged);
+        summaries = summaries.slice(0, prLimit);
         staticRepoPrsCache[`${staticRepoTarget.owner.toLowerCase()}/${staticRepoTarget.repo.toLowerCase()}`] = summaries;
         return { prs: summaries, repos: [staticRepoTarget.repo] };
       }
@@ -6016,6 +6020,7 @@ async function loadPrList(forceRefresh = false, preferredRepo = null) {
   setStatus(forceRefresh ? "Refreshing PRs from GitHub..." : "Loading PRs...");
   try {
     const params = new URLSearchParams({ owner, state, refresh: String(!!forceRefresh) });
+    if (state !== "open") params.set("limit", "10");
     const data = await apiJson(`/api/prs?${params.toString()}`, null, "Failed to fetch pull requests");
     if (reqId !== prListReqSeq) return;
     allPrs = data.prs || [];
@@ -6358,6 +6363,7 @@ async function refreshAll() {
       owner,
       state,
       repo: "",
+      ...(state !== "open" ? { limit: 10 } : {}),
       active_owner: activePrKey?.owner || null,
       active_repo: activePrKey?.repo || null,
       active_number: activePrKey?.number || null,

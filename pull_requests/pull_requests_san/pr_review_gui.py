@@ -67,6 +67,7 @@ class _RefreshRequest(_DiffOptionsModel):
   owner: str = pr_review.DEFAULT_OWNER
   state: str = "open"
   repo: str = ""
+  limit: int | None = None
   active_owner: str | None = None
   active_repo: str | None = None
   active_number: int | None = None
@@ -253,7 +254,7 @@ def _register_read_routes(
     state: str = Query(default_state),
     repo: str = Query(default_repo),
     refresh: bool = Query(False),
-    limit: int = Query(100, ge=1, le=500),
+    limit: int | None = Query(None, ge=1, le=500),
   ) -> dict[str, Any]:
     return store.run(
       lambda: _pr_list_payload(owner, state, session.list_prs(owner=owner, state=state, repo=repo, refresh=refresh, limit=limit))
@@ -271,6 +272,7 @@ def _register_read_routes(
         char_diff_mode=req.diff_mode,
         normalize=req.normalize,
         ignore_punct=req.ignore_punct,
+        limit=req.limit,
       )
       out = _pr_list_payload(req.owner, req.state, res["prs"])
       out["active_pr"] = _pr_detail_payload(session, res["active_detail"]) if res["active_detail"] else None

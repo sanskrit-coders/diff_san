@@ -39,6 +39,14 @@ DEFAULT_API_BASE = "https://api.github.com"
 DEFAULT_LOCAL_ORG_DIR = os.path.expanduser("~/gitland/vishvAsa")
 VALID_REVIEW_EVENTS = ("COMMENT", "APPROVE", "REQUEST_CHANGES")
 VALID_MERGE_METHODS = ("merge", "squash", "rebase")
+DEFAULT_OPEN_PR_LIMIT = 100
+DEFAULT_PAST_PR_LIMIT = 10
+
+
+def default_pr_list_limit(state: str = "open") -> int:
+  """Return default PR list limit: 100 for ``open``, 10 for ``closed`` / ``merged`` / ``all``."""
+  state_norm = (state or "open").strip().lower()
+  return DEFAULT_OPEN_PR_LIMIT if state_norm == "open" else DEFAULT_PAST_PR_LIMIT
 
 _NEXT_LINK_RE = re.compile(r'<([^>]+)>;\s*rel="next"')
 _HEX_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
@@ -379,7 +387,7 @@ class GitHubClient:
     *,
     state: str = "open",
     repo: str | None = None,
-    limit: int = 100,
+    limit: int | None = None,
   ) -> list[PullRequestSummary]:
     """List pull requests across all repositories owned by ``owner`` (e.g. ``vishvAsa``)."""
     clean_owner = normalize_owner(owner)
@@ -388,6 +396,7 @@ class GitHubClient:
     if state_norm not in state_terms:
       raise ValueError(f"Unsupported PR state {state!r}; expected one of {tuple(state_terms)}")
 
+    resolved_limit = int(limit) if limit is not None else default_pr_list_limit(state_norm)
     clean_repo = re.sub(r"\s+", "", repo or "").strip("/").split("/")[-1]
     scope_term = f"repo:{clean_owner}/{clean_repo}" if clean_repo else f"user:{clean_owner}"
     query_parts = [scope_term, "is:pr"]
@@ -397,8 +406,8 @@ class GitHubClient:
     search_q = " ".join(query_parts)
 
     if self.token:
-      return self._list_prs_graphql(clean_owner, search_q, limit=limit)
-    return self._list_prs_rest_search(clean_owner, search_q, limit=limit)
+      return self._list_prs_graphql(clean_owner, search_q, limit=resolved_limit)
+    return self._list_prs_rest_search(clean_owner, search_q, limit=resolved_limit)
 
   def _list_prs_graphql(self, clean_owner: str, search_q: str, *, limit: int) -> list[PullRequestSummary]:
     results: list[PullRequestSummary] = []
@@ -415,7 +424,7 @@ class GitHubClient:
       if not page_info.get("hasNextPage") or not nodes:
         break
       after = page_info.get("endCursor")
-    return results
+    return results[:limit]
 
   def _list_prs_rest_search(self, clean_owner: str, search_q: str, *, limit: int) -> list[PullRequestSummary]:
     items = self.rest_get_paginated(

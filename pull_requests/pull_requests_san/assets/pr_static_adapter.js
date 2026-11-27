@@ -608,12 +608,16 @@
 
     if (path === "/api/prs") {
       const state = (params.get("state") || "open").toLowerCase();
+      const rawLimit = params.get("limit");
+      const prLimit = rawLimit ? Math.max(1, Number(rawLimit)) : (state === "open" ? 30 : 10);
       if (staticRepoTarget && staticRepoTarget.owner && staticRepoTarget.repo) {
         const ghState = (state === "closed" || state === "merged") ? "closed" : (state === "all" ? "all" : "open");
-        const rawList = await _ghRequest(`/repos/${encodeURIComponent(staticRepoTarget.owner)}/${encodeURIComponent(staticRepoTarget.repo)}/pulls?state=${ghState}&per_page=30`);
+        const fetchPerPage = (state === "closed" || state === "merged") ? Math.max(30, prLimit) : prLimit;
+        const rawList = await _ghRequest(`/repos/${encodeURIComponent(staticRepoTarget.owner)}/${encodeURIComponent(staticRepoTarget.repo)}/pulls?state=${ghState}&sort=updated&direction=desc&per_page=${fetchPerPage}`);
         let summaries = (rawList || []).map(p => _normalizePrSummary(staticRepoTarget.owner, staticRepoTarget.repo, p));
         if (state === "merged") summaries = summaries.filter(p => p.merged);
         else if (state === "closed") summaries = summaries.filter(p => !p.merged);
+        summaries = summaries.slice(0, prLimit);
         staticRepoPrsCache[`${staticRepoTarget.owner.toLowerCase()}/${staticRepoTarget.repo.toLowerCase()}`] = summaries;
         return { prs: summaries, repos: [staticRepoTarget.repo] };
       }
