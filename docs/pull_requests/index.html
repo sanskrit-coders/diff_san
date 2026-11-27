@@ -1031,6 +1031,7 @@
     <button type="button" class="pill filter-pill pill-blue" id="stateMergedPill" data-state-filter="merged" title="Show Merged PRs (Alt+M)" onclick="setStateFilter('merged')">Merged <span class="kbd-hint">Alt+M</span></button>
     <button type="button" class="pill filter-pill" id="stateAllPill" data-state-filter="all" title="Show All PRs (Alt+L / Alt+0)" onclick="setStateFilter('all')">All <span class="kbd-hint">Alt+L</span></button>
   </div>
+  <div id="headerPrActions" class="row" style="display:none; padding-top:4px; border-top:1px solid #ece6da; gap:6px;"></div>
 </header>
 <div id="settingsPane" class="settings-drawer" style="display:none;"></div>
 
@@ -1900,6 +1901,24 @@
     }
   }
 
+  function _canBridgeInlineContext(rows, startIdx, islandStart) {
+    const n = rows.length;
+    let k = startIdx;
+    let nonWsChars = 0;
+    while (k < n && rows[k].kind === "context") {
+      nonWsChars += String(rows[k].left_text || "").trim().length;
+      if ((k - startIdx + 1) > 3 || nonWsChars > 80) return -1;
+      k += 1;
+    }
+    if (k >= n || k === startIdx || (k - islandStart) > 160) return -1;
+    let totalChars = 0;
+    for (let p = islandStart; p < k; p++) {
+      totalChars += String(rows[p].left_text || rows[p].right_text || "").length;
+      if (totalChars > 32000) return -1;
+    }
+    return k;
+  }
+
   function buildInlineFlowRows(rows, { charDiffMode = "grapheme", normalize = "none", ignorePunct = false } = {}) {
     const out = [];
     const n = rows.length;
@@ -1912,7 +1931,15 @@
         continue;
       }
       let j = i;
-      while (j < n && rows[j].kind !== "context") j += 1;
+      while (j < n) {
+        if (rows[j].kind !== "context") {
+          j += 1;
+        } else {
+          const nxt = _canBridgeInlineContext(rows, j, i);
+          if (nxt > j) j = nxt;
+          else break;
+        }
+      }
       const island = rows.slice(i, j);
       i = j;
       const leftEntries = island.filter(cr => cr.left_text != null).map(cr => [cr.left_num, cr.left_text]);
@@ -3082,20 +3109,11 @@ function renderChangedText(txt, op, subSegments = null, extraCls = "", customTit
   const baseCls = op === "del" ? "ch-del" : "ch-ins";
   const cls = extraCls ? `${baseCls} ${extraCls}` : baseCls;
   const raw = String(txt || "");
-  let lead = "";
-  let core = raw;
-  let trail = "";
-  const m = raw.match(/^([ \t]*)([\s\S]*?\S[\s\S]*?)([ \t]*)$/);
-  if (m) {
-    lead = m[1];
-    core = m[2];
-    trail = m[3];
-  }
-  const tipRaw = customTitle ? `${customTitle} | ${codepointTitle(core)}` : codepointTitle(core);
+  const tipRaw = customTitle ? `${customTitle} | ${codepointTitle(raw)}` : codepointTitle(raw);
   const tip = esc(tipRaw);
   const fmtWs = s => esc(s.replace(/\t/g, "  "));
 
-  if (Array.isArray(subSegments) && subSegments.length && core) {
+  if (Array.isArray(subSegments) && subSegments.length && raw) {
     const trimmed = subSegments.map(s => ({ op: s.op, text: String(s.text || "") })).filter(s => s.text);
     let subLead = "";
     let subTrail = "";
@@ -3118,12 +3136,12 @@ function renderChangedText(txt, op, subSegments = null, extraCls = "", customTit
       return (s.op === "del" || s.op === "ins") ? `<span class="ch-sub">${htmlPart}</span>` : htmlPart;
     }).join("");
     if (innerSub) {
-      return `${fmtWs(subLead || lead)}<span class="${cls} ch-has-sub" title="${tip}">${innerSub}</span>${fmtWs(subTrail || trail)}`;
+      return `${fmtWs(subLead)}<span class="${cls} ch-has-sub" title="${tip}">${innerSub}</span>${fmtWs(subTrail)}`;
     }
   }
 
-  const inner = renderVisibleTextWithInvisibles(core, tip);
-  return `${fmtWs(lead)}<span class="${cls}" title="${tip}">${inner}</span>${fmtWs(trail)}`;
+  const inner = renderVisibleTextWithInvisibles(raw, tip);
+  return `<span class="${cls}" title="${tip}">${inner}</span>`;
 }
 
 function graphemeUnitsClient(str) {
@@ -5263,14 +5281,46 @@ function handleSharedDiffKeydown(ev, navCtx = null) {
       const [, owner, repo, numStr, draftId] = m;
       const key = _prKeyStr(owner, repo, numStr);
       const list = (staticDraftStore[key] ||= []);
-      let createdDraft = null;
+      let targetDraft = null;
       if (method === "POST") {
-        createdDraft = { ...reqBody, draft_id: `d_${Date.now()}_${list.length}` };
-        list.push(createdDraft);
+        targetDraft = { ...reqBody, draft_id: `d_${Date.now()}_${list.length}` };
+        list.push(targetDraft);
+      } else if (method === "PATCH" && draftId) {
+        const nextBody = String(reqBody?.body || "").trim();
+        if (!nextBody) throw new Error("Draft comment body cannot be empty.");
+        targetDraft = list.find(d => String(d.draft_id) === String(draftId)) || null;
+        if (!targetDraft) throw new Error(`Draft comment ${draftId} not found.`);
+        targetDraft.body = nextBody;
       } else if (method === "DELETE" && draftId) {
         staticDraftStore[key] = list.filter(d => d.draft_id !== draftId);
       }
-      return { draft: createdDraft, pending_drafts: staticDraftStore[key] };
+      return { draft: targetDraft, pending_drafts: staticDraftStore[key] };
+    }
+
+    m = path.match(/^\/api\/pr\/([^/]+)\/([^/]+)\/(\d+)\/(review_comment|issue_comment|review_summary)\/(\d+)$/);
+    if (m) {
+      const [, owner, repo, numStr, editKind, itemId] = m;
+      const number = Number(numStr);
+      if (!getStaticGithubToken()) {
+        throw new Error("Read-only static mode: click '🔑 Token' above to add a GitHub Personal Access Token for editing comments or reviews.");
+      }
+      const raw = await _fetchOrGetRawPrBundle(owner, repo, number, false);
+      if (raw.isSample) {
+        throw new Error("Sample PR is offline-only and cannot be submitted to GitHub.");
+      }
+      const nextBody = String(reqBody?.body || "").trim();
+      if (!nextBody) throw new Error("Comment body cannot be empty.");
+      const base = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+      let updated = null;
+      if (editKind === "review_comment") {
+        updated = await _ghRequest(`${base}/pulls/comments/${Number(itemId)}`, { method: "PATCH", body: { body: nextBody } });
+      } else if (editKind === "issue_comment") {
+        updated = await _ghRequest(`${base}/issues/comments/${Number(itemId)}`, { method: "PATCH", body: { body: nextBody } });
+      } else if (editKind === "review_summary") {
+        updated = await _ghRequest(`${base}/pulls/${number}/reviews/${Number(itemId)}`, { method: "PUT", body: { body: nextBody } });
+      }
+      const updatedRaw = await _fetchOrGetRawPrBundle(owner, repo, number, true);
+      return { updated, pr: _buildPrDetailFromRaw(updatedRaw, reqBody) };
     }
 
     // Remaining write mutations to GitHub require a token
@@ -5533,6 +5583,7 @@ let activePrData = null;
 let selectedFileFilter = "";
 let collapsedFiles = {};
 let openComposer = null;
+let activeCommentEdit = null;
 let metaInfo = {};
 let prListReqSeq = 0;
 let prDetailReqSeq = 0;
@@ -6121,6 +6172,7 @@ async function openPr(owner, repo, number, forceRefresh = false, { preserveUi = 
   if (switchingPr) {
     selectedFileFilter = "";
     openComposer = null;
+    activeCommentEdit = null;
     prReviewDraftText = "";
     selectedReviewAction = "issue_comment";
     focusedFileIdx = 0;
@@ -6135,6 +6187,7 @@ async function openPr(owner, repo, number, forceRefresh = false, { preserveUi = 
   } else if (!preserveUi) {
     selectedFileFilter = "";
     openComposer = null;
+    activeCommentEdit = null;
   }
   renderPrSidebar();
   const reqId = ++prDetailReqSeq;
@@ -6202,6 +6255,7 @@ async function selectChangelist(sha) {
   selectedChangelistSha = nextSha;
   selectedFileFilter = "";
   openComposer = null;
+  activeCommentEdit = null;
   focusedFileIdx = 0;
   if (!nextSha) {
     changelistReqSeq += 1;
@@ -6482,15 +6536,60 @@ function renderChangelistBarHtml() {
   </div>`;
 }
 
+function syncMergeMethod(method) {
+  selectedMergeMethod = method || "merge";
+  const a = document.getElementById("mergeMethodSelect");
+  const b = document.getElementById("headerMergeMethodSelect");
+  if (a) a.value = selectedMergeMethod;
+  if (b) b.value = selectedMergeMethod;
+}
+
+function renderHeaderPrActions(detail, ms, drafts) {
+  const bar = document.getElementById("headerPrActions");
+  if (!bar) return;
+  if (!detail || !detail.summary) {
+    bar.style.display = "none";
+    bar.innerHTML = "";
+    return;
+  }
+  const s = detail.summary;
+  const prStateLower = String(s.state || "open").toLowerCase();
+  const numDrafts = (drafts || []).length;
+  const mergeHtml = prStateLower === "open"
+    ? `<select id="headerMergeMethodSelect" title="Merge strategy" style="font-size:14.5px; padding:3px 6px;" onchange="syncMergeMethod(this.value)">
+         <option value="merge" ${selectedMergeMethod === 'merge' ? 'selected' : ''}>Merge</option>
+         <option value="squash" ${selectedMergeMethod === 'squash' ? 'selected' : ''}>Squash</option>
+         <option value="rebase" ${selectedMergeMethod === 'rebase' ? 'selected' : ''}>Rebase</option>
+       </select>
+       <button id="headerMergePrBtn" class="small green" ${ms.canMerge ? "" : "disabled"} title="${esc(ms.canMerge ? 'Merge this pull request on GitHub (Alt+Shift+M)' : ms.disabledReason)}" onclick="mergeActivePr()">⛙ Merge PR <span class="kbd-hint" style="background:rgba(255,255,255,0.2); color:#fff;">Alt+Shift+M</span></button>`
+    : "";
+  const stateHtml = prStateLower === "open"
+    ? `<button id="headerClosePrBtn" class="small danger" title="Close this pull request on GitHub (Alt+Shift+C)" onclick="setActivePrState('closed')">✕ Close PR <span class="kbd-hint" style="background:rgba(255,255,255,0.2); color:#fff;">Alt+Shift+C</span></button>`
+    : (prStateLower === "closed" && !ms.cls.includes("merged")
+      ? `<button id="headerReopenPrBtn" class="small" title="Reopen this pull request on GitHub (Alt+Shift+C)" onclick="setActivePrState('open')">↺ Reopen PR <span class="kbd-hint">Alt+Shift+C</span></button>`
+      : "");
+  bar.innerHTML = `
+    <span class="mono" style="font-size:15px; font-weight:700; color:var(--blue);">${esc(s.repo_full_name)}#${s.number}</span>
+    ${ms.badgeHtml}
+    ${numDrafts ? `<button id="headerSubmitPendingReviewBtn" class="small primary submit-pending-review-btn" onclick="submitPendingReview()">Submit Pending Review (${numDrafts})</button>` : ""}
+    ${mergeHtml}
+    ${stateHtml}
+    <button class="small" title="Open PR on GitHub in browser (Alt+B)" onclick="openActivePrInBrowser()">🌐 Open</button>
+    <button class="small" title="Copy PR URL to clipboard" onclick="copyActivePrUrl()">🔗 Copy URL</button>
+  `;
+  bar.style.display = "flex";
+}
+
 function renderActivePr() {
   const existingBodyEl = document.getElementById("prReviewBody");
   if (existingBodyEl && activePrData) prReviewDraftText = existingBodyEl.value || "";
-  const existingMergeSel = document.getElementById("mergeMethodSelect");
+  const existingMergeSel = document.getElementById("mergeMethodSelect") || document.getElementById("headerMergeMethodSelect");
   if (existingMergeSel) selectedMergeMethod = existingMergeSel.value || "merge";
 
   renderFileSidebar();
   const container = document.getElementById("prContainer");
   if (!activePrData) {
+    renderHeaderPrActions(null, null, null);
     if (typeof clearActiveDiffFocus === "function") clearActiveDiffFocus();
     if (typeof syncDiffFocusAndCheckedUi === "function") {
       syncDiffFocusAndCheckedUi([], "", { storageKey: PR_CHECKED_UNTIL_STORAGE_KEY });
@@ -6499,20 +6598,28 @@ function renderActivePr() {
     return;
   }
   const s = activePrData.summary;
+  const prStateLower = String(s.state || "open").toLowerCase();
   const ms = mergeStatusInfo(activePrData, activePrData);
   const drafts = activePrData.pending_drafts || [];
+  renderHeaderPrActions(activePrData, ms, drafts);
   const issueComments = activePrData.issue_comments || [];
   const reviews = activePrData.reviews || [];
   const threads = activePrData.review_threads || [];
 
   const convItemsHtml = [
     ...issueComments.map(c => `<div class="thread-comment">
-      <div style="font-size:16px; color:var(--muted);"><strong>@${esc(c.author)}</strong> · ${esc(shortDate(c.created_at))}</div>
-      <div class="comment-body">${formatCommentBody(c.body)}</div>
+      <div class="row" style="justify-content:space-between; gap:8px;">
+        <div style="font-size:16px; color:var(--muted);"><strong>@${esc(c.author)}</strong> · ${esc(shortDate(c.created_at))}</div>
+        ${renderCommentEditBtn("issue_comment", c.id, "conv")}
+      </div>
+      ${renderEditableCommentBody("issue_comment", c.id, c.body, "conv")}
     </div>`),
     ...reviews.filter(r => (r.body || "").trim()).map(r => `<div class="thread-comment">
-      <div style="font-size:16px; color:var(--muted);"><strong>@${esc(r.author)}</strong> <span class="pill" style="padding:0 6px;">${esc(r.state)}</span> · ${esc(shortDate(r.submitted_at))}</div>
-      <div class="comment-body">${formatCommentBody(r.body)}</div>
+      <div class="row" style="justify-content:space-between; gap:8px;">
+        <div style="font-size:16px; color:var(--muted);"><strong>@${esc(r.author)}</strong> <span class="pill" style="padding:0 6px;">${esc(r.state)}</span> · ${esc(shortDate(r.submitted_at))}</div>
+        ${r.id ? renderCommentEditBtn("review_summary", r.id, "conv") : ""}
+      </div>
+      ${r.id ? renderEditableCommentBody("review_summary", r.id, r.body, "conv") : `<div class="comment-body">${formatCommentBody(r.body)}</div>`}
     </div>`),
   ].join("");
 
@@ -6528,15 +6635,18 @@ function renderActivePr() {
               <span class="pill pill-amber pending-badge" style="padding:0 6px;">Pending</span>
               <span class="mono" style="font-size:15px; color:var(--blue);">${esc(d.path)} : L${d.start_line ? d.start_line + '-' : ''}${d.line} (${esc(d.side)})</span>
             </div>
-            <div class="comment-body">${formatCommentBody(d.body)}</div>
+            ${renderEditableCommentBody("draft", d.draft_id || di, d.body, "summary")}
           </div>
-          <button class="small" onclick="deleteDraftById(${esc(JSON.stringify(d.draft_id || ''))}, ${di})">Remove</button>
+          <div class="row" style="gap:4px;">
+            ${renderCommentEditBtn("draft", d.draft_id || di, "summary")}
+            <button class="small" onclick="deleteDraftById(${esc(JSON.stringify(d.draft_id || ''))}, ${di})">Remove</button>
+          </div>
         </div>`).join("")}
       </div>`
     : "";
 
-  const mergeControlsHtml = s.state === "open"
-    ? `<select id="mergeMethodSelect" title="Merge strategy" style="font-size:15.5px; padding:4px 8px;" onchange="selectedMergeMethod=this.value">
+  const mergeControlsHtml = prStateLower === "open"
+    ? `<select id="mergeMethodSelect" title="Merge strategy" style="font-size:15.5px; padding:4px 8px;" onchange="syncMergeMethod(this.value)">
          <option value="merge" ${selectedMergeMethod === 'merge' ? 'selected' : ''}>Merge commit</option>
          <option value="squash" ${selectedMergeMethod === 'squash' ? 'selected' : ''}>Squash &amp; merge</option>
          <option value="rebase" ${selectedMergeMethod === 'rebase' ? 'selected' : ''}>Rebase &amp; merge</option>
@@ -6544,9 +6654,9 @@ function renderActivePr() {
        <button id="mergePrBtn" class="small green" ${ms.canMerge ? "" : "disabled"} title="${esc(ms.canMerge ? 'Merge this pull request on GitHub (Alt+Shift+M)' : ms.disabledReason)}" onclick="mergeActivePr()">⛙ Merge PR <span class="kbd-hint" style="background:rgba(255,255,255,0.2); color:#fff;">Alt+Shift+M</span></button>`
     : "";
 
-  const stateBtnHtml = s.state === "open"
+  const stateBtnHtml = prStateLower === "open"
     ? `<button id="closePrBtn" class="small danger" title="Close this pull request on GitHub (Alt+Shift+C)" onclick="setActivePrState('closed')">✕ Close PR <span class="kbd-hint" style="background:rgba(255,255,255,0.2); color:#fff;">Alt+Shift+C</span></button>`
-    : (s.state === "closed" && !ms.cls.includes("merged")
+    : (prStateLower === "closed" && !ms.cls.includes("merged")
       ? `<button id="reopenPrBtn" class="small" title="Reopen this pull request on GitHub (Alt+Shift+C)" onclick="setActivePrState('open')">↺ Reopen PR <span class="kbd-hint">Alt+Shift+C</span></button>`
       : "");
 
@@ -6709,8 +6819,11 @@ function renderThreadHtml(item) {
     : "";
   const commentsHtml = (t.comments || []).map(c => `
     <div class="thread-comment">
-      <div style="font-size:15px; color:var(--muted);"><strong>@${esc(c.author)}</strong> · ${esc(shortDate(c.created_at))}</div>
-      <div class="comment-body">${formatCommentBody(c.body)}</div>
+      <div class="row" style="justify-content:space-between; gap:8px;">
+        <div style="font-size:15px; color:var(--muted);"><strong>@${esc(c.author)}</strong> · ${esc(shortDate(c.created_at))}</div>
+        ${c.id ? renderCommentEditBtn("review_comment", c.id, "inline") : ""}
+      </div>
+      ${c.id ? renderEditableCommentBody("review_comment", c.id, c.body, "inline") : `<div class="comment-body">${formatCommentBody(c.body)}</div>`}
     </div>`).join("");
   const replyHtml = rootCommentId
     ? `<div class="row" style="margin-top:4px; align-items:flex-end;">
@@ -6865,10 +6978,11 @@ function renderDraftThreadHtml(item) {
       </div>
       <div class="row" style="gap:6px;">
         <button class="small primary submit-pending-review-btn" onclick="submitPendingReview()">Submit Pending Review (${totalDrafts})</button>
+        ${renderCommentEditBtn("draft", draftId, "inline")}
         <button class="small" onclick="deleteDraftById(${esc(JSON.stringify(draftId))})">Remove</button>
       </div>
     </div>
-    <div class="comment-body">${formatCommentBody(d.body)}</div>
+    ${renderEditableCommentBody("draft", draftId, d.body, "inline")}
   </div>`;
 }
 
@@ -7486,6 +7600,126 @@ async function deleteDraftIdx(di) {
   return deleteDraftById("", di);
 }
 
+const _COMMENT_EDIT_ENDPOINTS = {
+  draft: (owner, repo, num, id) => [`/api/pr/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${num}/draft_comment/${encodeURIComponent(id)}`, "PATCH"],
+  review_comment: (owner, repo, num, id) => [`/api/pr/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${num}/review_comment/${encodeURIComponent(id)}`, "PATCH"],
+  issue_comment: (owner, repo, num, id) => [`/api/pr/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${num}/issue_comment/${encodeURIComponent(id)}`, "PATCH"],
+  review_summary: (owner, repo, num, id) => [`/api/pr/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${num}/review_summary/${encodeURIComponent(id)}`, "PUT"],
+};
+
+function _findCommentBodyByKind(kind, id) {
+  if (!activePrData) return null;
+  const sid = String(id);
+  if (kind === "draft") {
+    const d = (activePrData.pending_drafts || []).find((x, idx) => String(x.draft_id || idx) === sid);
+    return d ? d.body : null;
+  }
+  if (kind === "issue_comment") {
+    const c = (activePrData.issue_comments || []).find(x => String(x.id) === sid);
+    return c ? c.body : null;
+  }
+  if (kind === "review_summary") {
+    const r = (activePrData.reviews || []).find(x => String(x.id) === sid);
+    return r ? r.body : null;
+  }
+  if (kind === "review_comment") {
+    for (const t of (activePrData.review_threads || [])) {
+      const c = (t.comments || []).find(x => String(x.id) === sid);
+      if (c) return c.body;
+    }
+  }
+  return null;
+}
+
+function _rerenderPrPreservingScroll(focusId = null) {
+  const pane = typeof document !== "undefined" ? document.getElementById("mainPane") : null;
+  const prevTop = pane ? pane.scrollTop : null;
+  renderActivePr();
+  if (pane && prevTop != null) pane.scrollTop = prevTop;
+  if (focusId && typeof document !== "undefined") {
+    const el = document.getElementById(focusId);
+    if (el) {
+      if (typeof el.focus === "function") el.focus();
+      if (typeof el.setSelectionRange === "function") {
+        const len = String(el.value || "").length;
+        el.setSelectionRange(len, len);
+      }
+    }
+  }
+}
+
+function startEditComment(kind, id, surface = "inline") {
+  const curBody = _findCommentBodyByKind(kind, id);
+  if (curBody == null) return;
+  activeCommentEdit = { kind, id: String(id), surface, body: String(curBody) };
+  _rerenderPrPreservingScroll("commentEditInput");
+}
+
+function cancelEditComment() {
+  if (!activeCommentEdit) return;
+  activeCommentEdit = null;
+  _rerenderPrPreservingScroll();
+}
+
+function renderEditableCommentBody(kind, id, rawBody, surface = "inline") {
+  if (
+    activeCommentEdit
+    && activeCommentEdit.kind === kind
+    && activeCommentEdit.id === String(id)
+    && (!activeCommentEdit.surface || activeCommentEdit.surface === surface)
+  ) {
+    return `<div class="inline-composer comment-edit-box" style="margin-top:4px;">
+      <textarea id="commentEditInput" class="reply-input" rows="3" style="width:100%;" placeholder="Edit comment (Shift+Enter for newline, Enter or Ctrl+Enter to save, Esc to cancel)..." oninput="if(activeCommentEdit) activeCommentEdit.body=this.value" onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!event.altKey&&!event.metaKey){event.preventDefault(); event.stopPropagation(); saveEditComment();}else if(event.key==='Escape'){event.preventDefault(); event.stopPropagation(); cancelEditComment();}">${esc(activeCommentEdit.body)}</textarea>
+      <div class="row" style="justify-content:flex-end; gap:6px;">
+        <button class="small" type="button" onclick="cancelEditComment()">Cancel</button>
+        <button id="saveCommentEditBtn" class="small primary" type="button" onclick="saveEditComment()">Save</button>
+      </div>
+    </div>`;
+  }
+  return `<div class="comment-body">${formatCommentBody(rawBody)}</div>`;
+}
+
+function renderCommentEditBtn(kind, id, surface = "inline") {
+  return `<button class="small comment-edit-btn" type="button" title="Edit comment" style="padding:1px 7px; font-size:14px;" onclick="startEditComment(${esc(JSON.stringify(kind))}, ${esc(JSON.stringify(String(id)))}, ${esc(JSON.stringify(surface))})">✎ Edit</button>`;
+}
+
+async function saveEditComment() {
+  if (!activePrKey || !activeCommentEdit) return;
+  const inp = typeof document !== "undefined" ? document.getElementById("commentEditInput") : null;
+  const rawBody = inp ? inp.value : activeCommentEdit.body;
+  const body = String(rawBody || "").trim();
+  if (!body) {
+    showError("Comment body cannot be empty.");
+    return;
+  }
+  const builder = _COMMENT_EDIT_ENDPOINTS[activeCommentEdit.kind];
+  if (!builder) return;
+  const kind = activeCommentEdit.kind;
+  const { owner, repo, number } = activePrKey;
+  const [url, method] = builder(owner, repo, number, activeCommentEdit.id);
+  showError("");
+  setStatus("Saving comment edit...");
+  try {
+    const payload = kind === "draft" ? { body } : { body, ...getDiffOptions() };
+    const data = await apiJson(
+      url,
+      { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
+      "Failed to update comment"
+    );
+    activeCommentEdit = null;
+    if (kind === "draft") {
+      activePrData.pending_drafts = data.pending_drafts || [];
+    } else if (data.pr) {
+      activePrData = data.pr;
+    }
+    _rerenderPrPreservingScroll();
+    setStatus(kind === "draft" ? "Updated pending comment" : "Updated comment", 2500);
+  } catch (e) {
+    showError(e.message);
+    setStatus("");
+  }
+}
+
 async function submitPendingReview() {
   if (!activePrKey || !activePrData) return;
   const drafts = activePrData.pending_drafts || [];
@@ -7760,7 +7994,7 @@ async function mergeActivePr() {
     return;
   }
   const { owner, repo, number } = activePrKey;
-  const methodEl = document.getElementById("mergeMethodSelect");
+  const methodEl = document.getElementById("mergeMethodSelect") || document.getElementById("headerMergeMethodSelect");
   const mergeMethod = (methodEl ? methodEl.value : selectedMergeMethod) || "merge";
   selectedMergeMethod = mergeMethod;
   if (typeof window.confirm === "function" && !window.confirm(`Merge ${repo}#${number} via ${mergeMethod}?`)) {
@@ -7893,7 +8127,9 @@ document.addEventListener("keydown", (ev) => {
         id === "prReviewBody"
         || (target && typeof target.closest === "function" && target.closest(".review-panel"))
       );
-      if (replyMatch) {
+      if (id === "commentEditInput") {
+        saveEditComment();
+      } else if (replyMatch) {
         submitReplyIdx(Number(replyMatch[1]));
       } else if (inComposer && openComposer) {
         postInlineComposer();
@@ -7915,6 +8151,12 @@ document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && isSettingsPaneOpen()) {
     ev.preventDefault();
     closeSettingsPane();
+    return;
+  }
+
+  if (ev.key === "Escape" && activeCommentEdit) {
+    ev.preventDefault();
+    cancelEditComment();
     return;
   }
 

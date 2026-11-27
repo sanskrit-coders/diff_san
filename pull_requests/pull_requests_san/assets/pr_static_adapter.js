@@ -750,14 +750,46 @@
       const [, owner, repo, numStr, draftId] = m;
       const key = _prKeyStr(owner, repo, numStr);
       const list = (staticDraftStore[key] ||= []);
-      let createdDraft = null;
+      let targetDraft = null;
       if (method === "POST") {
-        createdDraft = { ...reqBody, draft_id: `d_${Date.now()}_${list.length}` };
-        list.push(createdDraft);
+        targetDraft = { ...reqBody, draft_id: `d_${Date.now()}_${list.length}` };
+        list.push(targetDraft);
+      } else if (method === "PATCH" && draftId) {
+        const nextBody = String(reqBody?.body || "").trim();
+        if (!nextBody) throw new Error("Draft comment body cannot be empty.");
+        targetDraft = list.find(d => String(d.draft_id) === String(draftId)) || null;
+        if (!targetDraft) throw new Error(`Draft comment ${draftId} not found.`);
+        targetDraft.body = nextBody;
       } else if (method === "DELETE" && draftId) {
         staticDraftStore[key] = list.filter(d => d.draft_id !== draftId);
       }
-      return { draft: createdDraft, pending_drafts: staticDraftStore[key] };
+      return { draft: targetDraft, pending_drafts: staticDraftStore[key] };
+    }
+
+    m = path.match(/^\/api\/pr\/([^/]+)\/([^/]+)\/(\d+)\/(review_comment|issue_comment|review_summary)\/(\d+)$/);
+    if (m) {
+      const [, owner, repo, numStr, editKind, itemId] = m;
+      const number = Number(numStr);
+      if (!getStaticGithubToken()) {
+        throw new Error("Read-only static mode: click '🔑 Token' above to add a GitHub Personal Access Token for editing comments or reviews.");
+      }
+      const raw = await _fetchOrGetRawPrBundle(owner, repo, number, false);
+      if (raw.isSample) {
+        throw new Error("Sample PR is offline-only and cannot be submitted to GitHub.");
+      }
+      const nextBody = String(reqBody?.body || "").trim();
+      if (!nextBody) throw new Error("Comment body cannot be empty.");
+      const base = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+      let updated = null;
+      if (editKind === "review_comment") {
+        updated = await _ghRequest(`${base}/pulls/comments/${Number(itemId)}`, { method: "PATCH", body: { body: nextBody } });
+      } else if (editKind === "issue_comment") {
+        updated = await _ghRequest(`${base}/issues/comments/${Number(itemId)}`, { method: "PATCH", body: { body: nextBody } });
+      } else if (editKind === "review_summary") {
+        updated = await _ghRequest(`${base}/pulls/${number}/reviews/${Number(itemId)}`, { method: "PUT", body: { body: nextBody } });
+      }
+      const updatedRaw = await _fetchOrGetRawPrBundle(owner, repo, number, true);
+      return { updated, pr: _buildPrDetailFromRaw(updatedRaw, reqBody) };
     }
 
     // Remaining write mutations to GitHub require a token

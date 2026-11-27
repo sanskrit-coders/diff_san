@@ -466,6 +466,19 @@ class _FakeSession:
       if url.endswith("/pulls/192") and "state" in payload:
         self.pr_state = payload["state"]
         return _FakeResponse(json_data={"number": 192, "state": self.pr_state})
+      if "/pulls/comments/" in url and "body" in payload:
+        cid = int(url.rsplit("/", 1)[-1])
+        for th in self.threads:
+          for c in th["comments"]["nodes"]:
+            if int(c["databaseId"]) == cid:
+              c["body"] = payload["body"]
+              return _FakeResponse(json_data={"id": cid, "body": c["body"]})
+      if "/issues/comments/" in url and "body" in payload:
+        cid = int(url.rsplit("/", 1)[-1])
+        for c in self.issue_comments:
+          if int(c["id"]) == cid:
+            c["body"] = payload["body"]
+            return _FakeResponse(json_data=c)
       return _FakeResponse(status_code=404, json_data={"message": f"Unhandled PATCH {url}"})
     if m == "PUT":
       self.calls.append({"method": "PUT", "url": url, "json": json})
@@ -476,6 +489,12 @@ class _FakeSession:
         self.pr_state = "closed"
         self.pr_merged = True
         return _FakeResponse(json_data={"sha": "mergedsha999", "merged": True, "message": f"Merged via {payload.get('merge_method', 'merge')}"})
+      if "/pulls/192/reviews/" in url and "body" in payload:
+        rid = int(url.rsplit("/", 1)[-1])
+        for r in self.reviews:
+          if int(r["databaseId"]) == rid:
+            r["body"] = payload["body"]
+            return _FakeResponse(json_data={"id": rid, "body": r["body"]})
       return _FakeResponse(status_code=404, json_data={"message": f"Unhandled PUT {url}"})
     raise AssertionError(f"Unexpected method {method}")
 
@@ -840,6 +859,14 @@ def test_gui_endpoints_diff_comments_refresh_and_local_helpers(tmp_path: Path, m
   assert r_draft.status_code == 200
   draft_id = r_draft.json()["draft"]["draft_id"]
 
+  r_draft_edit = tc.patch(
+    f"/api/pr/vishvAsa/mahAbhAratam/192/draft_comment/{draft_id}",
+    json={"body": "Edited draft note"},
+  )
+  assert r_draft_edit.status_code == 200
+  assert r_draft_edit.json()["draft"]["body"] == "Edited draft note"
+  assert r_draft_edit.json()["pending_drafts"][0]["body"] == "Edited draft note"
+
   r_rev = tc.post(
     "/api/pr/vishvAsa/mahAbhAratam/192/review",
     json={"event": "REQUEST_CHANGES", "body": "पुनः पश्यतु", "include_drafts": True},
@@ -847,7 +874,29 @@ def test_gui_endpoints_diff_comments_refresh_and_local_helpers(tmp_path: Path, m
   assert r_rev.status_code == 200
   assert r_rev.json()["pr"]["pending_drafts"] == []
   assert len(r_rev.json()["pr"]["review_threads"]) == 3
+  assert r_rev.json()["pr"]["review_threads"][2]["comments"][0]["body"] == "Edited draft note"
   assert tc.delete(f"/api/pr/vishvAsa/mahAbhAratam/192/draft_comment/{draft_id}").status_code == 404
+
+  r_rc_edit = tc.patch(
+    "/api/pr/vishvAsa/mahAbhAratam/192/review_comment/1001",
+    json={"body": "सन्धिः संशोधितः"},
+  )
+  assert r_rc_edit.status_code == 200
+  assert r_rc_edit.json()["pr"]["review_threads"][0]["comments"][0]["body"] == "सन्धिः संशोधितः"
+
+  r_ic_edit = tc.patch(
+    "/api/pr/vishvAsa/mahAbhAratam/192/issue_comment/9001",
+    json={"body": "साधु कृतम् (edited)"},
+  )
+  assert r_ic_edit.status_code == 200
+  assert r_ic_edit.json()["pr"]["issue_comments"][0]["body"] == "साधु कृतम् (edited)"
+
+  r_rs_edit = tc.put(
+    "/api/pr/vishvAsa/mahAbhAratam/192/review_summary/4000",
+    json={"body": "पुनः पश्यतु (updated)"},
+  )
+  assert r_rs_edit.status_code == 200
+  assert r_rs_edit.json()["pr"]["reviews"][0]["body"] == "पुनः पश्यतु (updated)"
 
   r_res = tc.post(
     "/api/pr/vishvAsa/mahAbhAratam/192/resolve_thread",
@@ -1193,6 +1242,18 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
     "        samplePr.summary.state = 'closed';\n"
     "        samplePr.summary.merged = true;\n"
     "        samplePr.merged = true;\n"
+    "      } else if (method === 'PATCH' && url.includes('/draft_comment/') && opts && opts.body) {\n"
+    "        const parsed = JSON.parse(opts.body);\n"
+    "        const did = url.split('/draft_comment/')[1];\n"
+    "        const drafts = (activePrData && activePrData.pending_drafts) || [];\n"
+    "        for (const d of drafts) { if (String(d.draft_id) === String(did)) d.body = parsed.body; }\n"
+    "        return { draft: drafts.find(d => String(d.draft_id) === String(did)) || null, pending_drafts: drafts };\n"
+    "      } else if (method === 'PATCH' && url.includes('/review_comment/') && opts && opts.body) {\n"
+    "        const parsed = JSON.parse(opts.body);\n"
+    "        const cid = Number(url.split('/review_comment/')[1]);\n"
+    "        for (const t of (samplePr.review_threads || [])) {\n"
+    "          for (const c of (t.comments || [])) { if (Number(c.id) === cid) c.body = parsed.body; }\n"
+    "        }\n"
     "      }\n"
     "      return {\n"
     "        default_owner: 'vishvAsa', default_state: 'open', default_repo: '', has_token: true,\n"
@@ -1216,9 +1277,10 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
     "  if (!html.includes('Reply</button>') || !html.split('Reply</button>')[1].split('</div>')[0].includes('Resolve</button>')) {\n"
     "    throw new Error('Resolve button is not placed next to Reply button: ' + html);\n"
     "  }\n"
-    "  const trimmedSpan = renderChangedText(' newword ', 'ins');\n"
-    "  if (!html.includes('[ZWSP]') || !html.includes('class=\"ch-inv\"') || !trimmedSpan.startsWith(' <span class=\"ch-ins\"') || !trimmedSpan.includes('>newword</span> ')) {\n"
-    "    throw new Error('ch-inv or leading/trailing space trimming check failed: ' + trimmedSpan);\n"
+    "  const quoteDelSpan = renderChangedText('> ', 'del');\n"
+    "  const trimmedSubSpan = renderChangedText(' newword ', 'ins', [{ op: 'eq', text: ' ' }, { op: 'ins', text: 'newword' }, { op: 'eq', text: ' ' }]);\n"
+    "  if (!html.includes('[ZWSP]') || !html.includes('class=\"ch-inv\"') || !quoteDelSpan.includes('>&gt; </span>') || !trimmedSubSpan.startsWith(' <span class=\"ch-ins ch-has-sub\"') || !trimmedSubSpan.includes('newword</span></span> ')) {\n"
+    "    throw new Error('ch-inv / deleted-space highlight / sub-eq trimming check failed: ' + quoteDelSpan + ' | ' + trimmedSubSpan);\n"
     "  }\n"
     "  // Toggle to 2-Pane LHS/RHS with Alt+S (NOT Alt+P) and back to Single pane\n"
     "  listeners['keydown']({ key: 'p', code: 'KeyP', altKey: true, ctrlKey: false, metaKey: false, shiftKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
@@ -1612,6 +1674,33 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
     "  listeners['click']({ button: 0, clientX: 50, clientY: 10, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, target: clickLeaf });\n"
     "  await new Promise(r => setTimeout(r, 10));\n"
     "  if (clipboardCopies.length !== 1) throw new Error('Selection/Shift+Click/Drag unexpectedly copied diff box: ' + JSON.stringify(clipboardCopies));\n"
+    "  // Deleted trailing space after blockquote '>' highlights cleanly, short intervening context+newlines bridge without breaking long paragraph word diff\n"
+    "  const qHunk = eng.buildFullFileHunk('> उच्चलद्-भङ्गाक्रान्त', 'उच्चलद्-भङ्गाक्रान्त  ', { charDiffMode: 'word' });\n"
+    "  const qHtml = renderDiffSegments(qHunk.inline_rows[0].segments, 'word');\n"
+    "  if (!qHtml.includes('>&gt; </span>उच्चलद्-भङ्गाक्रान्त<span class=\"ch-ins\"')) throw new Error('Deleted space after > was not highlighted: ' + qHtml);\n"
+    "  const bridgeOld = 'नित्य-निरपेक्षश् [[P203]] चेत् साध्यांशः कः ? तर्हि पुनः कृत्यांशः कः ? इति चेत् साध्यांशो अस्तीत्य् आह युवानम् इत्यादिना ॥ ४ ॥\\n\\n[^202_10_4_2]: अवाऽऽदरे बहुवचनम् ।\\n\\n</details>\\n';\n"
+    "  const bridgeNew = 'नित्य-निरपेक्षश् चेत् साध्यांशः कः ?\\n\\n[^_10_4_1]: अवाऽऽदरे बहुवचनम् ।\\n\\n[[P203]]\\n\\n\\nतर्हि पुनः कृत्यांशः कः ? इति चेत् साध्यांशो अस्तीत्य् आह युवानम् इत्यादिना ॥ ४ ॥\\n\\n</details>\\n';\n"
+    "  const bHunk = eng.buildFullFileHunk(bridgeOld, bridgeNew, { charDiffMode: 'word' });\n"
+    "  const keptLine8 = bHunk.inline_rows.find(r => (r.segments || []).some(s => s.op === 'eq' && (s.text || '').includes('तर्हि पुनः कृत्यांशः कः')));\n"
+    "  if (!keptLine8) throw new Error('Intervening short context + newlines broke word diff match on long paragraph: ' + JSON.stringify(bHunk.inline_rows));\n"
+    "  // Sticky header PR action bar mirrors Merge PR & Close PR buttons, and both pending + submitted comments support inline Edit\n"
+    "  if (!elems['headerPrActions'].innerHTML.includes('id=\"headerMergePrBtn\"') || !elems['headerPrActions'].innerHTML.includes('id=\"headerClosePrBtn\"')) {\n"
+    "    throw new Error('Header sticky Merge/Close PR buttons missing: ' + elems['headerPrActions'].innerHTML);\n"
+    "  }\n"
+    "  startEditComment('draft', 'draft_99', 'inline');\n"
+    "  if (!elems['filesDiffContainer'].innerHTML.includes('id=\"commentEditInput\"')) throw new Error('Pending draft edit box did not open');\n"
+    "  elems['commentEditInput'].value = 'Updated draft note';\n"
+    "  await saveEditComment();\n"
+    "  if (!fetched.some(c => c.method === 'PATCH' && c.url.endsWith('/draft_comment/draft_99')) || !elems['filesDiffContainer'].innerHTML.includes('Updated draft note')) {\n"
+    "    throw new Error('Pending draft edit did not save via PATCH');\n"
+    "  }\n"
+    "  startEditComment('review_comment', '1001', 'inline');\n"
+    "  if (!elems['filesDiffContainer'].innerHTML.includes('id=\"commentEditInput\"')) throw new Error('Submitted review comment edit box did not open');\n"
+    "  elems['commentEditInput'].value = 'Edited inline comment';\n"
+    "  await saveEditComment();\n"
+    "  if (!fetched.some(c => c.method === 'PATCH' && c.url.endsWith('/review_comment/1001'))) {\n"
+    "    throw new Error('Submitted review comment edit did not PATCH /review_comment/1001');\n"
+    "  }\n"
     "})().catch(err => { console.error(err); process.exit(1); });\n"
   )
   js_file = tmp_path / "test_github_gui.js"

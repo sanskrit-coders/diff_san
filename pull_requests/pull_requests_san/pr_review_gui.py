@@ -91,6 +91,10 @@ class _ReplyCommentRequest(_DiffOptionsModel):
   body: str
 
 
+class _EditCommentBodyRequest(_DiffOptionsModel):
+  body: str
+
+
 class _DraftCommentRequest(BaseModel):
   path: str
   line: int
@@ -416,6 +420,47 @@ def _register_mutation_routes(app: FastAPI, store: _AppStore) -> None:
       if not session.delete_draft(owner, repo, number, draft_id):
         raise FileNotFoundError(f"Draft comment {draft_id!r} not found")
       return {"removed": True, "pending_drafts": session.get_drafts(owner, repo, number)}
+
+    return store.run(_op)
+
+  @app.patch("/api/pr/{owner}/{repo}/{number}/draft_comment/{draft_id}")
+  def api_update_draft(owner: str, repo: str, number: int, draft_id: str, req: _EditCommentBodyRequest) -> dict[str, Any]:
+    def _op() -> dict[str, Any]:
+      draft = session.update_draft(owner, repo, number, draft_id, req.body)
+      return {"draft": draft, "pending_drafts": session.get_drafts(owner, repo, number)}
+
+    return store.run(_op)
+
+  @app.patch("/api/pr/{owner}/{repo}/{number}/review_comment/{comment_id}")
+  def api_edit_review_comment(owner: str, repo: str, number: int, comment_id: int, req: _EditCommentBodyRequest) -> dict[str, Any]:
+    def _op() -> dict[str, Any]:
+      res = session.edit_review_comment(
+        owner, repo, number, comment_id, req.body,
+        char_diff_mode=req.diff_mode, normalize=req.normalize, ignore_punct=req.ignore_punct,
+      )
+      return {"updated": res["updated"], "pr": _pr_detail_payload(session, res["detail"])}
+
+    return store.run(_op)
+
+  @app.patch("/api/pr/{owner}/{repo}/{number}/issue_comment/{comment_id}")
+  def api_edit_issue_comment(owner: str, repo: str, number: int, comment_id: int, req: _EditCommentBodyRequest) -> dict[str, Any]:
+    def _op() -> dict[str, Any]:
+      res = session.edit_issue_comment(
+        owner, repo, number, comment_id, req.body,
+        char_diff_mode=req.diff_mode, normalize=req.normalize, ignore_punct=req.ignore_punct,
+      )
+      return {"updated": res["updated"], "pr": _pr_detail_payload(session, res["detail"])}
+
+    return store.run(_op)
+
+  @app.put("/api/pr/{owner}/{repo}/{number}/review_summary/{review_id}")
+  def api_edit_review_summary(owner: str, repo: str, number: int, review_id: int, req: _EditCommentBodyRequest) -> dict[str, Any]:
+    def _op() -> dict[str, Any]:
+      res = session.edit_review_summary(
+        owner, repo, number, review_id, req.body,
+        char_diff_mode=req.diff_mode, normalize=req.normalize, ignore_punct=req.ignore_punct,
+      )
+      return {"updated": res["updated"], "pr": _pr_detail_payload(session, res["detail"])}
 
     return store.run(_op)
 

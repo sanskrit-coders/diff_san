@@ -823,6 +823,24 @@
     }
   }
 
+  function _canBridgeInlineContext(rows, startIdx, islandStart) {
+    const n = rows.length;
+    let k = startIdx;
+    let nonWsChars = 0;
+    while (k < n && rows[k].kind === "context") {
+      nonWsChars += String(rows[k].left_text || "").trim().length;
+      if ((k - startIdx + 1) > 3 || nonWsChars > 80) return -1;
+      k += 1;
+    }
+    if (k >= n || k === startIdx || (k - islandStart) > 160) return -1;
+    let totalChars = 0;
+    for (let p = islandStart; p < k; p++) {
+      totalChars += String(rows[p].left_text || rows[p].right_text || "").length;
+      if (totalChars > 32000) return -1;
+    }
+    return k;
+  }
+
   function buildInlineFlowRows(rows, { charDiffMode = "grapheme", normalize = "none", ignorePunct = false } = {}) {
     const out = [];
     const n = rows.length;
@@ -835,7 +853,15 @@
         continue;
       }
       let j = i;
-      while (j < n && rows[j].kind !== "context") j += 1;
+      while (j < n) {
+        if (rows[j].kind !== "context") {
+          j += 1;
+        } else {
+          const nxt = _canBridgeInlineContext(rows, j, i);
+          if (nxt > j) j = nxt;
+          else break;
+        }
+      }
       const island = rows.slice(i, j);
       i = j;
       const leftEntries = island.filter(cr => cr.left_text != null).map(cr => [cr.left_num, cr.left_text]);

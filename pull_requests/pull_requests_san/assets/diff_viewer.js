@@ -417,20 +417,11 @@ function renderChangedText(txt, op, subSegments = null, extraCls = "", customTit
   const baseCls = op === "del" ? "ch-del" : "ch-ins";
   const cls = extraCls ? `${baseCls} ${extraCls}` : baseCls;
   const raw = String(txt || "");
-  let lead = "";
-  let core = raw;
-  let trail = "";
-  const m = raw.match(/^([ \t]*)([\s\S]*?\S[\s\S]*?)([ \t]*)$/);
-  if (m) {
-    lead = m[1];
-    core = m[2];
-    trail = m[3];
-  }
-  const tipRaw = customTitle ? `${customTitle} | ${codepointTitle(core)}` : codepointTitle(core);
+  const tipRaw = customTitle ? `${customTitle} | ${codepointTitle(raw)}` : codepointTitle(raw);
   const tip = esc(tipRaw);
   const fmtWs = s => esc(s.replace(/\t/g, "  "));
 
-  if (Array.isArray(subSegments) && subSegments.length && core) {
+  if (Array.isArray(subSegments) && subSegments.length && raw) {
     const trimmed = subSegments.map(s => ({ op: s.op, text: String(s.text || "") })).filter(s => s.text);
     let subLead = "";
     let subTrail = "";
@@ -453,12 +444,12 @@ function renderChangedText(txt, op, subSegments = null, extraCls = "", customTit
       return (s.op === "del" || s.op === "ins") ? `<span class="ch-sub">${htmlPart}</span>` : htmlPart;
     }).join("");
     if (innerSub) {
-      return `${fmtWs(subLead || lead)}<span class="${cls} ch-has-sub" title="${tip}">${innerSub}</span>${fmtWs(subTrail || trail)}`;
+      return `${fmtWs(subLead)}<span class="${cls} ch-has-sub" title="${tip}">${innerSub}</span>${fmtWs(subTrail)}`;
     }
   }
 
-  const inner = renderVisibleTextWithInvisibles(core, tip);
-  return `${fmtWs(lead)}<span class="${cls}" title="${tip}">${inner}</span>${fmtWs(trail)}`;
+  const inner = renderVisibleTextWithInvisibles(raw, tip);
+  return `<span class="${cls}" title="${tip}">${inner}</span>`;
 }
 
 function graphemeUnitsClient(str) {

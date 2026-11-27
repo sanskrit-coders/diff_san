@@ -696,6 +696,26 @@ def _annotate_word_sub_segments(
           _annotate_pair_sub_segments(ds, a_run[best_idx], normalize=normalize, ignore_punct=ignore_punct)
 
 
+def _can_bridge_inline_context(rows: list[AlignedDiffRow], start_idx: int, island_start: int) -> int:
+  """Return end index after a short context gap if bridging inside one inline island, else -1."""
+  n = len(rows)
+  k = start_idx
+  non_ws_chars = 0
+  while k < n and rows[k].kind == "context":
+    non_ws_chars += len((rows[k].left_text or "").strip())
+    if (k - start_idx + 1) > 3 or non_ws_chars > 80:
+      return -1
+    k += 1
+  if k >= n or k == start_idx or (k - island_start) > 160:
+    return -1
+  total_chars = 0
+  for p in range(island_start, k):
+    total_chars += len((rows[p].left_text or rows[p].right_text or ""))
+    if total_chars > 32000:
+      return -1
+  return k
+
+
 def build_inline_flow_rows(
   rows: list[AlignedDiffRow],
   *,
@@ -716,8 +736,15 @@ def build_inline_flow_rows(
       continue
 
     j = i
-    while j < n and rows[j].kind != "context":
-      j += 1
+    while j < n:
+      if rows[j].kind != "context":
+        j += 1
+      else:
+        nxt = _can_bridge_inline_context(rows, j, i)
+        if nxt > j:
+          j = nxt
+        else:
+          break
     island = rows[i:j]
     i = j
 

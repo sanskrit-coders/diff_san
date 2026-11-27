@@ -274,6 +274,17 @@ class PRReviewSession:
     self.pending_drafts[key] = new_drafts
     return True
 
+  def update_draft(self, owner: str, repo: str, number: int, draft_id: str, body: str) -> dict[str, Any]:
+    text = (body or "").strip()
+    if not text:
+      raise ValueError("Draft comment body cannot be empty")
+    key = (owner, repo, int(number))
+    for d in self.pending_drafts.get(key, []):
+      if d["draft_id"] == draft_id:
+        d["body"] = text
+        return dict(d)
+    raise FileNotFoundError(f"Draft comment {draft_id!r} not found")
+
   def _refresh_after_mutation(
     self,
     owner: str,
@@ -362,6 +373,51 @@ class PRReviewSession:
   ) -> dict[str, Any]:
     created = self.client.reply_to_review_comment(owner, repo, number, comment_id, body)
     return {"created": created, "detail": self._refresh_after_mutation(owner, repo, number, char_diff_mode, normalize, ignore_punct)}
+
+  def edit_review_comment(
+    self,
+    owner: str,
+    repo: str,
+    number: int,
+    comment_id: int,
+    body: str,
+    *,
+    char_diff_mode: str = "grapheme",
+    normalize: str = "none",
+    ignore_punct: bool = False,
+  ) -> dict[str, Any]:
+    updated = self.client.update_review_comment(owner, repo, comment_id, body)
+    return {"updated": updated, "detail": self._refresh_after_mutation(owner, repo, number, char_diff_mode, normalize, ignore_punct)}
+
+  def edit_issue_comment(
+    self,
+    owner: str,
+    repo: str,
+    number: int,
+    comment_id: int,
+    body: str,
+    *,
+    char_diff_mode: str = "grapheme",
+    normalize: str = "none",
+    ignore_punct: bool = False,
+  ) -> dict[str, Any]:
+    updated = self.client.update_issue_comment(owner, repo, comment_id, body)
+    return {"updated": updated, "detail": self._refresh_after_mutation(owner, repo, number, char_diff_mode, normalize, ignore_punct)}
+
+  def edit_review_summary(
+    self,
+    owner: str,
+    repo: str,
+    number: int,
+    review_id: int,
+    body: str,
+    *,
+    char_diff_mode: str = "grapheme",
+    normalize: str = "none",
+    ignore_punct: bool = False,
+  ) -> dict[str, Any]:
+    updated = self.client.update_review_summary(owner, repo, number, review_id, body)
+    return {"updated": updated, "detail": self._refresh_after_mutation(owner, repo, number, char_diff_mode, normalize, ignore_punct)}
 
   def submit_review(
     self,

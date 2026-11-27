@@ -1281,6 +1281,30 @@ class GitHubClient:
     o_seg, r_seg = _safe_segment(owner, "owner"), _safe_segment(repo, "repo")
     return self.rest_post(f"/repos/{o_seg}/{r_seg}/pulls/{int(number)}/reviews", payload)
 
+  def update_review_comment(self, owner: str, repo: str, comment_id: int, body: str) -> dict[str, Any]:
+    """Edit the body of an existing inline PR review comment."""
+    text = (body or "").strip()
+    if not text:
+      raise ValueError("Comment body cannot be empty")
+    o_seg, r_seg = _safe_segment(owner, "owner"), _safe_segment(repo, "repo")
+    return self.rest_patch(f"/repos/{o_seg}/{r_seg}/pulls/comments/{int(comment_id)}", {"body": text})
+
+  def update_issue_comment(self, owner: str, repo: str, comment_id: int, body: str) -> dict[str, Any]:
+    """Edit the body of an existing PR conversation comment."""
+    text = (body or "").strip()
+    if not text:
+      raise ValueError("Comment body cannot be empty")
+    o_seg, r_seg = _safe_segment(owner, "owner"), _safe_segment(repo, "repo")
+    return self.rest_patch(f"/repos/{o_seg}/{r_seg}/issues/comments/{int(comment_id)}", {"body": text})
+
+  def update_review_summary(self, owner: str, repo: str, number: int, review_id: int, body: str) -> dict[str, Any]:
+    """Edit the summary body of an already submitted PR review."""
+    text = (body or "").strip()
+    if not text:
+      raise ValueError("Review summary body cannot be empty")
+    o_seg, r_seg = _safe_segment(owner, "owner"), _safe_segment(repo, "repo")
+    return self.rest_put(f"/repos/{o_seg}/{r_seg}/pulls/{int(number)}/reviews/{int(review_id)}", {"body": text})
+
   def resolve_review_thread(self, thread_id: str, *, resolve: bool = True) -> dict[str, Any]:
     """Resolve or unresolve a GraphQL PR review thread."""
     if not thread_id or thread_id.isdigit():
