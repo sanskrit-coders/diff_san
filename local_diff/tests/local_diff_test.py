@@ -342,6 +342,11 @@ def test_pure_js_diff_engine_parity_and_static_export_with_gap_expand(tmp_path: 
   assert server.main(["--export-static", str(out_static)]) == 0
   static_html = out_static.read_text(encoding="utf-8")
   assert "const IS_STATIC_HOST = true" in static_html
+  assert "https://github.com/sanskrit-coders/diff_san" in static_html
+  assert "https://pypi.org/project/local-diff-san/" in static_html
+  assert "https://pypi.org/project/pull-requests-san/" in static_html
+  assert "pip install local-diff-san" in static_html
+  assert "character-level" in static_html
   m = re.search(r"<script>\n(.*?)\n</script>", static_html, re.S)
   assert m is not None
   static_js = m.group(1)

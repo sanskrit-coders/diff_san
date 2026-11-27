@@ -554,6 +554,30 @@
   table.local-single col.col-single-code { width: calc(100% - 112px); }
   table.local-two col.col-num { width: 58px; }
   table.local-two col.col-code { width: calc(50% - 58px); }
+  .about-footer {
+    margin-top: 6px;
+    padding: 10px 14px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 8px;
+    color: var(--muted);
+    font-size: 15px;
+    line-height: 1.5;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .about-footer a { color: var(--blue); text-decoration: none; font-weight: 500; }
+  .about-footer a:hover { text-decoration: underline; }
+  .about-footer code {
+    font-family: var(--mono);
+    font-size: 13.5px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    color: var(--text);
+  }
 </style>
 </head>
 <body>
@@ -662,6 +686,17 @@
       <div class="card">Loading diff...</div>
     </div>
     <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Alt+S Single/2-Pane • Ctrl+R Refresh • j/k/↑/↓ Navigate files • Esc Close Settings</div>
+    <footer id="aboutFooter" class="about-footer">
+      <div>
+        <strong>diff_san</strong> (<a href="https://github.com/sanskrit-coders/diff_san" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) —
+        Sanskrit &amp; Indic <strong>character-level</strong>, <strong>Vedic grapheme (<code>\X</code>)</strong>, and <strong>single-pane inline word-flow</strong> diff viewer with intra-word highlights across reflowed lines, optional 2-pane LHS/RHS mode, Unicode normalization, punctuation-ignore mode, and expandable context lines. Runs locally in pure JS with zero server uploads.
+      </div>
+      <div>
+        Python / CLI packages on PyPI:
+        <a href="https://pypi.org/project/local-diff-san/" target="_blank" rel="noopener noreferrer"><code>pip install local-diff-san</code></a> (compare local files or Git <code>HEAD</code> revisions)
+        · <a href="https://pypi.org/project/pull-requests-san/" target="_blank" rel="noopener noreferrer"><code>pip install pull_requests_san</code></a> (GitHub PR reviewer).
+      </div>
+    </footer>
   </main>
 </div>
 
