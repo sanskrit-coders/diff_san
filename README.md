@@ -12,7 +12,7 @@ Interactive FastAPI web reviewer for GitHub Pull Requests across an entire organ
 - **Character & Vedic Grapheme Modes** — preserves trailing Vedic accent marks (including `U+1CD3` `᳓`) on grapheme clusters, or switches to raw Unicode codepoints.
 - **Unicode Normalization & Punctuation Filtering** — optional `NFC`/`NFD`/`NFKC` normalization and `Ignore punct` (`।`, `॥`, ASCII/Indic punctuation), inspired by [`bhashika-org-in/wordiff`](https://github.com/bhashika-org-in/wordiff).
 - **Custom Theme Settings** — `⚙ Settings` color pickers (persisted across `pull_requests_san` and `local-diff-san`), lighter pastel deletion highlights, yellowish additions, and `Adishila SanVedic` Devanagari font sizing.
-- **Full PR Workflow** — inline comments, line-range comments, thread replies, draft batching, approvals/request-changes reviews, resolve/unresolve threads, mergeability & 3-way merge conflict diff inspection, open in main browser (`Alt+B`), merge PR (`Alt+Shift+M`), close/reopen PR (`Alt+Shift+C`).
+- **Full PR Workflow** — inline comments (`Ctrl+Click` any hunk line or click `+💬` / line number), line-range comments, expandable collapsed lines above/between/below hunks, thread replies, draft batching, approvals/request-changes reviews, resolve/unresolve threads, mergeability & 3-way merge conflict diff inspection, open in main browser (`Alt+B`), merge PR (`Alt+Shift+M`), close/reopen PR (`Alt+Shift+C`).
 - **Scholarship Typography & Local Helpers** — uses the `Adishila SanVedic` Devanagari font stack, GoldenDict lookup, and IntelliJ IDEA jump-to-line support.
 
 ```bash
@@ -39,13 +39,15 @@ pull_requests_san --owner vishvAsa --state open
 Local file and Git `HEAD` diff viewer built on [`pull_requests_san`](pull_requests/README.md) for side-by-side (`Alt+S`) and default single-pane word-flow Sanskrit diffing:
 
 - **Compare a local file or repo against Git `HEAD`** (or `--rev HEAD~1`, branch, or commit), discovering modified, deleted, and untracked files cleanly.
-- **Compare two local files directly** with intra-word character highlights, Vedic grapheme (`\X`) & codepoint modes, normalization/`Ignore punct`, custom color settings, GoldenDict lookup, and click-to-jump IntelliJ IDEA support.
+- **Compare two local files directly** with intra-word character highlights, expandable collapsed context lines, Vedic grapheme (`\X`) & codepoint modes, normalization/`Ignore punct`, custom color settings, GoldenDict lookup, and click-to-jump IntelliJ IDEA support.
+- **Static website bundle (`docs/index.html`)** — pure-JS `DiffSanEngine` diffs 2 uploaded/dragged files or pasted texts right in the browser with zero server backend (`local-diff-san --export-static docs/index.html`).
 
 ```bash
 pip install local-diff-san
 local-diff-san path/to/file.md              # file vs HEAD
 local-diff-san left.md right.md             # 2 local files
 local-diff-san                              # all dirty files in repo vs HEAD
+local-diff-san --export-static docs/index.html
 ```
 
 ### [`vishvAsa/pada_svara/`](vishvAsa/pada_svara/README.md) (`pada_svara`)

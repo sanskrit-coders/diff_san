@@ -379,6 +379,40 @@
     padding: 0 3px;
     vertical-align: middle;
   }
+  tr.diff-gap-row td {
+    background: #f2ede2;
+    border-top: 1px dashed var(--border);
+    border-bottom: 1px dashed var(--border);
+    padding: 4px 10px;
+    color: var(--muted);
+    font-size: 15px;
+  }
+  .diff-gap-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .diff-gap-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .diff-gap-btn {
+    padding: 2px 9px;
+    font-size: 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--text);
+  }
+  .diff-gap-btn:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
 
   .settings-drawer {
     position: fixed;

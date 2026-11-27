@@ -123,6 +123,28 @@ def _diff_raw_tokens(
 
   if suff:
     chunks.append(("equal", "".join(lhs_toks[len(lhs_toks) - suff :]), "".join(rhs_toks[len(rhs_toks) - suff :])))
+  if mode == "word" and len(chunks) >= 3:
+    cleaned: list[tuple[str, str, str]] = []
+    idx = 0
+    while idx < len(chunks):
+      tag, lp, rp = chunks[idx]
+      if (
+        tag == "equal"
+        and not lp.strip()
+        and not rp.strip()
+        and cleaned
+        and cleaned[-1][0] != "equal"
+        and idx + 1 < len(chunks)
+        and chunks[idx + 1][0] != "equal"
+      ):
+        _, pl, pr = cleaned[-1]
+        _, nl, nr = chunks[idx + 1]
+        cleaned[-1] = ("replace", pl + lp + nl, pr + rp + nr)
+        idx += 2
+      else:
+        cleaned.append((tag, lp, rp))
+        idx += 1
+    chunks = cleaned
   return chunks
 
 

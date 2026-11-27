@@ -273,11 +273,13 @@ def test_local_diff_frontend_js_renders_settings_and_diff(tmp_path: Path):
     "elems['normalizeSelect'] = Object.assign(makeEl('normalizeSelect'), { value: 'none' });\n"
     "elems['ignorePunctChk'] = Object.assign(makeEl('ignorePunctChk'), { checked: false });\n"
     "elems['singlePaneChk'] = Object.assign(makeEl('singlePaneChk'), { checked: true });\n"
-    "elems['wrapLinesChk'] = Object.assign(makeEl('wrapLinesChk'), { checked: true });\n"
+    "elems['collapseContextChk'] = Object.assign(makeEl('collapseContextChk'), { checked: true });\n"
     "elems['changedOnlyChk'] = Object.assign(makeEl('changedOnlyChk'), { checked: false });\n"
+    "elems['wrapLinesChk'] = Object.assign(makeEl('wrapLinesChk'), { checked: true });\n"
     "elems['settingsPane'] = Object.assign(makeEl('settingsPane'), { style: { display: 'none' } });\n"
     "global.localStorage = { getItem(k){ return Object.prototype.hasOwnProperty.call(lsStore, k) ? lsStore[k] : null; }, setItem(k, v){ lsStore[k] = String(v); } };\n"
     "global.window = { location: { reload(){} }, getSelection(){ return { toString(){ return ''; } }; } };\n"
+    "global.window.DiffSanEngine = global.DiffSanEngine;\n"
     f"const sampleWs = {json.dumps(sample_ws)};\n"
     "const fetched = [];\n"
     "global.fetch = async (url, opts) => {\n"
@@ -304,3 +306,97 @@ def test_local_diff_frontend_js_renders_settings_and_diff(tmp_path: Path):
   js_file = tmp_path / "test_local_diff_gui.js"
   js_file.write_text(harness, encoding="utf-8")
   subprocess.check_call(["node", str(js_file)])
+
+
+def test_pure_js_diff_engine_parity_and_static_export_with_gap_expand(tmp_path: Path):
+  if not shutil.which("node"):
+    pytest.skip("node binary not installed")
+  from pull_requests_san.diff import build_full_file_hunk, compute_char_diff
+
+  # 1. Verify pure-JS DiffSanEngine matches Python diff logic on Sanskrit/Vedic cases
+  engine_path = (
+    Path(__file__).resolve().parents[2] / "pull_requests" / "pull_requests_san" / "assets" / "diff_engine.js"
+  )
+  py_lhs, py_rhs = compute_char_diff("इमा᳓म् अ᳓रण्या पा०", "इमा᳓म् अर᳓ण्या पा॰", mode="grapheme")
+  py_nfc_l, py_nfc_r = compute_char_diff("क\u093c", "\u0958", mode="codepoint", normalize="nfc")
+  py_ip = build_full_file_hunk("राम।\nपा० ख\n", "राम॥\nपा॰ ख\n", char_diff_mode="word", ignore_punct=True)
+
+  parity_script = (
+    f"const E = require({json.dumps(str(engine_path))});\n"
+    "const [gL, gR] = E.computeCharDiff('इमा᳓म् अ᳓रण्या पा०', 'इमा᳓म् अर᳓ण्या पा॰', 'grapheme');\n"
+    f"if (JSON.stringify(gL) !== JSON.stringify({json.dumps(py_lhs)}) || JSON.stringify(gR) !== JSON.stringify({json.dumps(py_rhs)})) throw new Error('Grapheme mismatch');\n"
+    "const [nL, nR] = E.computeCharDiff('क\\u093c', '\\u0958', 'codepoint', { normalize: 'nfc' });\n"
+    f"if (JSON.stringify(nL) !== JSON.stringify({json.dumps(py_nfc_l)}) || JSON.stringify(nR) !== JSON.stringify({json.dumps(py_nfc_r)})) throw new Error('NFC mismatch');\n"
+    "const ip = E.buildFullFileHunk('राम।\\nपा० ख\\n', 'राम॥\\nपा॰ ख\\n', { charDiffMode: 'word', ignorePunct: true });\n"
+    "if (ip.rows[0].kind !== 'context') throw new Error('ignore_punct failed in JS');\n"
+    "const wordH = E.buildFullFileHunk('पा०\\n', 'पा॰\\n', { charDiffMode: 'word' });\n"
+    "const delSeg = wordH.inline_rows[0].segments.find(s => s.op === 'del');\n"
+    "if (!delSeg || !delSeg.sub_segments.some(ss => ss.op === 'del' && ss.text === '०')) throw new Error('Intra-word ० missing in JS');\n"
+  )
+  parity_js = tmp_path / "parity.js"
+  parity_js.write_text(parity_script, encoding="utf-8")
+  subprocess.check_call(["node", str(parity_js)])
+
+  # 2. Export static standalone page via CLI (--export-static) and run without any server (fetch throws!)
+  out_static = tmp_path / "static_site" / "index.html"
+  assert server.main(["--export-static", str(out_static)]) == 0
+  static_html = out_static.read_text(encoding="utf-8")
+  assert "const IS_STATIC_HOST = true" in static_html
+  m = re.search(r"<script>\n(.*?)\n</script>", static_html, re.S)
+  assert m is not None
+  static_js = m.group(1)
+
+  long_left = "अग्निमीळे\n" + "".join(f"पङ्क्तिः {i}\n" for i in range(1, 36)) + "समाप्तम्\n"
+  long_right = "अग्निमीळे\n" + "".join(f"पङ्क्तिः {i}\n" for i in range(1, 36)) + "समाप्तम् नूतनम्\n"
+
+  static_harness = (
+    "const elems = {};\n"
+    "const listeners = {};\n"
+    "function makeClassList(){ const s = new Set(); return { add(c){s.add(c);}, remove(c){s.delete(c);}, toggle(c,f){ if(f===undefined){if(s.has(c))s.delete(c);else s.add(c);} else if(f)s.add(c); else s.delete(c); }, contains(c){return s.has(c);} }; }\n"
+    "function makeEl(id){ return { id, value: '', checked: false, innerHTML: '', textContent: '', style: {}, classList: makeClassList() }; }\n"
+    "global.document = {\n"
+    "  documentElement: { style: { setProperty(){} } },\n"
+    "  getElementById(id){ if (!elems[id]) elems[id] = makeEl(id); return elems[id]; },\n"
+    "  addEventListener(e, fn){ listeners[e] = fn; },\n"
+    "};\n"
+    "elems['diffModeSelect'] = Object.assign(makeEl('diffModeSelect'), { value: 'word' });\n"
+    "elems['normalizeSelect'] = Object.assign(makeEl('normalizeSelect'), { value: 'none' });\n"
+    "elems['ignorePunctChk'] = Object.assign(makeEl('ignorePunctChk'), { checked: false });\n"
+    "elems['singlePaneChk'] = Object.assign(makeEl('singlePaneChk'), { checked: true });\n"
+    "elems['collapseContextChk'] = Object.assign(makeEl('collapseContextChk'), { checked: true });\n"
+    "elems['changedOnlyChk'] = Object.assign(makeEl('changedOnlyChk'), { checked: false });\n"
+    "elems['wrapLinesChk'] = Object.assign(makeEl('wrapLinesChk'), { checked: true });\n"
+    "global.localStorage = { getItem(){ return null; }, setItem(){} };\n"
+    "global.window = global;\n"
+    "global.location = { protocol: 'https:', reload(){} };\n"
+    "global.getSelection = () => ({ toString(){ return ''; } });\n"
+    "global.fetch = async () => { throw new Error('Static mode must not issue network fetch calls'); };\n"
+    + static_js.replace("init();", "")
+    + "\n(async () => {\n"
+    "  await init();\n"
+    "  if (!elems['diffContainer'].innerHTML.includes('आविध्याऽऽलोल्य')) throw new Error('Sample did not render in static mode');\n"
+    f"  elems['staticLeftText'].value = {json.dumps(long_left)};\n"
+    f"  elems['staticRightText'].value = {json.dumps(long_right)};\n"
+    "  computeStaticTextDiff();\n"
+    "  const collapsedHtml = elems['diffContainer'].innerHTML;\n"
+    "  if (!collapsedHtml.includes('diff-gap-row') || collapsedHtml.includes('पङ्क्तिः 1<')) {\n"
+    "    throw new Error('Long context gap did not collapse cleanly: ' + collapsedHtml);\n"
+    "  }\n"
+    "  const mKey = collapsedHtml.match(/expandGapRow\\(&quot;([^&]+)&quot;,/);\n"
+    "  if (!mKey) throw new Error('Missing expandGapRow key');\n"
+    "  const gapKey = mKey[1];\n"
+    "  expandGapRow(gapKey, 'top', 20);\n"
+    "  const partExp = elems['diffContainer'].innerHTML;\n"
+    "  if (!partExp.includes('पङ्क्तिः 1') || !partExp.includes('diff-gap-row')) {\n"
+    "    throw new Error('Expanding 20 lines from gap did not show top lines cleanly while keeping remainder collapsed');\n"
+    "  }\n"
+    "  expandGapRow(gapKey, 'all', 0);\n"
+    "  if (elems['diffContainer'].innerHTML.includes('diff-gap-row') || !elems['diffContainer'].innerHTML.includes('पङ्क्तिः 25')) {\n"
+    "    throw new Error('Expand all did not reveal full collapsed gap');\n"
+    "  }\n"
+    "})().catch(err => { console.error(err); process.exit(1); });\n"
+  )
+  s_js = tmp_path / "static_test.js"
+  s_js.write_text(static_harness, encoding="utf-8")
+  subprocess.check_call(["node", str(s_js)])
+

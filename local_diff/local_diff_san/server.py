@@ -24,9 +24,25 @@ from local_diff_san import core
 _TEMPLATE_PATH = Path(__file__).with_name("templates") / "local_diff.html"
 
 
-def load_html_template() -> str:
-  """Read the local diff viewer HTML template with shared diff CSS/JS injected."""
-  return render_html_with_shared_assets(_TEMPLATE_PATH.read_text(encoding="utf-8"))
+def load_html_template(*, static_mode: bool = False) -> str:
+  """Read the local diff viewer HTML template with shared diff CSS/JS/engine assets injected."""
+  raw = _TEMPLATE_PATH.read_text(encoding="utf-8")
+  flag = "true" if static_mode else "false"
+  raw = raw.replace("/* {{LOCAL_DIFF_STATIC_FLAG}} */ false", flag)
+  return render_html_with_shared_assets(raw)
+
+
+def render_static_html() -> str:
+  """Render a self-contained static HTML website bundle for client-side file/text diffing."""
+  return load_html_template(static_mode=True)
+
+
+def export_static_html(output_path: str | Path) -> Path:
+  """Write the self-contained static website HTML bundle to ``output_path``."""
+  dest = Path(output_path).expanduser().resolve()
+  dest.parent.mkdir(parents=True, exist_ok=True)
+  dest.write_text(render_static_html(), encoding="utf-8")
+  return dest
 
 
 def _resolve_idea_binary() -> str | None:
@@ -188,9 +204,15 @@ def main(argv: Sequence[str] | None = None) -> int:
   )
   p.add_argument("--rev", default=core.DEFAULT_REV, help="Git revision to compare against (default: HEAD).")
   p.add_argument("--head", action="store_true", help="Always compare passed path(s) against --rev even when 2 files are given.")
+  p.add_argument("--export-static", default="", help="Write a self-contained pure-JS static HTML page to FILE and exit.")
   p.add_argument("--port", type=int, default=8772, help="Port to bind on 127.0.0.1 (default: 8772 or next free port).")
   p.add_argument("--no-browser", action="store_true", help="Do not auto-open browser window.")
   args = p.parse_args(argv)
+
+  if args.export_static:
+    out = export_static_html(args.export_static)
+    print(f"Exported standalone static local-diff-san page to {out}", flush=True)
+    return 0
 
   spec = core.resolve_spec_from_paths(args.paths, rev=args.rev, force_head=args.head)
   try:

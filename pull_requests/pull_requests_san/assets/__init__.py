@@ -18,10 +18,16 @@ def load_shared_diff_js() -> str:
   return (_ASSETS_DIR / "diff_viewer.js").read_text(encoding="utf-8")
 
 
+def load_shared_diff_engine_js() -> str:
+  """Return the pure-JS Sanskrit/Vedic diff generation engine."""
+  return (_ASSETS_DIR / "diff_engine.js").read_text(encoding="utf-8")
+
+
 def render_html_with_shared_assets(template_html: str) -> str:
   """Inject shared CSS and JS assets into an HTML template string."""
   return (
     template_html
     .replace("/* {{SHARED_DIFF_CSS}} */", load_shared_diff_css())
+    .replace("// {{SHARED_DIFF_ENGINE_JS}}", load_shared_diff_engine_js())
     .replace("// {{SHARED_DIFF_JS}}", load_shared_diff_js())
   )

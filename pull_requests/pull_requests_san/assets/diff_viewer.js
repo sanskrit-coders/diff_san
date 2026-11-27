@@ -389,3 +389,131 @@ async function lookupSelectedGoldenDict() {
     showError(e.message);
   }
 }
+
+let diffExpandedGaps = {};
+
+function clearExpandedGaps(prefix = "") {
+  if (!prefix) {
+    diffExpandedGaps = {};
+    return;
+  }
+  for (const k of Object.keys(diffExpandedGaps)) {
+    if (k.startsWith(prefix)) delete diffExpandedGaps[k];
+  }
+}
+
+function setGapExpandedState(gapKey, dir, count = 20) {
+  const cur = (diffExpandedGaps[gapKey] ||= { top: 0, bottom: 0, all: false });
+  if (dir === "all") cur.all = true;
+  else if (dir === "top") cur.top += Number(count || 20);
+  else if (dir === "bottom") cur.bottom += Number(count || 20);
+}
+
+function buildGapAwareRenderItems(rows, {
+  gapPrefix = "g",
+  mode = "none", // "none" | "changed_only" | "long_runs"
+  contextRadius = 3,
+  minCollapse = 8,
+  isPinnedFn = null,
+} = {}) {
+  const n = (rows || []).length;
+  if (!n) return [];
+  if (mode === "none") {
+    return rows.map((r, ri) => ({ type: "row", r, ri }));
+  }
+
+  const pinned = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    const r = rows[i];
+    if (r.kind !== "context" || (isPinnedFn && isPinnedFn(r, i))) {
+      pinned[i] = 1;
+    }
+  }
+
+  const baseVisible = new Uint8Array(n);
+  if (mode === "changed_only") {
+    for (let i = 0; i < n; i++) baseVisible[i] = pinned[i];
+  } else {
+    // long_runs: keep contextRadius lines around pinned rows
+    for (let i = 0; i < n; i++) {
+      if (!pinned[i]) continue;
+      const lo = Math.max(0, i - contextRadius);
+      const hi = Math.min(n - 1, i + contextRadius);
+      for (let k = lo; k <= hi; k++) baseVisible[k] = 1;
+    }
+  }
+
+  const out = [];
+  let i = 0;
+  while (i < n) {
+    if (baseVisible[i]) {
+      out.push({ type: "row", r: rows[i], ri: i });
+      i += 1;
+      continue;
+    }
+    const gStart = i;
+    while (i < n && !baseVisible[i]) i += 1;
+    const gEnd = i - 1;
+    const spanLen = gEnd - gStart + 1;
+    const anchorL = rows[gStart].left_num ?? "L";
+    const anchorR = rows[gStart].right_num ?? "R";
+    const gapKey = `${gapPrefix}:${gStart}:${anchorL}_${anchorR}`;
+    const exp = diffExpandedGaps[gapKey];
+
+    if (exp?.all || (mode === "long_runs" && !exp && spanLen < minCollapse)) {
+      for (let k = gStart; k <= gEnd; k++) out.push({ type: "row", r: rows[k], ri: k });
+      continue;
+    }
+
+    const topN = Math.min(spanLen, exp?.top || 0);
+    const botN = Math.min(spanLen - topN, exp?.bottom || 0);
+    for (let k = gStart; k < gStart + topN; k++) out.push({ type: "row", r: rows[k], ri: k });
+
+    const remStart = gStart + topN;
+    const remEnd = gEnd - botN;
+    if (remStart <= remEnd) {
+      const remCount = remEnd - remStart + 1;
+      if (mode === "long_runs" && !exp && remCount < minCollapse) {
+        for (let k = remStart; k <= remEnd; k++) out.push({ type: "row", r: rows[k], ri: k });
+      } else {
+        out.push({
+          type: "gap",
+          gapKey,
+          hiddenCount: remCount,
+          canTop: gStart > 0,
+          canBottom: gEnd < n - 1,
+          firstLeft: rows[remStart].left_num,
+          lastLeft: rows[remEnd].left_num,
+          firstRight: rows[remStart].right_num,
+          lastRight: rows[remEnd].right_num,
+        });
+      }
+    }
+
+    for (let k = gEnd - botN + 1; k <= gEnd; k++) out.push({ type: "row", r: rows[k], ri: k });
+  }
+  return out;
+}
+
+function renderGapRowHtml(gap, colspan, fnName = "expandGapRow") {
+  const btns = [];
+  const encodedKey = esc(JSON.stringify(gap.gapKey));
+  if (gap.hiddenCount > 20 && gap.canTop) {
+    btns.push(`<button class="diff-gap-btn" type="button" onclick="event.stopPropagation(); ${fnName}(${encodedKey}, 'top', 20)">↓ Expand 20 below</button>`);
+  }
+  btns.push(`<button class="diff-gap-btn" type="button" onclick="event.stopPropagation(); ${fnName}(${encodedKey}, 'all', 0)">↕ Expand all ${gap.hiddenCount}</button>`);
+  if (gap.hiddenCount > 20 && gap.canBottom) {
+    btns.push(`<button class="diff-gap-btn" type="button" onclick="event.stopPropagation(); ${fnName}(${encodedKey}, 'bottom', 20)">↑ Expand 20 above</button>`);
+  }
+  const rangeTxt = (gap.firstRight != null && gap.lastRight != null)
+    ? ` (lines ${gap.firstRight}–${gap.lastRight})`
+    : ((gap.firstLeft != null && gap.lastLeft != null) ? ` (LHS ${gap.firstLeft}–${gap.lastLeft})` : "");
+  return `<tr class="diff-gap-row">
+    <td colspan="${colspan}">
+      <div class="diff-gap-bar">
+        <span>⋯ ${gap.hiddenCount} collapsed context line${gap.hiddenCount === 1 ? '' : 's'}${esc(rangeTxt)}</span>
+        <span class="diff-gap-actions">${btns.join("")}</span>
+      </div>
+    </td>
+  </tr>`;
+}

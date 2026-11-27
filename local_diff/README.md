@@ -22,12 +22,15 @@ local-diff-san old_file.md new_file.md
 local-diff-san
 local-diff-san path/to/dir
 
+# Export a standalone static HTML website (pure JS client-side file/text diffing)
+local-diff-san --export-static docs/index.html
+
 # Or invoke as a Python module
 python -m local_diff_san old_file.md new_file.md
 ```
 
 ## Key Features
 
-- **Single-pane word-flow diff** (default) with intra-word character highlights and **2-pane LHS/RHS mode** (`Alt+S`), powered by `pull_requests_san.diff`.
+- **Single-pane word-flow diff** (default) with intra-word character highlights and **2-pane LHS/RHS mode** (`Alt+S`), powered by `pull_requests_san.diff` on the CLI or pure-JS `DiffSanEngine` in static browser mode.
 - **Vedic grapheme (`\X`) & raw codepoint modes** keeping Vedic svara marks (`U+1CD3` `᳓`, etc.) attached to their akṣara.
-- **Unicode normalization (`NFC`/`NFD`/`NFKC`/`NFKD`) & `Ignore punct`**, customizable **Settings color pickers** (persisted across `pull_requests_san` and `local-diff-san`), **GoldenDict** lookup, and click-to-jump **IntelliJ IDEA** line opening.
+- **Expandable collapsed context lines** (`↓ Expand 20 below`, `↑ Expand 20 above`, `↕ Expand all`), Unicode normalization (`NFC`/`NFD`/`NFKC`/`NFKD`), `Ignore punct`, customizable **Settings color pickers** (persisted across `pull_requests_san` and `local-diff-san`), **GoldenDict** lookup, and click-to-jump **IntelliJ IDEA** line opening.

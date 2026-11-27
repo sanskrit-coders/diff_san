@@ -325,7 +325,7 @@
     <div id="prContainer">
       <div class="card">Loading pull requests...</div>
     </div>
-    <div style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+Enter Submit • Ctrl+R Refresh • j/k/↑/↓ navigate files • ←/→ Collapse/Expand • [/] Prev/Next PR • Esc Close composer</div>
+    <div style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Ctrl+Click Insert comment • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+Enter Submit • Ctrl+R Refresh • j/k/↑/↓ navigate files • ←/→ Collapse/Expand • [/] Prev/Next PR • Esc Close composer/settings</div>
   </main>
 </div>
 
@@ -351,6 +351,8 @@ let expandedResolvedThreads = {};
 let selectedChangelistSha = "";
 let activeChangelistData = null;
 let changelistReqSeq = 0;
+let prPartialFullMode = {};
+let prExpandedHunkWindows = {};
 
 function getDisplayedFiles() {
   if (selectedChangelistSha && activeChangelistData) {
@@ -749,6 +751,9 @@ async function openPr(owner, repo, number, forceRefresh = false, { preserveUi = 
     expandedResolvedThreads = {};
     selectedChangelistSha = "";
     activeChangelistData = null;
+    prPartialFullMode = {};
+    prExpandedHunkWindows = {};
+    clearExpandedGaps();
   } else if (!preserveUi) {
     selectedFileFilter = "";
     openComposer = null;
@@ -1479,6 +1484,29 @@ function collectRowExtrasHtml(f, r, pos, anchoredByPos, seenExtras, colspan) {
     </td></tr>`;
 }
 
+function handleDiffRowCtrlClick(ev, fi, leftNum, rightNum, inDiffHunk) {
+  if (!ev || !ev.ctrlKey || ev.altKey || ev.metaKey || ev.shiftKey) return;
+  const tgt = ev.target;
+  if (tgt && typeof tgt.closest === "function") {
+    if (tgt.closest("button, a, input, textarea, select, summary, .thread-box, .inline-composer")) return;
+  }
+  let preferLeft = false;
+  if (tgt && typeof tgt.closest === "function") {
+    if (tgt.closest(".lhs-cell, .ch-del, .nl-del")) preferLeft = true;
+  }
+  const side = preferLeft
+    ? (leftNum != null ? "LEFT" : "RIGHT")
+    : (rightNum != null ? "RIGHT" : "LEFT");
+  const targetLine = side === "LEFT" ? leftNum : rightNum;
+  if (!inDiffHunk || targetLine == null) {
+    setStatus("Ctrl+Click outside diff hunk — inline PR comments must be on lines inside the PR hunk.", 3000);
+    return;
+  }
+  if (typeof ev.preventDefault === "function") ev.preventDefault();
+  if (typeof ev.stopPropagation === "function") ev.stopPropagation();
+  startInlineComposer(fi, targetLine, side, leftNum, rightNum);
+}
+
 function rowControlsForLine(fi, r) {
   const lhsNum = r.left_num != null ? r.left_num : "";
   const rhsNum = r.right_num != null ? r.right_num : "";
@@ -1486,10 +1514,10 @@ function rowControlsForLine(fi, r) {
   const canRight = r.in_diff_hunk && r.right_num != null;
   const defaultSide = r.right_num != null ? "RIGHT" : "LEFT";
   const defaultLine = r.right_num != null ? r.right_num : r.left_num;
-  const leftLnClick = canLeft ? `clickable" title="Comment on LEFT line ${r.left_num}" onclick="startInlineComposer(${fi}, ${r.left_num}, 'LEFT', ${r.left_num}, ${r.right_num ?? 'null'})"` : '"';
-  const rightLnClick = canRight ? `clickable" title="Comment on RIGHT line ${r.right_num}" onclick="startInlineComposer(${fi}, ${r.right_num}, 'RIGHT', ${r.left_num ?? 'null'}, ${r.right_num})"` : '"';
+  const leftLnClick = canLeft ? `clickable" title="Comment on LEFT line ${r.left_num} (or Ctrl+Click row)" onclick="startInlineComposer(${fi}, ${r.left_num}, 'LEFT', ${r.left_num}, ${r.right_num ?? 'null'})"` : '"';
+  const rightLnClick = canRight ? `clickable" title="Comment on RIGHT line ${r.right_num} (or Ctrl+Click row)" onclick="startInlineComposer(${fi}, ${r.right_num}, 'RIGHT', ${r.left_num ?? 'null'}, ${r.right_num})"` : '"';
   const actBtn = (r.in_diff_hunk && defaultLine != null)
-    ? `<button class="add-comment-btn" title="Add inline review comment at L${defaultLine} (${defaultSide})" onclick="startInlineComposer(${fi}, ${defaultLine}, '${defaultSide}', ${r.left_num ?? 'null'}, ${r.right_num ?? 'null'})">+💬</button>`
+    ? `<button class="add-comment-btn" title="Add inline review comment at L${defaultLine} (${defaultSide}) — or Ctrl+Click row" onclick="startInlineComposer(${fi}, ${defaultLine}, '${defaultSide}', ${r.left_num ?? 'null'}, ${r.right_num ?? 'null'})">+💬</button>`
     : "";
   return { lhsNum, rhsNum, leftLnClick, rightLnClick, actBtn };
 }
@@ -1499,7 +1527,8 @@ function renderSinglePaneRowHtml(fi, f, r, pos, anchoredByPos, seenExtras) {
   const { lhsNum, rhsNum, leftLnClick, rightLnClick, actBtn } = rowControlsForLine(fi, r);
   const contentHtml = renderDiffSegments(r.segments);
   const extraRows = collectRowExtrasHtml(f, r, pos, anchoredByPos, seenExtras, 4);
-  return `<tr class="${rowCls}">
+  const rowClick = `onclick="handleDiffRowCtrlClick(event, ${fi}, ${r.left_num ?? 'null'}, ${r.right_num ?? 'null'}, ${Boolean(r.in_diff_hunk)})"`;
+  return `<tr class="${rowCls}" ${rowClick}>
     <td class="ln ${leftLnClick}>${lhsNum}</td>
     <td class="ln ${rightLnClick}>${rhsNum}</td>
     <td class="code-cell single-code-cell">${contentHtml}</td>
@@ -1515,13 +1544,112 @@ function renderDiffRowHtml(fi, f, r, pos, anchoredByPos, seenExtras) {
   const lhsCellCls = r.left_text == null ? "code-cell lhs-cell diff-empty" : "code-cell lhs-cell";
   const rhsCellCls = r.right_text == null ? "code-cell rhs-cell diff-empty" : "code-cell rhs-cell";
   const extraRows = collectRowExtrasHtml(f, r, pos, anchoredByPos, seenExtras, 5);
-  return `<tr class="${rowCls}">
+  const rowClick = `onclick="handleDiffRowCtrlClick(event, ${fi}, ${r.left_num ?? 'null'}, ${r.right_num ?? 'null'}, ${Boolean(r.in_diff_hunk)})"`;
+  return `<tr class="${rowCls}" ${rowClick}>
     <td class="ln ${leftLnClick}>${lhsNum}</td>
     <td class="${lhsCellCls}">${lhsHtml}</td>
     <td class="ln ${rightLnClick}>${rhsNum}</td>
     <td class="${rhsCellCls}">${rhsHtml}</td>
     <td class="act-cell">${actBtn}</td>
   </tr>${extraRows}`;
+}
+
+function expandGapRow(gapKey, dir, count) {
+  setGapExpandedState(gapKey, dir, count);
+  renderActivePrFiles();
+}
+
+function _hunkEndNums(h) {
+  const rows = h.rows || [];
+  let maxL = (h.old_start || 1) + (h.old_count || 0) - 1;
+  let maxR = (h.new_start || 1) + (h.new_count || 0) - 1;
+  for (const r of rows) {
+    if (r.left_num != null && r.left_num > maxL) maxL = r.left_num;
+    if (r.right_num != null && r.right_num > maxR) maxR = r.right_num;
+  }
+  return { maxL, maxR };
+}
+
+function _isRowPinnedInPrFile(f, r, pos, anchoredByPos) {
+  if (anchoredByPos[pos]?.length) return true;
+  if (openComposer && openComposer.filename === f.filename && (
+    (openComposer.side === "LEFT" && r.left_num === openComposer.line) ||
+    (openComposer.side === "RIGHT" && r.right_num === openComposer.line)
+  )) return true;
+  const wins = prExpandedHunkWindows[f.filename];
+  if (wins && wins.length) {
+    for (const w of wins) {
+      const inL = r.left_num != null && w.minL != null && r.left_num >= w.minL && r.left_num <= w.maxL;
+      const inR = r.right_num != null && w.minR != null && r.right_num >= w.minR && r.right_num <= w.maxR;
+      if (inL || inR) return true;
+    }
+  }
+  return false;
+}
+
+function renderPrHunkGapBarHtml(fi, where, hi, hiddenCount, colspan, canTop, canBottom) {
+  const btns = [];
+  if (canTop && (hiddenCount == null || hiddenCount > 20)) {
+    btns.push(`<button class="diff-gap-btn" type="button" onclick="event.stopPropagation(); expandPrHunkGap(${fi}, '${where}', ${hi}, 'top', 20)">↓ Expand 20 below</button>`);
+  }
+  if (hiddenCount != null) {
+    btns.push(`<button class="diff-gap-btn" type="button" onclick="event.stopPropagation(); expandPrHunkGap(${fi}, '${where}', ${hi}, 'all', 0)">↕ Expand all ${hiddenCount}</button>`);
+  } else {
+    btns.push(`<button class="diff-gap-btn" type="button" onclick="event.stopPropagation(); loadFullFile(${fi})">↕ Load Full File</button>`);
+  }
+  if (canBottom && (hiddenCount == null || hiddenCount > 20)) {
+    btns.push(`<button class="diff-gap-btn" type="button" onclick="event.stopPropagation(); expandPrHunkGap(${fi}, '${where}', ${hi}, 'bottom', 20)">↑ Expand 20 above</button>`);
+  }
+  const label = hiddenCount != null
+    ? `⋯ ${hiddenCount} collapsed line${hiddenCount === 1 ? '' : 's'}`
+    : "⋯ Additional lines below";
+  return `<table class="diff-table"><tbody><tr class="diff-gap-row"><td colspan="${colspan}">
+    <div class="diff-gap-bar"><span>${label}</span><span class="diff-gap-actions">${btns.join("")}</span></div>
+  </td></tr></tbody></table>`;
+}
+
+async function expandPrHunkGap(fi, where, hi, dir, count) {
+  const files = getDisplayedFiles();
+  const f = files?.[fi];
+  if (!f) return;
+  if (dir === "all" && where === "below") {
+    await loadFullFile(fi, { fromGap: false });
+    return;
+  }
+  const hunks = f.hunks || [];
+  const h = hunks[hi];
+  const prev = hi > 0 ? hunks[hi - 1] : null;
+  const seed = [];
+  for (const hk of hunks) {
+    const ends = _hunkEndNums(hk);
+    seed.push({ minL: hk.old_start || 1, maxL: ends.maxL, minR: hk.new_start || 1, maxR: ends.maxR });
+  }
+  const step = Number(count || 20);
+  if (where === "above" && h) {
+    const endR = (h.new_start || 1) - 1;
+    const endL = (h.old_start || 1) - 1;
+    seed.push({
+      minL: dir === "all" ? 1 : Math.max(1, endL - step + 1),
+      maxL: Math.max(1, endL),
+      minR: dir === "all" ? 1 : Math.max(1, endR - step + 1),
+      maxR: Math.max(1, endR),
+    });
+  } else if (where === "between" && prev && h) {
+    const pEnds = _hunkEndNums(prev);
+    if (dir === "all") {
+      seed.push({ minL: pEnds.maxL + 1, maxL: Math.max(pEnds.maxL + 1, (h.old_start || 1) - 1), minR: pEnds.maxR + 1, maxR: Math.max(pEnds.maxR + 1, (h.new_start || 1) - 1) });
+    } else if (dir === "top") {
+      seed.push({ minL: pEnds.maxL + 1, maxL: pEnds.maxL + step, minR: pEnds.maxR + 1, maxR: pEnds.maxR + step });
+    } else {
+      seed.push({ minL: Math.max(pEnds.maxL + 1, (h.old_start || 1) - step), maxL: Math.max(1, (h.old_start || 1) - 1), minR: Math.max(pEnds.maxR + 1, (h.new_start || 1) - step), maxR: Math.max(1, (h.new_start || 1) - 1) });
+    }
+  } else if (where === "below" && h) {
+    const ends = _hunkEndNums(h);
+    seed.push({ minL: ends.maxL + 1, maxL: ends.maxL + step, minR: ends.maxR + 1, maxR: ends.maxR + step });
+  }
+  prExpandedHunkWindows[f.filename] = seed;
+  prPartialFullMode[f.filename] = true;
+  await loadFullFile(fi, { fromGap: true });
 }
 
 function renderActivePrFiles() {
@@ -1595,37 +1723,57 @@ function renderActivePrFiles() {
     } else if (!(f.hunks || []).length) {
       bodyHtml += `<div style="padding:12px; color:var(--muted);">No textual diff lines (${esc(f.status)}). Click "Load Full File" if you want to inspect contents.</div>`;
     } else {
-      bodyHtml += (f.hunks || []).map((h, hi) => {
+      const hunks = f.hunks || [];
+      const hunksParts = [];
+      for (let hi = 0; hi < hunks.length; hi++) {
+        const h = hunks[hi];
         const useInline = singlePane && Array.isArray(h.inline_rows) && h.inline_rows.length;
         const baseRows = useInline ? h.inline_rows : (h.rows || []);
-        const indexedRows = baseRows.map((r, ri) => ({ r, pos: `${hi}:${ri}` }));
-        const rows = changedOnly
-          ? indexedRows.filter(({ r, pos }) => {
-              if (r.kind !== "context") return true;
-              const hasTh = Boolean(anchoredByPos[pos]?.length);
-              const hasComp = openComposer && openComposer.filename === f.filename && (
-                (openComposer.side === "LEFT" && r.left_num === openComposer.line) ||
-                (openComposer.side === "RIGHT" && r.right_num === openComposer.line)
-              );
-              return Boolean(hasTh || hasComp);
-            })
-          : indexedRows;
-        if (changedOnly && !rows.length) return "";
-        if (useInline) {
-          const rowsHtml = rows.map(({ r, pos }) => renderSinglePaneRowHtml(fi, f, r, pos, anchoredByPos, seenExtras)).join("");
-          return `<div class="hunk-bar">${esc(h.header)}</div>
-            <table class="diff-table diff-table-single ${wrapClass}">
-              <colgroup><col class="col-num" /><col class="col-num" /><col class="col-single-code" /><col class="col-act" /></colgroup>
-              <tbody>${rowsHtml}</tbody>
-            </table>`;
+        const colspan = useInline ? 4 : 5;
+
+        if (!f.is_full_file && !changedOnly) {
+          if (hi === 0 && ((h.old_start || 1) > 1 || (h.new_start || 1) > 1)) {
+            const hiddenAbove = Math.max((h.old_start || 1) - 1, (h.new_start || 1) - 1);
+            hunksParts.push(renderPrHunkGapBarHtml(fi, "above", 0, hiddenAbove, colspan, false, true));
+          } else if (hi > 0) {
+            const prevEnds = _hunkEndNums(hunks[hi - 1]);
+            const gapBet = Math.max(0, (h.old_start || 1) - prevEnds.maxL - 1, (h.new_start || 1) - prevEnds.maxR - 1);
+            if (gapBet > 0) {
+              hunksParts.push(renderPrHunkGapBarHtml(fi, "between", hi, gapBet, colspan, true, true));
+            }
+          }
         }
-        const rowsHtml = rows.map(({ r, pos }) => renderDiffRowHtml(fi, f, r, pos, anchoredByPos, seenExtras)).join("");
-        return `<div class="hunk-bar">${esc(h.header)}</div>
-          <table class="diff-table ${wrapClass}">
-            <colgroup><col class="col-num" /><col class="col-code" /><col class="col-num" /><col class="col-code" /><col class="col-act" /></colgroup>
-            <tbody>${rowsHtml}</tbody>
-          </table>`;
-      }).join("");
+
+        const collapseMode = changedOnly
+          ? "changed_only"
+          : (prPartialFullMode[f.filename] ? "long_runs" : "none");
+        const renderItems = buildGapAwareRenderItems(baseRows, {
+          gapPrefix: `pr:${f.filename}:${hi}`,
+          mode: collapseMode,
+          contextRadius: 0,
+          minCollapse: 1,
+          isPinnedFn: (r, ri) => _isRowPinnedInPrFile(f, r, `${hi}:${ri}`, anchoredByPos),
+        });
+        if (changedOnly && !renderItems.some(it => it.type === "row")) continue;
+
+        const bodyRowsHtml = renderItems.map(it => {
+          if (it.type === "gap") return renderGapRowHtml(it, colspan, "expandGapRow");
+          const pos = `${hi}:${it.ri}`;
+          return useInline
+            ? renderSinglePaneRowHtml(fi, f, it.r, pos, anchoredByPos, seenExtras)
+            : renderDiffRowHtml(fi, f, it.r, pos, anchoredByPos, seenExtras);
+        }).join("");
+
+        const colgroupHtml = useInline
+          ? `<colgroup><col class="col-num" /><col class="col-num" /><col class="col-single-code" /><col class="col-act" /></colgroup>`
+          : `<colgroup><col class="col-num" /><col class="col-code" /><col class="col-num" /><col class="col-code" /><col class="col-act" /></colgroup>`;
+        const tblCls = useInline ? `diff-table diff-table-single ${wrapClass}` : `diff-table ${wrapClass}`;
+        hunksParts.push(`<div class="hunk-bar">${esc(h.header)}</div><table class="${tblCls}">${colgroupHtml}<tbody>${bodyRowsHtml}</tbody></table>`);
+      }
+      if (!f.is_full_file && !changedOnly && hunks.length) {
+        hunksParts.push(renderPrHunkGapBarHtml(fi, "below", hunks.length - 1, null, singlePane ? 4 : 5, true, false));
+      }
+      bodyHtml += hunksParts.join("");
     }
 
     const isFocused = fi === focusedFileIdx;
@@ -1846,11 +1994,15 @@ async function toggleResolveThreadIdx(tk) {
   }
 }
 
-async function loadFullFile(fi) {
+async function loadFullFile(fi, { fromGap = false } = {}) {
   if (!activePrKey || !activePrData) return;
   const files = getDisplayedFiles();
   const f = files?.[fi];
   if (!f) return;
+  if (!fromGap) {
+    prPartialFullMode[f.filename] = false;
+    delete prExpandedHunkWindows[f.filename];
+  }
   const opts = getDiffOptions();
   const commitSha = selectedChangelistSha || "";
   showError("");
@@ -1871,7 +2023,7 @@ async function loadFullFile(fi) {
     );
     files[fi] = data.file;
     renderActivePrFiles();
-    setStatus("Loaded full file", 2000);
+    setStatus(fromGap ? "Expanded context lines" : "Loaded full file", 2000);
   } catch (e) {
     showError(e.message);
     setStatus("");

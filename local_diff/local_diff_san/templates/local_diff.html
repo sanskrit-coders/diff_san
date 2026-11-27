@@ -27,6 +27,38 @@
   }
   .label-chip.left { background: var(--red-row); color: var(--del-text); border-color: var(--del-word-border); }
   .label-chip.right { background: var(--ins-row); color: var(--ins-text); border-color: var(--ins-word-border); }
+  .static-inputs-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 12px;
+  }
+  @media (max-width: 900px) {
+    .static-inputs-grid { grid-template-columns: 1fr; }
+  }
+  .static-input-card {
+    background: var(--surface-2);
+    border: 1.5px dashed var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .static-input-card.dragover {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .static-textarea {
+    width: 100%;
+    min-height: 120px;
+    resize: vertical;
+    font-family: var(--dev);
+    font-size: calc(var(--dev-font-size) - 2px);
+    line-height: 1.5;
+  }
+  .workspace.static-no-sidebar {
+    grid-template-columns: minmax(0, 1fr);
+  }
   table.local-single col.col-num { width: 56px; }
   table.local-single col.col-single-code { width: calc(100% - 112px); }
   table.local-two col.col-num { width: 58px; }
@@ -37,10 +69,11 @@
 <header>
   <div class="row">
     <strong style="font-size:21px;">local-diff-san</strong>
-    <label>Mode:
+    <label id="modeSelectWrap">Mode:
       <select id="compareModeSelect" onchange="onCompareModeSwitch()">
         <option value="git">Git vs Rev</option>
         <option value="pair">2 Local Files</option>
+        <option value="texts">Upload / Paste Texts (Pure JS)</option>
       </select>
     </label>
     <span id="gitInputsRow" class="row" style="gap:6px;">
@@ -51,8 +84,14 @@
       <label>Left: <input id="leftPathInput" type="text" placeholder="left/old file..." style="width:260px;" onkeydown="if(event.key==='Enter') submitCompareSpec()" /></label>
       <label>Right: <input id="rightPathInput" type="text" placeholder="right/new file..." style="width:260px;" onkeydown="if(event.key==='Enter') submitCompareSpec()" /></label>
     </span>
+    <span id="staticActionsRow" class="row" style="gap:6px; display:none;">
+      <button id="toggleStaticInputsBtn" class="small" type="button" onclick="toggleStaticInputs()">▾ Hide Inputs</button>
+      <button id="loadSampleBtn" class="small" type="button" onclick="loadSanskritSample()">Load Sample</button>
+      <button id="swapTextsBtn" class="small" type="button" onclick="swapStaticTexts()">⇄ Swap</button>
+      <button id="clearTextsBtn" class="small" type="button" onclick="clearStaticTexts()">Clear</button>
+    </span>
     <button id="compareBtn" class="primary" type="button" onclick="submitCompareSpec()">Compare</button>
-    <button id="refreshBtn" class="small" type="button" title="Reload from disk & Git (Ctrl+R)" onclick="refreshDiff()">↻ Refresh <span class="kbd-hint">Ctrl+R</span></button>
+    <button id="refreshBtn" class="small" type="button" title="Reload diff (Ctrl+R)" onclick="refreshDiff()">↻ Refresh <span class="kbd-hint">Ctrl+R</span></button>
     <button id="reloadBtn" class="small" type="button" onclick="window.location.reload()">↻ Reload UI</button>
     <span id="statusText" style="color:var(--muted); font-size:16px;"></span>
   </div>
@@ -80,6 +119,9 @@
     <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;" title="Single pane inline word flow (Alt+S)">
       <input id="singlePaneChk" type="checkbox" checked onchange="toggleSinglePane(this.checked)" /> Single pane <span class="kbd-hint">Alt+S</span>
     </label>
+    <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;" title="Collapse long runs of unchanged context lines with expandable gaps">
+      <input id="collapseContextChk" type="checkbox" checked onchange="renderWorkspace()" /> Collapse unchanged
+    </label>
     <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;">
       <input id="changedOnlyChk" type="checkbox" onchange="renderWorkspace()" /> Changed lines only
     </label>
@@ -92,8 +134,8 @@
 </header>
 <div id="settingsPane" class="settings-drawer" style="display:none;"></div>
 
-<div class="workspace">
-  <aside class="sidebar">
+<div id="workspaceEl" class="workspace">
+  <aside id="sidebarEl" class="sidebar">
     <div class="sidebar-section sidebar-local-files">
       <div class="pane-title">
         <span>Compared Files (<span id="fileCountLabel">0</span>)</span>
@@ -105,17 +147,48 @@
 
   <main id="mainPane">
     <div id="errorBanner" class="error-banner"></div>
+    <div id="staticTextInputsPanel" class="card" style="display:none;">
+      <div class="static-inputs-grid">
+        <div class="static-input-card" ondragover="event.preventDefault(); this.classList.add('dragover')" ondragleave="this.classList.remove('dragover')" ondrop="handleDropFile(event, 'left')">
+          <div class="row" style="justify-content:space-between;">
+            <strong>Old / Left File or Text</strong>
+            <input id="staticLeftFile" type="file" onchange="handlePickFile(this, 'left')" style="max-width:250px; font-size:14px;" />
+          </div>
+          <div class="mono" id="staticLeftLabel" style="font-size:14px; color:var(--muted);">left.md (paste text or upload / drop a file)</div>
+          <textarea id="staticLeftText" class="static-textarea" placeholder="Paste or drop left/old Sanskrit text..." oninput="scheduleStaticDiff()"></textarea>
+        </div>
+        <div class="static-input-card" ondragover="event.preventDefault(); this.classList.add('dragover')" ondragleave="this.classList.remove('dragover')" ondrop="handleDropFile(event, 'right')">
+          <div class="row" style="justify-content:space-between;">
+            <strong>New / Right File or Text</strong>
+            <input id="staticRightFile" type="file" onchange="handlePickFile(this, 'right')" style="max-width:250px; font-size:14px;" />
+          </div>
+          <div class="mono" id="staticRightLabel" style="font-size:14px; color:var(--muted);">right.md (paste text or upload / drop a file)</div>
+          <textarea id="staticRightText" class="static-textarea" placeholder="Paste or drop right/new Sanskrit text..." oninput="scheduleStaticDiff()"></textarea>
+        </div>
+      </div>
+    </div>
     <div id="diffContainer">
       <div class="card">Loading diff...</div>
     </div>
-    <div style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Alt+S Single/2-Pane • Ctrl+R Refresh from disk/Git • j/k/↑/↓ Navigate files • Esc Close Settings</div>
+    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Alt+S Single/2-Pane • Ctrl+R Refresh • j/k/↑/↓ Navigate files • Esc Close Settings</div>
   </main>
 </div>
 
 <script>
+// {{SHARED_DIFF_ENGINE_JS}}
 // {{SHARED_DIFF_JS}}
+const IS_STATIC_HOST = /* {{LOCAL_DIFF_STATIC_FLAG}} */ false || (typeof window !== "undefined" && window.location && window.location.protocol === "file:");
 let workspaceData = null;
 let selectedItemId = null;
+let staticLeftName = "left.md";
+let staticRightName = "right.md";
+let staticInputsCollapsed = false;
+let staticDiffTimer = null;
+
+function isClientTextMode() {
+  if (IS_STATIC_HOST) return true;
+  return (document.getElementById("compareModeSelect")?.value || "git") === "texts";
+}
 
 function getDiffMode() {
   return document.getElementById("diffModeSelect")?.value || "word";
@@ -140,15 +213,46 @@ function toggleSinglePane(checked) {
   renderWorkspace();
 }
 
+function toggleStaticInputs(forceCollapse = null) {
+  staticInputsCollapsed = forceCollapse === null ? !staticInputsCollapsed : !!forceCollapse;
+  const panel = document.getElementById("staticTextInputsPanel");
+  const btn = document.getElementById("toggleStaticInputsBtn");
+  if (panel) panel.style.display = (isClientTextMode() && !staticInputsCollapsed) ? "flex" : "none";
+  if (btn) btn.textContent = staticInputsCollapsed ? "▸ Show Inputs" : "▾ Hide Inputs";
+}
+
+function applyModeLayoutUi() {
+  const modeVal = isClientTextMode() ? "texts" : (document.getElementById("compareModeSelect")?.value || "git");
+  const isTexts = modeVal === "texts";
+  const isPair = modeVal === "pair";
+  const gitRow = document.getElementById("gitInputsRow");
+  const pairRow = document.getElementById("pairInputsRow");
+  const staticRow = document.getElementById("staticActionsRow");
+  const staticPanel = document.getElementById("staticTextInputsPanel");
+  const sidebarEl = document.getElementById("sidebarEl");
+  const wsEl = document.getElementById("workspaceEl");
+  const compareBtn = document.getElementById("compareBtn");
+  const gdBtn = document.getElementById("gdSelectionBtn");
+  const modeWrap = document.getElementById("modeSelectWrap");
+
+  if (IS_STATIC_HOST) {
+    if (modeWrap) modeWrap.style.display = "none";
+    if (gdBtn) gdBtn.style.display = "none";
+  }
+  if (gitRow) gitRow.style.display = (!isTexts && !isPair) ? "flex" : "none";
+  if (pairRow) pairRow.style.display = (!isTexts && isPair) ? "flex" : "none";
+  if (staticRow) staticRow.style.display = isTexts ? "flex" : "none";
+  if (staticPanel) staticPanel.style.display = (isTexts && !staticInputsCollapsed) ? "flex" : "none";
+  if (compareBtn) compareBtn.style.display = isTexts ? "none" : "inline-block";
+  if (sidebarEl) sidebarEl.style.display = isTexts ? "none" : "flex";
+  if (wsEl && wsEl.classList) wsEl.classList.toggle("static-no-sidebar", isTexts);
+}
+
 function syncSpecInputs(spec) {
-  if (!spec) return;
+  if (!spec || isClientTextMode()) return;
   const isPair = spec.mode === "file_pair";
   const sel = document.getElementById("compareModeSelect");
   if (sel) sel.value = isPair ? "pair" : "git";
-  const gitRow = document.getElementById("gitInputsRow");
-  const pairRow = document.getElementById("pairInputsRow");
-  if (gitRow) gitRow.style.display = isPair ? "none" : "flex";
-  if (pairRow) pairRow.style.display = isPair ? "flex" : "none";
   if (isPair) {
     const lp = document.getElementById("leftPathInput");
     const rp = document.getElementById("rightPathInput");
@@ -160,15 +264,143 @@ function syncSpecInputs(spec) {
     if (gp) gp.value = (spec.paths && spec.paths[0]) || "";
     if (rv) rv.value = spec.rev || "HEAD";
   }
+  applyModeLayoutUi();
 }
 
 function onCompareModeSwitch() {
-  const modeVal = document.getElementById("compareModeSelect")?.value || "git";
-  const isPair = modeVal === "pair";
-  const gitRow = document.getElementById("gitInputsRow");
-  const pairRow = document.getElementById("pairInputsRow");
-  if (gitRow) gitRow.style.display = isPair ? "none" : "flex";
-  if (pairRow) pairRow.style.display = isPair ? "flex" : "none";
+  applyModeLayoutUi();
+  if (isClientTextMode()) {
+    computeStaticTextDiff();
+  }
+}
+
+function handlePickFile(inputEl, side) {
+  const file = inputEl?.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    if (side === "left") {
+      staticLeftName = file.name || "left.md";
+      const lbl = document.getElementById("staticLeftLabel");
+      const ta = document.getElementById("staticLeftText");
+      if (lbl) lbl.textContent = staticLeftName;
+      if (ta) ta.value = String(reader.result || "");
+    } else {
+      staticRightName = file.name || "right.md";
+      const lbl = document.getElementById("staticRightLabel");
+      const ta = document.getElementById("staticRightText");
+      if (lbl) lbl.textContent = staticRightName;
+      if (ta) ta.value = String(reader.result || "");
+    }
+    computeStaticTextDiff();
+  };
+  reader.readAsText(file);
+}
+
+function handleDropFile(ev, side) {
+  ev.preventDefault();
+  if (ev.currentTarget?.classList) ev.currentTarget.classList.remove("dragover");
+  const file = ev.dataTransfer?.files?.[0];
+  if (!file) return;
+  handlePickFile({ files: [file] }, side);
+}
+
+function scheduleStaticDiff() {
+  if (staticDiffTimer) clearTimeout(staticDiffTimer);
+  staticDiffTimer = setTimeout(() => { computeStaticTextDiff(); }, 120);
+}
+
+function swapStaticTexts() {
+  const lTa = document.getElementById("staticLeftText");
+  const rTa = document.getElementById("staticRightText");
+  const tmpTxt = lTa?.value || "";
+  if (lTa) lTa.value = rTa?.value || "";
+  if (rTa) rTa.value = tmpTxt;
+  const tmpName = staticLeftName;
+  staticLeftName = staticRightName;
+  staticRightName = tmpName;
+  const ll = document.getElementById("staticLeftLabel");
+  const rl = document.getElementById("staticRightLabel");
+  if (ll) ll.textContent = staticLeftName;
+  if (rl) rl.textContent = staticRightName;
+  computeStaticTextDiff();
+}
+
+function clearStaticTexts() {
+  const lTa = document.getElementById("staticLeftText");
+  const rTa = document.getElementById("staticRightText");
+  if (lTa) lTa.value = "";
+  if (rTa) rTa.value = "";
+  staticLeftName = "left.md";
+  staticRightName = "right.md";
+  computeStaticTextDiff();
+}
+
+function loadSanskritSample() {
+  const lTa = document.getElementById("staticLeftText");
+  const rTa = document.getElementById("staticRightText");
+  staticLeftName = "bhAgavatam_old.md";
+  staticRightName = "bhAgavatam_new.md";
+  const ll = document.getElementById("staticLeftLabel");
+  const rl = document.getElementById("staticRightLabel");
+  if (ll) ll.textContent = staticLeftName;
+  if (rl) rl.textContent = staticRightName;
+  if (lTa) {
+    lTa.value = [
+      "<details><summary>वीरराघवः [यान्त्रिकम्]</summary>",
+      "",
+      "**आविध्यति** । स सुरः शूलम् [^v5]आविध्याऽऽलोल्य[^v5] तरसा बलेन गरुडाय",
+      "इमा᳓म् अ᳓रण्या ते᳓जसा पा० प्रणयो ऽस्येति ।",
+      "[^v5]: K उद्धृत्य",
+      "</details>",
+    ].join("\n");
+  }
+  if (rTa) {
+    rTa.value = [
+      "<details><summary>वीरराघवः</summary>",
+      "",
+      "**आविध्यति** । स सुरः शूलम् आविध्याऽऽलोल्य तरसा बलेन गरुडाय",
+      "इमा᳓म् अर᳓ण्या ते᳓जसा पा॰ प्रणयोऽस्येति ॥",
+      "</details>",
+    ].join("\n");
+  }
+  computeStaticTextDiff();
+}
+
+function computeStaticTextDiff() {
+  showError("");
+  if (!window.DiffSanEngine) {
+    showError("Pure-JS diff engine failed to load.");
+    return;
+  }
+  const leftText = document.getElementById("staticLeftText")?.value || "";
+  const rightText = document.getElementById("staticRightText")?.value || "";
+  const opts = getDiffOptions();
+  const hunk = window.DiffSanEngine.buildFullFileHunk(leftText, rightText, {
+    charDiffMode: opts.diff_mode,
+    normalize: opts.normalize,
+    ignorePunct: opts.ignore_punct,
+  });
+  const unchanged = leftText === rightText;
+  const item = {
+    id: "static:0",
+    title: `${staticLeftName} ↔ ${staticRightName}`,
+    mode: "file_pair",
+    status: unchanged ? "unchanged" : "modified",
+    left_label: staticLeftName,
+    right_label: staticRightName,
+    left_path: null,
+    right_path: null,
+    additions: hunk.additions || 0,
+    deletions: hunk.deletions || 0,
+    is_binary: false,
+    hunks: [hunk],
+  };
+  workspaceData = { spec: { mode: "texts" }, repo_root: null, items: [item], active_item: item };
+  selectedItemId = item.id;
+  clearExpandedGaps("local:");
+  renderWorkspace();
+  setStatus("Computed in browser (Pure JS)", 1800);
 }
 
 function statusPillClass(st) {
@@ -179,6 +411,7 @@ function statusPillClass(st) {
 }
 
 function renderSidebar() {
+  if (isClientTextMode()) return;
   const items = workspaceData?.items || [];
   const cntEl = document.getElementById("fileCountLabel");
   if (cntEl) cntEl.textContent = String(items.length);
@@ -189,7 +422,7 @@ function renderSidebar() {
     return;
   }
   const activeId = workspaceData?.active_item?.id || selectedItemId || items[0].id;
-  listEl.innerHTML = items.map((it, idx) => {
+  listEl.innerHTML = items.map(it => {
     const isAct = it.id === activeId;
     return `<div class="file-item ${isAct ? 'active' : ''}" onclick="selectItem('${esc(it.id)}')">
       <div class="mono" style="font-size:15.5px; font-weight:600; word-break:break-word;">${esc(it.title)}</div>
@@ -204,23 +437,30 @@ function renderSidebar() {
 
 function renderLocalLineCell(num, diskPath) {
   const numTxt = num != null ? num : "";
-  if (num != null && diskPath) {
+  if (num != null && diskPath && !IS_STATIC_HOST) {
     const jsPath = esc(JSON.stringify(diskPath));
     return `<td class="ln clickable" title="Open in IntelliJ IDEA at line ${num}" onclick="openPathInIdea(${jsPath}, ${num})">${numTxt}</td>`;
   }
   return `<td class="ln">${numTxt}</td>`;
 }
 
+function expandGapRow(gapKey, dir, count) {
+  setGapExpandedState(gapKey, dir, count);
+  renderWorkspace();
+}
+
 function renderDiffItemHtml(item) {
   if (!item) {
     return `<div class="card">
       <div><strong>No changed files found</strong> against <span class="mono">${esc(workspaceData?.spec?.rev || 'HEAD')}</span>.</div>
-      <div style="color:var(--muted); font-size:16px;">Switch to <strong>2 Local Files</strong> or enter a path above to compare.</div>
+      <div style="color:var(--muted); font-size:16px;">Switch to <strong>2 Local Files</strong> or <strong>Upload / Paste Texts (Pure JS)</strong> above.</div>
     </div>`;
   }
   const singlePane = isSinglePaneMode();
   const changedOnly = !!document.getElementById("changedOnlyChk")?.checked;
+  const collapseCtx = document.getElementById("collapseContextChk") ? !!document.getElementById("collapseContextChk").checked : true;
   const wrapClass = document.getElementById("wrapLinesChk")?.checked ? "wrap-on" : "wrap-off";
+  const collapseMode = changedOnly ? "changed_only" : (collapseCtx ? "long_runs" : "none");
 
   let bodyHtml = "";
   if (item.is_binary) {
@@ -228,13 +468,22 @@ function renderDiffItemHtml(item) {
   } else if (!(item.hunks || []).length) {
     bodyHtml = `<div style="padding:12px; color:var(--muted);">Empty file or no textual lines.</div>`;
   } else {
-    bodyHtml = (item.hunks || []).map(h => {
+    bodyHtml = (item.hunks || []).map((h, hi) => {
       const useInline = singlePane && Array.isArray(h.inline_rows) && h.inline_rows.length;
       const baseRows = useInline ? h.inline_rows : (h.rows || []);
-      const rows = changedOnly ? baseRows.filter(r => r.kind !== "context") : baseRows;
-      if (changedOnly && !rows.length) return "";
+      const colspan = useInline ? 3 : 4;
+      const renderItems = buildGapAwareRenderItems(baseRows, {
+        gapPrefix: `local:${item.id}:${hi}`,
+        mode: collapseMode,
+        contextRadius: 3,
+        minCollapse: 8,
+      });
+      if (changedOnly && !renderItems.some(it => it.type === "row")) return "";
+
       if (useInline) {
-        const rowsHtml = rows.map(r => {
+        const rowsHtml = renderItems.map(it => {
+          if (it.type === "gap") return renderGapRowHtml(it, colspan, "expandGapRow");
+          const r = it.r;
           const rowCls = `diff-row single-row-${esc(r.kind || 'modify')}`;
           return `<tr class="${rowCls}">
             ${renderLocalLineCell(r.left_num, item.left_path)}
@@ -248,7 +497,9 @@ function renderDiffItemHtml(item) {
             <tbody>${rowsHtml}</tbody>
           </table>`;
       }
-      const rowsHtml = rows.map(r => {
+      const rowsHtml = renderItems.map(it => {
+        if (it.type === "gap") return renderGapRowHtml(it, colspan, "expandGapRow");
+        const r = it.r;
         const rowCls = `diff-row diff-row-${esc(r.kind || 'modify')}`;
         const lhsHtml = r.left_text == null ? "" : renderDiffSegments(r.lhs_segments);
         const rhsHtml = r.right_text == null ? "" : renderDiffSegments(r.rhs_segments);
@@ -272,10 +523,10 @@ function renderDiffItemHtml(item) {
     }
   }
 
-  const leftBtn = item.left_path
+  const leftBtn = (item.left_path && !IS_STATIC_HOST)
     ? `<button class="small" type="button" onclick="openPathInIdea(${esc(JSON.stringify(item.left_path))}, null)">Open Left in IDEA</button>`
     : "";
-  const rightBtn = item.right_path
+  const rightBtn = (item.right_path && !IS_STATIC_HOST)
     ? `<button class="small" type="button" onclick="openPathInIdea(${esc(JSON.stringify(item.right_path))}, null)">Open Right in IDEA</button>`
     : "";
 
@@ -301,6 +552,7 @@ function renderDiffItemHtml(item) {
 }
 
 function renderWorkspace() {
+  applyModeLayoutUi();
   renderSidebar();
   const container = document.getElementById("diffContainer");
   if (!container) return;
@@ -308,6 +560,10 @@ function renderWorkspace() {
 }
 
 async function fetchDiff(activeId = null) {
+  if (isClientTextMode()) {
+    computeStaticTextDiff();
+    return;
+  }
   showError("");
   const opts = getDiffOptions();
   const params = new URLSearchParams({
@@ -320,6 +576,7 @@ async function fetchDiff(activeId = null) {
   try {
     workspaceData = await apiJson(`/api/diff?${params.toString()}`, null, "Failed to compute diff");
     selectedItemId = workspaceData.active_item?.id || null;
+    clearExpandedGaps("local:");
     syncSpecInputs(workspaceData.spec);
     renderWorkspace();
     setStatus("Ready", 1800);
@@ -330,6 +587,10 @@ async function fetchDiff(activeId = null) {
 }
 
 async function submitCompareSpec() {
+  if (isClientTextMode()) {
+    computeStaticTextDiff();
+    return;
+  }
   showError("");
   const modeVal = document.getElementById("compareModeSelect")?.value || "git";
   const opts = getDiffOptions();
@@ -354,6 +615,7 @@ async function submitCompareSpec() {
       body: JSON.stringify(payload),
     }, "Compare failed");
     selectedItemId = workspaceData.active_item?.id || null;
+    clearExpandedGaps("local:");
     syncSpecInputs(workspaceData.spec);
     renderWorkspace();
     setStatus("Updated", 1800);
@@ -414,6 +676,15 @@ async function init() {
     const ipChk = document.getElementById("ignorePunctChk");
     if (ipChk && (savedIp === "true" || savedIp === "false")) ipChk.checked = savedIp === "true";
   } catch (_) {}
+
+  if (IS_STATIC_HOST) {
+    const cm = document.getElementById("compareModeSelect");
+    if (cm) cm.value = "texts";
+    applyModeLayoutUi();
+    loadSanskritSample();
+    return;
+  }
+
   try {
     const meta = await apiJson("/api/meta", null, "Failed to load metadata");
     syncSpecInputs(meta.spec);

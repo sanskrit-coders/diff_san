@@ -12,6 +12,7 @@ from local_diff_san.core import (
   read_git_blob,
   resolve_spec_from_paths,
 )
+from local_diff_san.server import export_static_html, render_static_html
 
 __all__ = [
   "DEFAULT_REV",
@@ -21,7 +22,9 @@ __all__ = [
   "compare_file_with_head",
   "compare_two_files",
   "discover_git_dir_entries",
+  "export_static_html",
   "find_git_root",
   "read_git_blob",
+  "render_static_html",
   "resolve_spec_from_paths",
 ]
