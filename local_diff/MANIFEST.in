@@ -1,0 +1,3 @@
+include README.md
+include LICENSE
+recursive-include local_diff_san/templates *.html

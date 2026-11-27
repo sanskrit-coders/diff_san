@@ -26,7 +26,8 @@ from pydantic import BaseModel
 import requests
 import uvicorn
 
-from pull_requests_san import pr_review
+from pull_requests_san import local_helpers, pr_review
+from pull_requests_san.assets import render_html_with_shared_assets
 
 
 _T = TypeVar("_T")
@@ -34,8 +35,8 @@ _TEMPLATE_PATH = Path(__file__).with_name("templates") / "pr_review.html"
 
 
 def load_html_template() -> str:
-  """Read the standalone HTML/CSS/JS review application template."""
-  return _TEMPLATE_PATH.read_text(encoding="utf-8")
+  """Read the standalone HTML/CSS/JS review application template with shared diff assets injected."""
+  return render_html_with_shared_assets(_TEMPLATE_PATH.read_text(encoding="utf-8"))
 
 
 class _DiffOptionsModel(BaseModel):
@@ -120,26 +121,7 @@ class _OpenBrowserRequest(BaseModel):
 
 def _resolve_idea_binary() -> str | None:
   """Locate an executable IntelliJ IDEA CLI launcher on the local machine."""
-  candidates: list[Path] = []
-  which_idea = shutil.which("idea")
-  if which_idea:
-    candidates.append(Path(which_idea))
-  candidates.append(Path.home() / ".local/share/JetBrains/Toolbox/apps/intellij-idea/bin/idea")
-  scripts_dir = Path.home() / ".local/share/JetBrains/Toolbox/scripts"
-  if scripts_dir.is_dir():
-    candidates.extend(sorted(p for p in scripts_dir.glob("idea*") if p.is_file()))
-  for fallback in ("idea.sh", "jetbrains-idea"):
-    w = shutil.which(fallback)
-    if w:
-      candidates.append(Path(w))
-  for cand in candidates:
-    try:
-      resolved = cand.resolve(strict=True)
-    except OSError:
-      continue
-    if resolved.is_file() and os.access(resolved, os.X_OK):
-      return str(cand if os.access(cand, os.X_OK) else resolved)
-  return None
+  return local_helpers.resolve_idea_binary()
 
 
 def open_local_file_in_intellij(
@@ -150,59 +132,32 @@ def open_local_file_in_intellij(
   line: int | None = None,
 ) -> dict[str, Any]:
   """Open a locally checked-out file under ``local_org_dir/repo/rel_path`` in IntelliJ IDEA."""
-  if not repo or "/" in repo or "\\" in repo or repo in (".", ".."):
-    raise ValueError("Invalid repository name")
-  if not rel_path or Path(rel_path).is_absolute():
-    raise ValueError("Invalid relative file path")
-  org_root = Path(local_org_dir).expanduser().resolve()
-  repo_root = (org_root / repo).resolve()
-  if not repo_root.is_relative_to(org_root):
-    raise ValueError("Invalid repository path outside org directory")
-  target = (repo_root / rel_path).resolve()
-  if not target.is_relative_to(repo_root):
-    raise ValueError("Invalid local path outside repository directory")
-  if not target.is_file():
-    raise FileNotFoundError(f"Local file not found: {target}")
-  idea_bin = _resolve_idea_binary()
-  if not idea_bin:
-    raise RuntimeError("IntelliJ IDEA CLI binary ('idea') not found")
-  cmd = [idea_bin]
-  if line is not None and line >= 1:
-    cmd.extend(["--line", str(line)])
-  cmd.append(str(target))
-  subprocess.Popen(cmd, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-  return {"ok": True, "file_path": str(target), "line": line, "command": cmd}
+  return local_helpers.open_local_file_in_intellij(
+    local_org_dir,
+    repo,
+    rel_path,
+    line=line,
+    idea_resolver=_resolve_idea_binary,
+    popen_fn=subprocess.Popen,
+  )
 
 
 def _resolve_goldendict_binary() -> str | None:
-  for name in ("goldendict", "goldendict-ng"):
-    path = shutil.which(name)
-    if path:
-      return path
-  return None
+  return local_helpers.resolve_goldendict_binary()
 
 
 def open_in_goldendict(word: str) -> dict[str, Any]:
   """Look up unaccented ``word`` in GoldenDict."""
-  query = re.sub(r"[\u0951-\u0954\u1cd0-\u1cff\u0300-\u036f]", "", (word or "")).strip()
-  if not query:
-    raise ValueError("Empty lookup word")
-  gd_bin = _resolve_goldendict_binary()
-  if not gd_bin:
-    raise RuntimeError("GoldenDict CLI binary ('goldendict') not found")
-  cmd = [gd_bin, query]
-  subprocess.Popen(cmd, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-  return {"ok": True, "word": query, "command": cmd}
+  return local_helpers.open_in_goldendict(
+    word,
+    gd_resolver=_resolve_goldendict_binary,
+    popen_fn=subprocess.Popen,
+  )
 
 
 def open_url_in_browser(url: str) -> dict[str, Any]:
   """Open a validated GitHub PR/repo URL in the user's main web browser."""
-  cleaned = (url or "").strip()
-  parsed = urlparse(cleaned)
-  if parsed.scheme != "https" or parsed.netloc.lower() != "github.com" or parsed.username or parsed.password:
-    raise ValueError(f"Only https://github.com/ URLs are allowed, got {url!r}")
-  opened = webbrowser.open_new_tab(cleaned)
-  return {"ok": bool(opened), "url": cleaned}
+  return local_helpers.open_url_in_browser(url, open_tab_fn=webbrowser.open_new_tab)
 
 
 class _AppStore:
@@ -558,26 +513,11 @@ def create_app(
 
 
 def _find_free_port(preferred: int = 8770) -> int:
-  for port in [preferred, *range(8771, 8800), 0]:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-      try:
-        s.bind(("127.0.0.1", port))
-        return s.getsockname()[1]
-      except OSError:
-        continue
-  return 8770
+  return local_helpers.find_free_port(preferred)
 
 
 def _launch_browser(url: str) -> None:
-  time.sleep(0.6)
-  chrome = shutil.which("google-chrome") or shutil.which("chromium")
-  if chrome and (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
-    try:
-      subprocess.Popen([chrome, f"--app={url}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-      return
-    except Exception:
-      pass
-  webbrowser.open(url)
+  local_helpers.launch_browser(url)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>local-diff-san — Sanskrit Local & Git Diff Viewer</title>
+<style>
+/* {{SHARED_DIFF_CSS}} */
+  .sidebar-local-files {
+    flex: 1;
+  }
+  .label-pair {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    font-size: 15.5px;
+    color: var(--muted);
+  }
+  .label-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .label-chip.left { background: var(--red-row); color: var(--del-text); border-color: var(--del-word-border); }
+  .label-chip.right { background: var(--ins-row); color: var(--ins-text); border-color: var(--ins-word-border); }
+  table.local-single col.col-num { width: 56px; }
+  table.local-single col.col-single-code { width: calc(100% - 112px); }
+  table.local-two col.col-num { width: 58px; }
+  table.local-two col.col-code { width: calc(50% - 58px); }
+</style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <strong style="font-size:21px;">local-diff-san</strong>
+    <label>Mode:
+      <select id="compareModeSelect" onchange="onCompareModeSwitch()">
+        <option value="git">Git vs Rev</option>
+        <option value="pair">2 Local Files</option>
+      </select>
+    </label>
+    <span id="gitInputsRow" class="row" style="gap:6px;">
+      <label>Path: <input id="gitPathInput" type="text" placeholder="file or directory..." style="width:320px;" onkeydown="if(event.key==='Enter') submitCompareSpec()" /></label>
+      <label>Rev: <input id="revInput" type="text" value="HEAD" style="width:110px;" onkeydown="if(event.key==='Enter') submitCompareSpec()" /></label>
+    </span>
+    <span id="pairInputsRow" class="row" style="gap:6px; display:none;">
+      <label>Left: <input id="leftPathInput" type="text" placeholder="left/old file..." style="width:260px;" onkeydown="if(event.key==='Enter') submitCompareSpec()" /></label>
+      <label>Right: <input id="rightPathInput" type="text" placeholder="right/new file..." style="width:260px;" onkeydown="if(event.key==='Enter') submitCompareSpec()" /></label>
+    </span>
+    <button id="compareBtn" class="primary" type="button" onclick="submitCompareSpec()">Compare</button>
+    <button id="refreshBtn" class="small" type="button" title="Reload from disk & Git (Ctrl+R)" onclick="refreshDiff()">↻ Refresh <span class="kbd-hint">Ctrl+R</span></button>
+    <button id="reloadBtn" class="small" type="button" onclick="window.location.reload()">↻ Reload UI</button>
+    <span id="statusText" style="color:var(--muted); font-size:16px;"></span>
+  </div>
+  <div class="row">
+    <label>Diff unit:
+      <select id="diffModeSelect" onchange="changeDiffOptions()">
+        <option value="word" selected>Word (space-separated)</option>
+        <option value="grapheme">Char (Grapheme \X)</option>
+        <option value="codepoint">Codepoint (Raw)</option>
+      </select>
+    </label>
+    <label title="Apply Unicode normalization before diffing">Norm:
+      <select id="normalizeSelect" onchange="changeDiffOptions()">
+        <option value="none" selected>None</option>
+        <option value="nfc">NFC</option>
+        <option value="nfd">NFD</option>
+        <option value="nfkc">NFKC</option>
+        <option value="nfkd">NFKD</option>
+      </select>
+    </label>
+    <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;">
+      <input id="ignorePunctChk" type="checkbox" onchange="changeDiffOptions()" /> Ignore punct
+    </label>
+    <label title="Matches VS Code (25) / IntelliJ IDEA (28)">Editor font (px): <input id="fontPxInput" type="number" min="14" max="42" value="26" style="width:74px;" onchange="applyEditorFont(this.value, 'local_diff_san_font_px')" /></label>
+    <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;" title="Single pane inline word flow (Alt+S)">
+      <input id="singlePaneChk" type="checkbox" checked onchange="toggleSinglePane(this.checked)" /> Single pane <span class="kbd-hint">Alt+S</span>
+    </label>
+    <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;">
+      <input id="changedOnlyChk" type="checkbox" onchange="renderWorkspace()" /> Changed lines only
+    </label>
+    <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;">
+      <input id="wrapLinesChk" type="checkbox" checked onchange="renderWorkspace()" /> Wrap long lines
+    </label>
+    <button id="gdSelectionBtn" class="small" type="button" title="Look up currently selected text in GoldenDict" onclick="lookupSelectedGoldenDict()">📖 GoldenDict Selection</button>
+    <button id="settingsBtn" class="small" type="button" title="Customize deleted and added diff highlight colors" onclick="toggleSettingsPane()">⚙ Settings</button>
+  </div>
+</header>
+<div id="settingsPane" class="settings-drawer" style="display:none;"></div>
+
+<div class="workspace">
+  <aside class="sidebar">
+    <div class="sidebar-section sidebar-local-files">
+      <div class="pane-title">
+        <span>Compared Files (<span id="fileCountLabel">0</span>)</span>
+        <button class="small" type="button" onclick="refreshDiff()">↻</button>
+      </div>
+      <div id="fileList" class="scroll-list"></div>
+    </div>
+  </aside>
+
+  <main id="mainPane">
+    <div id="errorBanner" class="error-banner"></div>
+    <div id="diffContainer">
+      <div class="card">Loading diff...</div>
+    </div>
+    <div style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Alt+S Single/2-Pane • Ctrl+R Refresh from disk/Git • j/k/↑/↓ Navigate files • Esc Close Settings</div>
+  </main>
+</div>
+
+<script>
+// {{SHARED_DIFF_JS}}
+let workspaceData = null;
+let selectedItemId = null;
+
+function getDiffMode() {
+  return document.getElementById("diffModeSelect")?.value || "word";
+}
+
+function getDiffOptions() {
+  return {
+    diff_mode: getDiffMode(),
+    normalize: document.getElementById("normalizeSelect")?.value || "none",
+    ignore_punct: !!document.getElementById("ignorePunctChk")?.checked,
+  };
+}
+
+function isSinglePaneMode() {
+  return !!document.getElementById("singlePaneChk")?.checked;
+}
+
+function toggleSinglePane(checked) {
+  const chk = document.getElementById("singlePaneChk");
+  if (chk) chk.checked = !!checked;
+  try { localStorage.setItem("local_diff_san_single_pane", checked ? "true" : "false"); } catch (_) {}
+  renderWorkspace();
+}
+
+function syncSpecInputs(spec) {
+  if (!spec) return;
+  const isPair = spec.mode === "file_pair";
+  const sel = document.getElementById("compareModeSelect");
+  if (sel) sel.value = isPair ? "pair" : "git";
+  const gitRow = document.getElementById("gitInputsRow");
+  const pairRow = document.getElementById("pairInputsRow");
+  if (gitRow) gitRow.style.display = isPair ? "none" : "flex";
+  if (pairRow) pairRow.style.display = isPair ? "flex" : "none";
+  if (isPair) {
+    const lp = document.getElementById("leftPathInput");
+    const rp = document.getElementById("rightPathInput");
+    if (lp) lp.value = spec.left_path || "";
+    if (rp) rp.value = spec.right_path || "";
+  } else {
+    const gp = document.getElementById("gitPathInput");
+    const rv = document.getElementById("revInput");
+    if (gp) gp.value = (spec.paths && spec.paths[0]) || "";
+    if (rv) rv.value = spec.rev || "HEAD";
+  }
+}
+
+function onCompareModeSwitch() {
+  const modeVal = document.getElementById("compareModeSelect")?.value || "git";
+  const isPair = modeVal === "pair";
+  const gitRow = document.getElementById("gitInputsRow");
+  const pairRow = document.getElementById("pairInputsRow");
+  if (gitRow) gitRow.style.display = isPair ? "none" : "flex";
+  if (pairRow) pairRow.style.display = isPair ? "flex" : "none";
+}
+
+function statusPillClass(st) {
+  if (st === "added" || st === "untracked") return "pill-green";
+  if (st === "deleted") return "pill-red";
+  if (st === "unchanged") return "pill-blue";
+  return "pill-amber";
+}
+
+function renderSidebar() {
+  const items = workspaceData?.items || [];
+  const cntEl = document.getElementById("fileCountLabel");
+  if (cntEl) cntEl.textContent = String(items.length);
+  const listEl = document.getElementById("fileList");
+  if (!listEl) return;
+  if (!items.length) {
+    listEl.innerHTML = `<div style="color:var(--muted); font-size:15px;">No modified files.</div>`;
+    return;
+  }
+  const activeId = workspaceData?.active_item?.id || selectedItemId || items[0].id;
+  listEl.innerHTML = items.map((it, idx) => {
+    const isAct = it.id === activeId;
+    return `<div class="file-item ${isAct ? 'active' : ''}" onclick="selectItem('${esc(it.id)}')">
+      <div class="mono" style="font-size:15.5px; font-weight:600; word-break:break-word;">${esc(it.title)}</div>
+      <div class="file-item-meta">
+        <span class="pill ${statusPillClass(it.status)}" style="padding:0 6px; font-size:13.5px;">${esc(it.status)}</span>
+        <span style="color:var(--green); font-weight:600;">+${it.additions}</span>
+        <span style="color:var(--red); font-weight:600;">-${it.deletions}</span>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function renderLocalLineCell(num, diskPath) {
+  const numTxt = num != null ? num : "";
+  if (num != null && diskPath) {
+    const jsPath = esc(JSON.stringify(diskPath));
+    return `<td class="ln clickable" title="Open in IntelliJ IDEA at line ${num}" onclick="openPathInIdea(${jsPath}, ${num})">${numTxt}</td>`;
+  }
+  return `<td class="ln">${numTxt}</td>`;
+}
+
+function renderDiffItemHtml(item) {
+  if (!item) {
+    return `<div class="card">
+      <div><strong>No changed files found</strong> against <span class="mono">${esc(workspaceData?.spec?.rev || 'HEAD')}</span>.</div>
+      <div style="color:var(--muted); font-size:16px;">Switch to <strong>2 Local Files</strong> or enter a path above to compare.</div>
+    </div>`;
+  }
+  const singlePane = isSinglePaneMode();
+  const changedOnly = !!document.getElementById("changedOnlyChk")?.checked;
+  const wrapClass = document.getElementById("wrapLinesChk")?.checked ? "wrap-on" : "wrap-off";
+
+  let bodyHtml = "";
+  if (item.is_binary) {
+    bodyHtml = `<div style="padding:12px; color:var(--muted);">Binary file (${esc(item.status)}).</div>`;
+  } else if (!(item.hunks || []).length) {
+    bodyHtml = `<div style="padding:12px; color:var(--muted);">Empty file or no textual lines.</div>`;
+  } else {
+    bodyHtml = (item.hunks || []).map(h => {
+      const useInline = singlePane && Array.isArray(h.inline_rows) && h.inline_rows.length;
+      const baseRows = useInline ? h.inline_rows : (h.rows || []);
+      const rows = changedOnly ? baseRows.filter(r => r.kind !== "context") : baseRows;
+      if (changedOnly && !rows.length) return "";
+      if (useInline) {
+        const rowsHtml = rows.map(r => {
+          const rowCls = `diff-row single-row-${esc(r.kind || 'modify')}`;
+          return `<tr class="${rowCls}">
+            ${renderLocalLineCell(r.left_num, item.left_path)}
+            ${renderLocalLineCell(r.right_num, item.right_path)}
+            <td class="code-cell single-code-cell">${renderDiffSegments(r.segments)}</td>
+          </tr>`;
+        }).join("");
+        return `<div class="hunk-bar">${esc(h.header)}</div>
+          <table class="diff-table diff-table-single local-single ${wrapClass}">
+            <colgroup><col class="col-num" /><col class="col-num" /><col class="col-single-code" /></colgroup>
+            <tbody>${rowsHtml}</tbody>
+          </table>`;
+      }
+      const rowsHtml = rows.map(r => {
+        const rowCls = `diff-row diff-row-${esc(r.kind || 'modify')}`;
+        const lhsHtml = r.left_text == null ? "" : renderDiffSegments(r.lhs_segments);
+        const rhsHtml = r.right_text == null ? "" : renderDiffSegments(r.rhs_segments);
+        const lhsCls = r.left_text == null ? "code-cell lhs-cell diff-empty" : "code-cell lhs-cell";
+        const rhsCls = r.right_text == null ? "code-cell rhs-cell diff-empty" : "code-cell rhs-cell";
+        return `<tr class="${rowCls}">
+          ${renderLocalLineCell(r.left_num, item.left_path)}
+          <td class="${lhsCls}">${lhsHtml}</td>
+          ${renderLocalLineCell(r.right_num, item.right_path)}
+          <td class="${rhsCls}">${rhsHtml}</td>
+        </tr>`;
+      }).join("");
+      return `<div class="hunk-bar">${esc(h.header)}</div>
+        <table class="diff-table local-two ${wrapClass}">
+          <colgroup><col class="col-num" /><col class="col-code" /><col class="col-num" /><col class="col-code" /></colgroup>
+          <tbody>${rowsHtml}</tbody>
+        </table>`;
+    }).join("");
+    if (changedOnly && !bodyHtml) {
+      bodyHtml = `<div style="padding:12px; color:var(--muted);">No differences under current diff/normalization/punctuation settings.</div>`;
+    }
+  }
+
+  const leftBtn = item.left_path
+    ? `<button class="small" type="button" onclick="openPathInIdea(${esc(JSON.stringify(item.left_path))}, null)">Open Left in IDEA</button>`
+    : "";
+  const rightBtn = item.right_path
+    ? `<button class="small" type="button" onclick="openPathInIdea(${esc(JSON.stringify(item.right_path))}, null)">Open Right in IDEA</button>`
+    : "";
+
+  return `<div class="file-card focused">
+    <div class="file-card-header">
+      <div class="row" style="gap:8px;">
+        <span class="mono" style="font-weight:700; font-size:18px;">${esc(item.title)}</span>
+        <span class="pill ${statusPillClass(item.status)}">${esc(item.status)}</span>
+        <span style="color:var(--green); font-weight:600; font-size:16px;">+${item.additions}</span>
+        <span style="color:var(--red); font-weight:600; font-size:16px;">-${item.deletions}</span>
+      </div>
+      <div class="row" style="gap:6px;">
+        ${leftBtn}
+        ${rightBtn}
+      </div>
+    </div>
+    <div style="padding:7px 12px; background:var(--surface-2); border-bottom:1px solid var(--border);" class="label-pair">
+      <span class="label-chip left mono"><strong>Old / Left:</strong> ${esc(item.left_label)}</span>
+      <span class="label-chip right mono"><strong>New / Right:</strong> ${esc(item.right_label)}</span>
+    </div>
+    <div class="file-card-body">${bodyHtml}</div>
+  </div>`;
+}
+
+function renderWorkspace() {
+  renderSidebar();
+  const container = document.getElementById("diffContainer");
+  if (!container) return;
+  container.innerHTML = renderDiffItemHtml(workspaceData?.active_item || null);
+}
+
+async function fetchDiff(activeId = null) {
+  showError("");
+  const opts = getDiffOptions();
+  const params = new URLSearchParams({
+    diff_mode: opts.diff_mode,
+    normalize: opts.normalize,
+    ignore_punct: opts.ignore_punct ? "true" : "false",
+  });
+  if (activeId) params.set("active_id", activeId);
+  setStatus("Computing diff...");
+  try {
+    workspaceData = await apiJson(`/api/diff?${params.toString()}`, null, "Failed to compute diff");
+    selectedItemId = workspaceData.active_item?.id || null;
+    syncSpecInputs(workspaceData.spec);
+    renderWorkspace();
+    setStatus("Ready", 1800);
+  } catch (e) {
+    showError(e.message);
+    setStatus("");
+  }
+}
+
+async function submitCompareSpec() {
+  showError("");
+  const modeVal = document.getElementById("compareModeSelect")?.value || "git";
+  const opts = getDiffOptions();
+  const payload = modeVal === "pair"
+    ? {
+        mode: "file_pair",
+        left_path: document.getElementById("leftPathInput")?.value || "",
+        right_path: document.getElementById("rightPathInput")?.value || "",
+        ...opts,
+      }
+    : {
+        mode: "git_head",
+        path: document.getElementById("gitPathInput")?.value || "",
+        rev: document.getElementById("revInput")?.value || "HEAD",
+        ...opts,
+      };
+  setStatus("Comparing...");
+  try {
+    workspaceData = await apiJson("/api/compare", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }, "Compare failed");
+    selectedItemId = workspaceData.active_item?.id || null;
+    syncSpecInputs(workspaceData.spec);
+    renderWorkspace();
+    setStatus("Updated", 1800);
+  } catch (e) {
+    showError(e.message);
+    setStatus("");
+  }
+}
+
+async function refreshDiff() {
+  return fetchDiff(selectedItemId);
+}
+
+async function selectItem(itemId) {
+  selectedItemId = itemId;
+  return fetchDiff(itemId);
+}
+
+async function changeDiffOptions() {
+  const opts = getDiffOptions();
+  try {
+    localStorage.setItem("local_diff_san_diff_mode", opts.diff_mode);
+    localStorage.setItem("local_diff_san_normalize", opts.normalize);
+    localStorage.setItem("local_diff_san_ignore_punct", opts.ignore_punct ? "true" : "false");
+  } catch (_) {}
+  return fetchDiff(selectedItemId);
+}
+
+async function openPathInIdea(filePath, line = null) {
+  showError("");
+  try {
+    const data = await apiJson("/api/open_in_idea", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: filePath, line }),
+    }, "Failed to open in IDEA");
+    setStatus(`Opened in IDEA: ${data.file_path}`, 2500);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function init() {
+  initDiffSettingsPane();
+  try {
+    const savedPx = localStorage.getItem("local_diff_san_font_px") || localStorage.getItem("github_pr_review_font_px");
+    if (savedPx) applyEditorFont(savedPx, "local_diff_san_font_px");
+    const savedSingle = localStorage.getItem("local_diff_san_single_pane");
+    const spChk = document.getElementById("singlePaneChk");
+    if (spChk && (savedSingle === "true" || savedSingle === "false")) spChk.checked = savedSingle === "true";
+    const savedMode = localStorage.getItem("local_diff_san_diff_mode");
+    const dmSel = document.getElementById("diffModeSelect");
+    if (dmSel && savedMode && ["word", "grapheme", "codepoint"].includes(savedMode)) dmSel.value = savedMode;
+    const savedNorm = localStorage.getItem("local_diff_san_normalize");
+    const normSel = document.getElementById("normalizeSelect");
+    if (normSel && savedNorm && ["none", "nfc", "nfd", "nfkc", "nfkd"].includes(savedNorm)) normSel.value = savedNorm;
+    const savedIp = localStorage.getItem("local_diff_san_ignore_punct");
+    const ipChk = document.getElementById("ignorePunctChk");
+    if (ipChk && (savedIp === "true" || savedIp === "false")) ipChk.checked = savedIp === "true";
+  } catch (_) {}
+  try {
+    const meta = await apiJson("/api/meta", null, "Failed to load metadata");
+    syncSpecInputs(meta.spec);
+  } catch (e) {
+    showError(e.message);
+  }
+  await fetchDiff();
+}
+
+document.addEventListener("keydown", (ev) => {
+  const target = ev.target;
+  const tag = (target && target.tagName || "").toUpperCase();
+  if ((ev.key === "r" || ev.key === "R") && ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey) {
+    ev.preventDefault();
+    refreshDiff();
+    return;
+  }
+  if (ev.altKey && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey) {
+    const ak = (ev.key || "").toLowerCase();
+    if (ak === "s" || ev.code === "KeyS") {
+      ev.preventDefault();
+      toggleSinglePane(!isSinglePaneMode());
+      return;
+    }
+  }
+  if (ev.key === "Escape" && isSettingsPaneOpen()) {
+    ev.preventDefault();
+    closeSettingsPane();
+    return;
+  }
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+  const items = workspaceData?.items || [];
+  if (items.length <= 1) return;
+  const curIdx = Math.max(0, items.findIndex(it => it.id === selectedItemId));
+  if (ev.key === "j" || ev.key === "ArrowDown") {
+    ev.preventDefault();
+    const nxt = items[Math.min(items.length - 1, curIdx + 1)];
+    if (nxt) selectItem(nxt.id);
+  } else if (ev.key === "k" || ev.key === "ArrowUp") {
+    ev.preventDefault();
+    const prev = items[Math.max(0, curIdx - 1)];
+    if (prev) selectItem(prev.id);
+  }
+});
+
+init();
+</script>
+</body>
+</html>

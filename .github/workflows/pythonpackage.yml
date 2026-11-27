@@ -41,6 +41,36 @@ jobs:
       run: |
         pytest -v
 
+  build-local-diff:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [ '3.10', '3.12' ]
+    defaults:
+      run:
+        working-directory: local_diff
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install package and test dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install -e ../pull_requests -e . pytest httpx build
+    - name: Test imports and CLI
+      run: |
+        python -c "import local_diff_san; print(len(local_diff_san.__all__))"
+        local-diff-san --help >/dev/null
+    - name: Build distribution
+      run: |
+        python -m build
+    - name: Run pytest
+      run: |
+        pytest -v
+
   test-pada-svara:
     runs-on: ubuntu-latest
     defaults:
@@ -68,12 +98,9 @@ jobs:
         pytest -v
 
   publish:
-    needs: [ build, test-pada-svara ]
+    needs: [ build, build-local-diff, test-pada-svara ]
     if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: pull_requests
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
@@ -81,10 +108,17 @@ jobs:
         python-version: '3.12'
     - run: |
         python -m pip install --upgrade pip build
-        python -m build
+        python -m build pull_requests
+        python -m build local_diff
     - uses: pypa/gh-action-pypi-publish@release/v1
       with:
         user: __token__
         password: ${{ secrets.PYPI_API_TOKEN }}
         packages-dir: pull_requests/dist
+        skip-existing: true
+    - uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        user: __token__
+        password: ${{ secrets.PYPI_API_TOKEN }}
+        packages-dir: local_diff/dist
         skip-existing: true

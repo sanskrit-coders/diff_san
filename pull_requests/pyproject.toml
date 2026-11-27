@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pull_requests_san"
-version = "0.1.0"
+version = "0.1.1"
 description = "Single-pane word-flow and character-level GitHub PR review tool for Sanskrit & Indic repositories"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -40,4 +40,4 @@ pull_requests_san = "pull_requests_san.pr_review_gui:main"
 include = ["pull_requests_san*"]
 
 [tool.setuptools.package-data]
-pull_requests_san = ["templates/*.html"]
+pull_requests_san = ["templates/*.html", "assets/*.css", "assets/*.js"]

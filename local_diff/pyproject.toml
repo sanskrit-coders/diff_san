@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "local-diff-san"
+version = "0.1.0"
+description = "Single-pane word-flow and character-level local file and Git HEAD diff viewer for Sanskrit & Indic scholarship"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Sanskrit Coders", email = "sanskrit-programmers@googlegroups.com"}]
+keywords = ["sanskrit", "diff", "git", "devanagari", "vedic", "proofreading"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Education",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Text Processing :: Linguistic",
+]
+dependencies = [
+  "fastapi>=0.100",
+  "pull_requests_san>=0.1.1",
+  "pydantic>=2.0",
+  "uvicorn>=0.23",
+]
+
+[project.urls]
+Homepage = "https://github.com/sanskrit-coders/diff_san"
+Repository = "https://github.com/sanskrit-coders/diff_san"
+
+[project.scripts]
+local-diff-san = "local_diff_san.server:main"
+local_diff_san = "local_diff_san.server:main"
+
+[tool.setuptools.packages.find]
+include = ["local_diff_san*"]
+
+[tool.setuptools.package-data]
+local_diff_san = ["templates/*.html"]

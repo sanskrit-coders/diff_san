@@ -937,19 +937,23 @@ def test_extract_three_way_conflicts_and_recompute():
 def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
   if not shutil.which("node"):
     pytest.skip("node binary not installed")
-  html_path = Path(__file__).resolve().parent.parent / "pull_requests_san" / "templates" / "pr_review.html"
-  html_src = html_path.read_text(encoding="utf-8")
+  from pull_requests_san import pr_review_gui
+
+  html_src = pr_review_gui.load_html_template()
 
   assert '--dev: "Adishila SanVedic", "Tiro Devanagari Sanskrit", "Noto Sans Devanagari", "Annapurna SIL", serif;' in html_src
   assert "--dev-font-size: 26px;" in html_src
   assert "font-size: 20px;" in html_src
   assert "--ins-char: #fef3c7;" in html_src
+  assert "--red-char: #ffeded;" in html_src
+  assert "--del-char-sub: #ffd6db;" in html_src
   assert "#9ef0b5" not in html_src
   assert "Alt+P" not in html_src and "KeyP" not in html_src
   # Comment & review typography matches the main diff pane (var(--dev-font-size))
   for css_rule in (".comment-body {", ".review-textarea {", ".pr-body-box {", "input.reply-input {", ".thread-resolved-preview {"):
     assert "font-size: var(--dev-font-size);" in html_src.split(css_rule)[1].split("}")[0]
   assert 'id="reloadBtn"' in html_src and 'onclick="reloadUi()"' in html_src
+  assert 'id="settingsBtn"' in html_src and 'id="settingsPane"' in html_src
   assert 'id="singlePaneChk" type="checkbox" checked' in html_src
   assert '<option value="word" selected>Word (space-separated)</option>' in html_src
   assert 'id="normalizeSelect"' in html_src and 'id="ignorePunctChk"' in html_src
@@ -1101,8 +1105,10 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
     "function makeEl(id) {\n"
     "  return { id, value: '', checked: false, innerHTML: '', textContent: '', style: {}, classList: makeClassList(), querySelectorAll(){ return []; }, scrollIntoView(){}, focus(){ this.focused = true; }, select(){} };\n"
     "}\n"
+    "const cssProps = {};\n"
+    "const lsStore = {};\n"
     "global.document = {\n"
-    "  documentElement: { style: { setProperty(){} } },\n"
+    "  documentElement: { style: { setProperty(k, v){ cssProps[k] = v; } } },\n"
     "  getElementById(id) { if (!elems[id]) elems[id] = makeEl(id); return elems[id]; },\n"
     "  querySelectorAll() { return []; },\n"
     "  addEventListener(evt, fn) { listeners[evt] = fn; },\n"
@@ -1115,8 +1121,9 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
     "elems['singlePaneChk'] = Object.assign(makeEl('singlePaneChk'), { checked: true });\n"
     "elems['wrapLinesChk'] = Object.assign(makeEl('wrapLinesChk'), { checked: true });\n"
     "elems['changedOnlyChk'] = Object.assign(makeEl('changedOnlyChk'), { checked: false });\n"
+    "elems['settingsPane'] = Object.assign(makeEl('settingsPane'), { style: { display: 'none' } });\n"
     "let reloadedCount = 0;\n"
-    "global.localStorage = { getItem(){ return null; }, setItem(){} };\n"
+    "global.localStorage = { getItem(k){ return Object.prototype.hasOwnProperty.call(lsStore, k) ? lsStore[k] : null; }, setItem(k, v){ lsStore[k] = String(v); } };\n"
     "global.window = { location: { reload(){ reloadedCount += 1; } }, confirm(){ return true; }, getSelection(){ return { toString(){ return ''; } }; } };\n"
     "const fetched = [];\n"
     f"const samplePr = {json.dumps(sample_pr)};\n"
@@ -1336,6 +1343,21 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
     "  if (selectedChangelistSha !== '' || elems['filesDiffContainer'].innerHTML.includes('changelist_only.md')) {\n"
     "    throw new Error('Resetting changelist dropdown to All did not restore PR files');\n"
     "  }\n"
+    "  // Settings pane renders color pickers, applies custom colors to CSS vars & localStorage, resets cleanly, and closes on Escape\n"
+    "  toggleSettingsPane();\n"
+    "  if (!isSettingsPaneOpen() || !elems['settingsPane'].innerHTML.includes('type=\"color\"') || !elems['settingsPane'].innerHTML.includes('colorRedChar')) {\n"
+    "    throw new Error('Settings pane did not render color pickers');\n"
+    "  }\n"
+    "  setDiffColor('--red-char', '#fff0f5');\n"
+    "  if (cssProps['--red-char'] !== '#fff0f5' || !lsStore[DIFF_COLOR_STORAGE_KEY].includes('#fff0f5')) {\n"
+    "    throw new Error('setDiffColor did not apply CSS var or persist');\n"
+    "  }\n"
+    "  resetDiffColors();\n"
+    "  if (cssProps['--red-char'] !== '#ffeded') {\n"
+    "    throw new Error('resetDiffColors did not restore lighter deleted pink default');\n"
+    "  }\n"
+    "  listeners['keydown']({ key: 'Escape', altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
+    "  if (isSettingsPaneOpen()) throw new Error('Escape did not close settings pane');\n"
     "})().catch(err => { console.error(err); process.exit(1); });\n"
   )
   js_file = tmp_path / "test_github_gui.js"

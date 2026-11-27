@@ -5,104 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>GitHub PR Character-Level Reviewer</title>
 <style>
-  :root {
-    --bg: #f6f4ef;
-    --surface: #ffffff;
-    --surface-2: #fbfaf7;
-    --border: #ddd6c7;
-    --text: #1f1c18;
-    --muted: #6a6257;
-    --accent: #8b4513;
-    --accent-soft: #fdf3e7;
-    --green: #156236;
-    --green-soft: #eafaf1;
-    --ins-row: #fefce8;
-    --ins-char: #fef3c7;
-    --ins-word-base: #fffdf5;
-    --ins-char-sub: #fde047;
-    --ins-border: #ca8a04;
-    --ins-text: #713f12;
-    --red: #943126;
-    --red-soft: #fdeeee;
-    --red-row: #fff5f5;
-    --red-char: #ffd6d6;
-    --del-word-base: #fff9f9;
-    --del-char-sub: #fca5a5;
-    --amber: #9c5700;
-    --amber-soft: #fff8e1;
-    --blue: #1b4f72;
-    --blue-soft: #ebf5fb;
-    --dev: "Adishila SanVedic", "Tiro Devanagari Sanskrit", "Noto Sans Devanagari", "Annapurna SIL", serif;
-    --dev-font-size: 26px;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    font-size: 20px;
-    line-height: 1.45;
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-    overflow: hidden;
-  }
-  header {
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    padding: 9px 14px;
-    display: flex;
-    flex-direction: column;
-    gap: 7px;
-    flex-shrink: 0;
-  }
-  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  input[type="text"], input[type="number"], select, textarea {
-    padding: 5px 8px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: #fff;
-    color: var(--text);
-    font-size: 18px;
-    font-family: inherit;
-  }
-  button {
-    padding: 6px 12px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--surface-2);
-    color: var(--text);
-    cursor: pointer;
-    font-size: 17px;
-    font-weight: 500;
-  }
-  button:hover:not(:disabled) { background: #efeae0; }
-  button:disabled { opacity: 0.55; cursor: not-allowed; }
-  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-  button.primary:hover:not(:disabled) { background: #70360d; }
-  button.green { background: var(--green); color: #fff; border-color: var(--green); }
-  button.green:hover:not(:disabled) { background: #104b29; }
-  button.danger { background: var(--red); color: #fff; border-color: var(--red); }
-  button.danger:hover:not(:disabled) { background: #74251c; }
-  button.small { padding: 4px 9px; font-size: 15.5px; }
-
-  .pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 2px 9px;
-    border-radius: 999px;
-    font-size: 15px;
-    font-weight: 600;
-    border: 1px solid var(--border);
-    background: var(--surface-2);
-    color: var(--text);
-  }
-  .pill-green { background: var(--green-soft); color: var(--green); border-color: #a9dfbf; }
-  .pill-red { background: var(--red-soft); color: var(--red); border-color: #f5b7b1; }
-  .pill-amber { background: var(--amber-soft); color: var(--amber); border-color: #f9e79f; }
-  .pill-blue { background: var(--blue-soft); color: var(--blue); border-color: #aed6f1; }
+/* {{SHARED_DIFF_CSS}} */
   button.filter-pill {
     padding: 4px 11px;
     border-radius: 999px;
@@ -113,36 +16,6 @@
   }
   button.filter-pill:hover { filter: brightness(0.96); }
   button.filter-pill.active { box-shadow: 0 0 0 2px var(--accent); }
-  .kbd-hint {
-    font-size: 13px;
-    font-family: monospace;
-    color: var(--muted);
-    background: rgba(0,0,0,0.05);
-    padding: 1px 4px;
-    border-radius: 3px;
-  }
-
-  .workspace {
-    display: grid;
-    grid-template-columns: 375px minmax(0, 1fr);
-    flex: 1;
-    min-height: 0;
-  }
-  aside.sidebar {
-    background: var(--surface);
-    border-right: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    overflow: hidden;
-  }
-  .sidebar-section {
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    padding: 10px;
-    gap: 6px;
-  }
   .sidebar-prs {
     flex: 1.25;
     border-bottom: 1px solid var(--border);
@@ -150,80 +23,8 @@
   .sidebar-files {
     flex: 1;
   }
-  .scroll-list {
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    min-height: 0;
-    flex: 1;
-  }
-  .pane-title {
-    font-size: 16px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--muted);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .pr-item, .file-item {
-    padding: 8px 10px;
-    border-radius: 7px;
-    border: 1px solid var(--border);
-    background: var(--surface-2);
-    cursor: pointer;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .pr-item:hover, .file-item:hover { background: #f2ede2; }
-  .pr-item.active, .file-item.active {
-    background: var(--accent-soft);
-    border-color: var(--accent);
-    box-shadow: inset 3px 0 0 var(--accent);
-  }
   .pr-item-title { font-family: var(--dev); font-weight: 600; font-size: calc(var(--dev-font-size) - 3px); word-break: break-word; }
   .pr-title-heading { margin: 6px 0 2px 0; font-family: var(--dev); font-size: var(--dev-font-size); line-height: 1.35; }
-  .pr-item-meta, .file-item-meta {
-    font-size: 15px;
-    color: var(--muted);
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-    align-items: center;
-  }
-  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-
-  main {
-    min-width: 0;
-    overflow-y: auto;
-    padding: 14px 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-  }
-  .card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 9px;
-    padding: 12px 14px;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-  .error-banner {
-    background: var(--red-soft);
-    border: 1px solid #f5b7b1;
-    color: var(--red);
-    border-radius: 7px;
-    padding: 8px 12px;
-    font-size: 17px;
-    display: none;
-  }
   .pr-body-box {
     background: var(--surface-2);
     border: 1px solid var(--border);
@@ -234,7 +35,6 @@
     font-size: var(--dev-font-size);
     line-height: 1.55;
   }
-
   .review-panel {
     background: var(--surface-2);
     border: 1px solid var(--border);
@@ -263,7 +63,6 @@
     align-items: flex-start;
     gap: 8px;
   }
-
   .radio-group {
     display: inline-flex;
     border: 1px solid var(--border);
@@ -287,94 +86,6 @@
   .radio-group label.sel-request_changes { background: var(--red-soft); color: var(--red); font-weight: 700; }
   .radio-group label.sel-comment { background: var(--blue-soft); color: var(--blue); font-weight: 700; }
   .radio-group label.sel-issue_comment { background: #ede9df; color: var(--text); font-weight: 600; }
-
-  .file-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 9px;
-    overflow: hidden;
-    transition: box-shadow 0.12s ease, border-color 0.12s ease;
-  }
-  .file-card.focused {
-    border-color: var(--accent);
-    outline: 3px solid var(--accent);
-    box-shadow: 0 0 0 5px rgba(139, 69, 19, 0.16), 0 6px 18px rgba(139, 69, 19, 0.14);
-  }
-  .active-badge {
-    display: none;
-    align-items: center;
-    padding: 1px 8px;
-    border-radius: 999px;
-    background: var(--accent);
-    color: #fff;
-    font-family: system-ui, sans-serif;
-    font-size: 13px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-  .file-card.focused .active-badge { display: inline-flex; }
-  .file-card-header {
-    background: #f2ede2;
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-  }
-  .file-card.collapsed .file-card-body { display: none; }
-
-  .hunk-bar {
-    background: #edf2f7;
-    color: var(--blue);
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 15px;
-    padding: 4px 10px;
-    border-top: 1px solid var(--border);
-    border-bottom: 1px solid var(--border);
-  }
-
-  table.diff-table {
-    width: 100%;
-    border-collapse: collapse;
-    table-layout: fixed;
-  }
-  table.diff-table col.col-num { width: 58px; }
-  table.diff-table col.col-code { width: calc(50% - 78px); }
-  table.diff-table col.col-act { width: 40px; }
-
-  table.diff-table td {
-    vertical-align: top;
-    border-bottom: 1px solid #f0ebe0;
-    padding: 2px 6px;
-  }
-  td.ln {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 15px;
-    color: var(--muted);
-    text-align: right;
-    user-select: none;
-    background: #faf8f3;
-    border-right: 1px solid #e7e1d3;
-  }
-  td.ln.clickable { cursor: pointer; }
-  td.ln.clickable:hover { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
-  td.code-cell {
-    font-family: var(--dev);
-    font-size: var(--dev-font-size);
-    line-height: 1.55;
-    border-right: 1px solid #e7e1d3;
-    overflow-wrap: anywhere;
-  }
-  .wrap-on td.code-cell { white-space: pre-wrap; }
-  .wrap-off td.code-cell { white-space: pre; overflow-x: auto; }
-  td.act-cell {
-    text-align: center;
-    background: #faf8f3;
-    padding: 2px;
-  }
   .add-comment-btn {
     border: 1px solid transparent;
     background: transparent;
@@ -391,95 +102,6 @@
     border-color: var(--border);
     background: var(--surface);
     color: var(--accent);
-  }
-
-  tr.diff-row-context td.code-cell { background: #ffffff; }
-  tr.diff-row-modify td.lhs-cell { background: var(--red-row); }
-  tr.diff-row-modify td.rhs-cell { background: var(--ins-row); }
-  tr.diff-row-del td.lhs-cell { background: #ffecec; color: #78281f; }
-  tr.diff-row-add td.rhs-cell { background: var(--ins-row); color: var(--ins-text); }
-  td.diff-empty {
-    background: repeating-linear-gradient(
-      -45deg,
-      #f6f4ef,
-      #f6f4ef 6px,
-      #efece4 6px,
-      #efece4 12px
-    );
-  }
-
-  .ch-del {
-    background: var(--red-char);
-    color: #7f1d1d;
-    border-bottom: 2px solid #dc2626;
-    border-radius: 3px;
-    padding: 0 2px;
-    margin: 0 1px;
-  }
-  .ch-ins {
-    background: var(--ins-char);
-    color: var(--ins-text);
-    border-bottom: 2px solid var(--ins-border);
-    border-radius: 3px;
-    padding: 0 2px;
-    margin: 0 1px;
-  }
-  .ch-del.ch-has-sub {
-    background: var(--del-word-base);
-    border: 1px dashed #e5b2b2;
-    border-bottom: 1.5px dashed #dc2626;
-    margin: 0 3px;
-  }
-  .ch-ins.ch-has-sub {
-    background: var(--ins-word-base);
-    border: 1px dashed #e6cc80;
-    border-bottom: 1.5px dashed var(--ins-border);
-    margin: 0 3px;
-  }
-  .ch-del .ch-sub {
-    background: var(--del-char-sub);
-    color: #7f1d1d;
-    border-bottom: 2.5px solid #dc2626;
-    border-radius: 3px;
-    padding: 0 2px;
-  }
-  .ch-ins .ch-sub {
-    background: var(--ins-char-sub);
-    color: #713f12;
-    border-bottom: 2.5px solid #b45309;
-    border-radius: 3px;
-    padding: 0 2px;
-  }
-  .nl-badge {
-    display: inline-block;
-    font-family: ui-monospace, monospace;
-    font-size: 14px;
-    font-weight: 700;
-    border-radius: 3px;
-    padding: 0 3px;
-    margin: 0 2px;
-    vertical-align: middle;
-  }
-  .nl-del { background: var(--red-char); color: #7f1d1d; }
-  .nl-ins { background: var(--ins-char); color: var(--ins-text); }
-  table.diff-table-single col.col-num { width: 56px; }
-  table.diff-table-single col.col-single-code { width: calc(100% - 152px); }
-  table.diff-table-single col.col-act { width: 40px; }
-  tr.single-row-modify td.single-code-cell { background: #ffffff; border-right: 1px solid #e7e1d3; }
-  tr.single-row-del td.single-code-cell { background: #ffecec; color: #78281f; border-right: 1px solid #e7e1d3; }
-  tr.single-row-add td.single-code-cell { background: var(--ins-row); color: var(--ins-text); border-right: 1px solid #e7e1d3; }
-  tr.single-row-context td.single-code-cell { background: #ffffff; border-right: 1px solid #e7e1d3; }
-  .ch-inv {
-    display: inline-block;
-    font-family: ui-monospace, monospace;
-    font-size: 13px;
-    font-weight: 700;
-    background: var(--amber-soft);
-    color: var(--amber);
-    border: 1px solid #d97706;
-    border-radius: 3px;
-    padding: 0 3px;
-    vertical-align: middle;
   }
 
   tr.thread-row td {
@@ -671,12 +293,14 @@
       <input id="wrapLinesChk" type="checkbox" checked onchange="renderActivePrFiles()" /> Wrap long lines
     </label>
     <button id="gdSelectionBtn" class="small" title="Look up currently selected text in GoldenDict" onclick="lookupSelectedGoldenDict()">📖 GoldenDict Selection</button>
+    <button id="settingsBtn" class="small" type="button" title="Customize deleted and added diff highlight colors" onclick="toggleSettingsPane()">⚙ Settings</button>
     <button type="button" class="pill filter-pill pill-green active" id="stateOpenPill" data-state-filter="open" title="Show Open PRs (Alt+O)" onclick="setStateFilter('open')">Open <span class="kbd-hint">Alt+O</span></button>
     <button type="button" class="pill filter-pill pill-amber" id="stateClosedPill" data-state-filter="closed" title="Show Closed PRs (Alt+C)" onclick="setStateFilter('closed')">Closed <span class="kbd-hint">Alt+C</span></button>
     <button type="button" class="pill filter-pill pill-blue" id="stateMergedPill" data-state-filter="merged" title="Show Merged PRs (Alt+M)" onclick="setStateFilter('merged')">Merged <span class="kbd-hint">Alt+M</span></button>
     <button type="button" class="pill filter-pill" id="stateAllPill" data-state-filter="all" title="Show All PRs (Alt+L / Alt+0)" onclick="setStateFilter('all')">All <span class="kbd-hint">Alt+L</span></button>
   </div>
 </header>
+<div id="settingsPane" class="settings-drawer" style="display:none;"></div>
 
 <div class="workspace">
   <aside class="sidebar">
@@ -706,6 +330,7 @@
 </div>
 
 <script>
+// {{SHARED_DIFF_JS}}
 let allPrs = [];
 let filteredPrs = [];
 let activePrKey = null;
@@ -740,56 +365,6 @@ function setResolvedThreadExpanded(threadId, isOpen) {
   else delete expandedResolvedThreads[String(threadId)];
 }
 
-function esc(s) {
-  return String(s ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function setStatus(msg, autoClearMs = 0) {
-  const el = document.getElementById("statusText");
-  if (!el) return;
-  el.textContent = msg || "";
-  if (autoClearMs > 0 && msg) {
-    setTimeout(() => { if (el.textContent === msg) el.textContent = ""; }, autoClearMs);
-  }
-}
-
-function showError(msg) {
-  const el = document.getElementById("errorBanner");
-  if (!el) return;
-  if (!msg) {
-    el.style.display = "none";
-    el.textContent = "";
-    return;
-  }
-  el.textContent = msg;
-  el.style.display = "block";
-}
-
-async function apiJson(url, opts = null, fallbackErr = "Request failed") {
-  let resp;
-  try {
-    resp = await fetch(url, opts || undefined);
-  } catch (err) {
-    throw new Error(`${fallbackErr}: ${err?.message || err}`);
-  }
-  let data = null;
-  try {
-    data = await resp.json();
-  } catch (_) {
-    data = null;
-  }
-  if (!resp.ok) {
-    const detail = data?.detail || data?.message || `HTTP ${resp.status}`;
-    throw new Error(detail);
-  }
-  return data;
-}
-
 function reloadUi() {
   window.location.reload();
 }
@@ -814,177 +389,6 @@ function setStateFilter(stateVal) {
   if (sel) sel.value = target;
   updateStateFilterPills(target);
   return loadPrList(false);
-}
-
-function applyEditorFont(pxVal) {
-  const px = Math.max(14, Math.min(42, Number(pxVal) || 26));
-  document.documentElement.style.setProperty("--dev-font-size", `${px}px`);
-  const inp = document.getElementById("fontPxInput");
-  if (inp) inp.value = px;
-  try { localStorage.setItem("github_pr_review_font_px", String(px)); } catch (_) {}
-}
-
-function codepointTitle(txt) {
-  const pts = [];
-  for (const ch of String(txt || "")) {
-    const cp = ch.codePointAt(0).toString(16).toUpperCase().padStart(4, "0");
-    pts.push(`U+${cp} ${ch}`);
-    if (pts.length >= 12) { pts.push("..."); break; }
-  }
-  return pts.join(" | ");
-}
-
-function renderVisibleTextWithInvisibles(text, tip) {
-  const invMap = {
-    "\u200b": "[ZWSP]",
-    "\u200c": "[ZWNJ]",
-    "\u200d": "[ZWJ]",
-    "\ufeff": "[BOM]",
-    "\u00a0": "[NBSP]",
-  };
-  let inner = "";
-  for (const ch of String(text || "")) {
-    if (invMap[ch]) {
-      inner += `<span class="ch-inv" title="${tip}">${invMap[ch]}</span>`;
-    } else if (ch === "\t") {
-      inner += "  ";
-    } else {
-      inner += esc(ch);
-    }
-  }
-  return inner;
-}
-
-function renderChangedText(txt, op, subSegments = null) {
-  const cls = op === "del" ? "ch-del" : "ch-ins";
-  const raw = String(txt || "");
-  let lead = "";
-  let core = raw;
-  let trail = "";
-  const m = raw.match(/^([ \t]*)([\s\S]*?\S[\s\S]*?)([ \t]*)$/);
-  if (m) {
-    lead = m[1];
-    core = m[2];
-    trail = m[3];
-  }
-  const tip = esc(codepointTitle(core));
-  const fmtWs = s => esc(s.replace(/\t/g, "  "));
-
-  if (Array.isArray(subSegments) && subSegments.length && core) {
-    const trimmed = subSegments.map(s => ({ op: s.op, text: String(s.text || "") })).filter(s => s.text);
-    let subLead = "";
-    let subTrail = "";
-    if (trimmed.length && trimmed[0].op === "eq") {
-      const ml = trimmed[0].text.match(/^([ \t]*)([\s\S]*)$/);
-      if (ml) {
-        subLead = ml[1];
-        trimmed[0].text = ml[2];
-      }
-    }
-    if (trimmed.length && trimmed[trimmed.length - 1].op === "eq") {
-      const mt = trimmed[trimmed.length - 1].text.match(/^([\s\S]*?)([ \t]*)$/);
-      if (mt) {
-        trimmed[trimmed.length - 1].text = mt[1];
-        subTrail = mt[2];
-      }
-    }
-    const innerSub = trimmed.filter(s => s.text).map(s => {
-      const htmlPart = renderVisibleTextWithInvisibles(s.text, tip);
-      return (s.op === "del" || s.op === "ins") ? `<span class="ch-sub">${htmlPart}</span>` : htmlPart;
-    }).join("");
-    if (innerSub) {
-      return `${fmtWs(subLead || lead)}<span class="${cls} ch-has-sub" title="${tip}">${innerSub}</span>${fmtWs(subTrail || trail)}`;
-    }
-  }
-
-  const inner = renderVisibleTextWithInvisibles(core, tip);
-  return `${fmtWs(lead)}<span class="${cls}" title="${tip}">${inner}</span>${fmtWs(trail)}`;
-}
-
-function graphemeUnitsClient(str) {
-  if (typeof Intl !== "undefined" && Intl.Segmenter) {
-    const seg = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-    return Array.from(seg.segment(str), s => s.segment);
-  }
-  return Array.from(str);
-}
-
-function computeClientWordSubPair(delText, insText) {
-  const mL = String(delText || "").match(/^([ \t]*)([\s\S]*?)([ \t]*)$/);
-  const mR = String(insText || "").match(/^([ \t]*)([\s\S]*?)([ \t]*)$/);
-  const lLead = mL ? mL[1] : "", lCore = mL ? mL[2] : "", lTrail = mL ? mL[3] : "";
-  const rLead = mR ? mR[1] : "", rCore = mR ? mR[2] : "", rTrail = mR ? mR[3] : "";
-  if (!lCore || !rCore) return null;
-  const a = graphemeUnitsClient(lCore), b = graphemeUnitsClient(rCore);
-  if (a.length * b.length > 40000) return null;
-  const m = a.length, n = b.length;
-  const dp = Array.from({ length: m + 1 }, () => new Int32Array(n + 1));
-  for (let i = m - 1; i >= 0; i--) {
-    for (let j = n - 1; j >= 0; j--) {
-      dp[i][j] = a[i] === b[j] ? 1 + dp[i + 1][j + 1] : Math.max(dp[i + 1][j], dp[i][j + 1]);
-    }
-  }
-  const lSub = [], rSub = [];
-  let i = 0, j = 0, hasNonWsEq = false;
-  const pushOp = (arr, op, t) => {
-    if (!t) return;
-    if (arr.length && arr[arr.length - 1].op === op) arr[arr.length - 1].text += t;
-    else arr.push({ op, text: t });
-  };
-  while (i < m && j < n) {
-    if (a[i] === b[j]) {
-      if (a[i].trim()) hasNonWsEq = true;
-      pushOp(lSub, "eq", a[i]);
-      pushOp(rSub, "eq", b[j]);
-      i++; j++;
-    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
-      pushOp(lSub, "del", a[i++]);
-    } else {
-      pushOp(rSub, "ins", b[j++]);
-    }
-  }
-  while (i < m) pushOp(lSub, "del", a[i++]);
-  while (j < n) pushOp(rSub, "ins", b[j++]);
-  if (!hasNonWsEq) return null;
-  return {
-    l: [...(lLead ? [{ op: "eq", text: lLead }] : []), ...lSub, ...(lTrail ? [{ op: "eq", text: lTrail }] : [])],
-    r: [...(rLead ? [{ op: "eq", text: rLead }] : []), ...rSub, ...(rTrail ? [{ op: "eq", text: rTrail }] : [])],
-  };
-}
-
-function renderDiffSegments(segments) {
-  if (!segments || !segments.length) return "";
-  const fallbackSubs = {};
-  if (getDiffMode() === "word") {
-    for (let i = 0; i < segments.length; i++) {
-      const s = segments[i];
-      if (s.op === "del" && !s.sub_segments) {
-        let j = i + 1;
-        while (j < segments.length && (segments[j].op === "del_nl" || segments[j].op === "ins_nl")) j++;
-        if (j < segments.length && segments[j].op === "ins" && !segments[j].sub_segments) {
-          const pair = computeClientWordSubPair(s.text, segments[j].text);
-          if (pair) {
-            fallbackSubs[i] = pair.l;
-            fallbackSubs[j] = pair.r;
-          }
-        }
-      }
-    }
-  }
-  let out = "";
-  for (let i = 0; i < segments.length; i++) {
-    const seg = segments[i];
-    if (seg.op === "eq") {
-      out += esc(seg.text);
-    } else if (seg.op === "del_nl") {
-      out += `<span class="nl-badge nl-del" title="Removed line break">↵</span>`;
-    } else if (seg.op === "ins_nl") {
-      out += `<span class="nl-badge nl-ins" title="Inserted line break">↵</span>`;
-    } else {
-      out += renderChangedText(seg.text, seg.op, seg.sub_segments || fallbackSubs[i]);
-    }
-  }
-  return out;
 }
 
 function formatCommentBody(body) {
@@ -1067,6 +471,7 @@ function toggleSinglePane(checked) {
 }
 
 async function init() {
+  initDiffSettingsPane();
   try {
     const savedPx = localStorage.getItem("github_pr_review_font_px") || localStorage.getItem("accent_review_font_px");
     if (savedPx) applyEditorFont(savedPx);
@@ -2609,24 +2014,6 @@ async function mergeActivePr() {
   }
 }
 
-async function lookupSelectedGoldenDict() {
-  const sel = (window.getSelection ? window.getSelection().toString() : "").trim();
-  if (!sel) {
-    setStatus("Select a Sanskrit word first to look up in GoldenDict.", 2500);
-    return;
-  }
-  try {
-    const data = await apiJson("/api/open_in_goldendict", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ word: sel }),
-    }, "GoldenDict lookup failed");
-    setStatus(`GoldenDict: ${data.word}`, 2000);
-  } catch (e) {
-    showError(e.message);
-  }
-}
-
 document.addEventListener("keydown", (ev) => {
   const target = ev.target;
   const id = (target && target.id) || "";
@@ -2699,6 +2086,12 @@ document.addEventListener("keydown", (ev) => {
       else submitSelectedReviewAction();
       return;
     }
+  }
+
+  if (ev.key === "Escape" && isSettingsPaneOpen()) {
+    ev.preventDefault();
+    closeSettingsPane();
+    return;
   }
 
   if (ev.key === "Escape" && openComposer) {
