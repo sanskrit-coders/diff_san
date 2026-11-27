@@ -786,6 +786,9 @@ def test_gui_endpoints_diff_comments_refresh_and_local_helpers(tmp_path: Path, m
   for pill_id in ("stateOpenPill", "stateClosedPill", "stateMergedPill", "stateAllPill"):
     assert f'id="{pill_id}"' in hdr_top
     assert r_html.text.count(f'id="{pill_id}"') == 1
+  for btn_id in ("commentNavBtn", "prevCommentBtn", "nextCommentBtn", "commentNavCount"):
+    assert f'id="{btn_id}"' in r_html.text
+  assert "> Wrap\n" in r_html.text and "> Wrap long lines\n" not in r_html.text
 
   r_meta = tc.get("/api/meta")
   assert r_meta.status_code == 200
@@ -1658,9 +1661,10 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
     "  selectedDiffRowKey = null;\n"
     "  listeners['keydown']({ key: 'd', ctrlKey: true, altKey: false, metaKey: false, shiftKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
     "  if (!cConv.classList.contains('diff-comment-cur') || cConv.scrolled !== 1) throw new Error('1st Ctrl+D did not select conversation comment');\n"
-    "  listeners['keydown']({ key: 'd', ctrlKey: true, altKey: false, metaKey: false, shiftKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
+    "  if (elems['commentNavCount'].textContent !== '1/4' || !elems['commentNavBtn'].classList.contains('active')) throw new Error('commentNavCount/Btn not updated on 1/4');\n"
+    "  listeners['keydown']({ key: '्', code: 'KeyD', ctrlKey: true, altKey: false, metaKey: false, shiftKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
     "  if (!cOpen.classList.contains('diff-comment-cur') || cOpen.scrolled !== 1 || cNestedChild.classList.contains('diff-comment-cur')) {\n"
-    "    throw new Error('2nd Ctrl+D did not select open thread-box (without duplicating nested child)');\n"
+    "    throw new Error('2nd Ctrl+D (KeyD fallback) did not select open thread-box (without duplicating nested child)');\n"
     "  }\n"
     "  listeners['keydown']({ key: 'd', ctrlKey: true, altKey: false, metaKey: false, shiftKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
     "  if (!cResolved.classList.contains('diff-comment-cur') || cResolved.open !== false) {\n"

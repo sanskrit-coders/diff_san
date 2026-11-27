@@ -1016,6 +1016,11 @@
       <button id="prevSandhiBtn" class="small" type="button" title="Previous sandhi diff (Alt+Shift+↑)" onclick="jumpSandhiDiff(-1)">◀</button>
       <button id="nextSandhiBtn" class="small" type="button" title="Next sandhi diff (Alt+Shift+↓)" onclick="jumpSandhiDiff(1)">▶</button>
     </span>
+    <span class="row" style="gap:2px;">
+      <button id="commentNavBtn" class="small" type="button" title="Jump to next PR comment (Ctrl+D / Ctrl+Shift+D; resolved threads stay collapsed)" onclick="cyclePrComments(1)">Comments (<span id="commentNavCount">0</span>)</button>
+      <button id="prevCommentBtn" class="small" type="button" title="Previous PR comment (Ctrl+Shift+D)" onclick="cyclePrComments(-1)">◀</button>
+      <button id="nextCommentBtn" class="small" type="button" title="Next PR comment (Ctrl+D)" onclick="cyclePrComments(1)">▶</button>
+    </span>
     <label title="Matches VS Code (25) / IntelliJ IDEA (28)">Editor font (px): <input id="fontPxInput" type="number" min="14" max="42" value="26" style="width:74px;" onchange="applyEditorFont(this.value)" /></label>
     <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;" title="Single pane inline word flow without line matching (Alt+S)">
       <input id="singlePaneChk" type="checkbox" checked onchange="toggleSinglePane(this.checked)" /> Single pane <span class="kbd-hint">Alt+S</span>
@@ -1023,8 +1028,8 @@
     <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;">
       <input id="changedOnlyChk" type="checkbox" onchange="renderActivePrFiles()" /> Changed lines only
     </label>
-    <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;">
-      <input id="wrapLinesChk" type="checkbox" checked onchange="renderActivePrFiles()" /> Wrap long lines
+    <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;" title="Wrap long lines">
+      <input id="wrapLinesChk" type="checkbox" checked onchange="renderActivePrFiles()" /> Wrap
     </label>
     <button id="gdSelectionBtn" class="small" title="Look up currently selected text in GoldenDict" onclick="lookupSelectedGoldenDict()">📖 GoldenDict Selection</button>
     <button id="findBtn" class="small" type="button" title="Find text or combining marks like ँ across spans (Ctrl+F)" onclick="openDiffFindBar()">🔍 Find</button>
@@ -7137,6 +7142,20 @@ function moveDiffRowSelection(step, diffOnly = false) {
 
 let _activePrCommentEl = null;
 
+function updateCommentNavUi(items = null, activeIdx = -1) {
+  if (typeof document === "undefined" || typeof document.getElementById !== "function") return;
+  const list = Array.isArray(items) ? items : getNavigablePrComments();
+  const idx = activeIdx >= 0 ? activeIdx : (_activePrCommentEl ? list.indexOf(_activePrCommentEl) : -1);
+  const badge = document.getElementById("commentNavCount");
+  if (badge) {
+    badge.textContent = idx >= 0 && list.length ? `${idx + 1}/${list.length}` : String(list.length);
+  }
+  const btn = document.getElementById("commentNavBtn");
+  if (btn && btn.classList) {
+    btn.classList.toggle("active", idx >= 0);
+  }
+}
+
 function clearActivePrCommentHighlight() {
   if (_activePrCommentEl && _activePrCommentEl.classList) {
     _activePrCommentEl.classList.remove("diff-comment-cur");
@@ -7147,6 +7166,7 @@ function clearActivePrCommentHighlight() {
       if (el.classList) el.classList.remove("diff-comment-cur");
     });
   }
+  updateCommentNavUi();
 }
 
 function getNavigablePrComments() {
@@ -7224,6 +7244,7 @@ function cyclePrComments(step = 1) {
   clearActivePrCommentHighlight();
   _activePrCommentEl = chosen;
   if (chosen.classList) chosen.classList.add("diff-comment-cur");
+  updateCommentNavUi(items, nextIdx);
 
   const threadRow = typeof chosen.closest === "function" ? chosen.closest("tr.thread-row") : null;
   let prevRowEl = threadRow ? threadRow.previousElementSibling : null;
@@ -7646,6 +7667,7 @@ function renderActivePrFiles() {
     });
   }
   if (typeof refreshDiffFindIfOpen === "function") refreshDiffFindIfOpen();
+  updateCommentNavUi();
 }
 
 function startInlineComposer(fi, line, side, leftLine = null, rightLine = null) {
@@ -8193,7 +8215,28 @@ async function mergeActivePr() {
   }
 }
 
+function isCommentCycleShortcut(ev) {
+  return Boolean(ev && ev.ctrlKey && !ev.altKey && !ev.metaKey && (ev.key === "d" || ev.key === "D" || ev.code === "KeyD"));
+}
+
+if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+  window.addEventListener("keydown", (ev) => {
+    if (!isCommentCycleShortcut(ev)) return;
+    ev.__diffSanCommentCycleHandled = true;
+    if (typeof ev.preventDefault === "function") ev.preventDefault();
+    if (typeof ev.stopPropagation === "function") ev.stopPropagation();
+    cyclePrComments(ev.shiftKey ? -1 : 1);
+  }, true);
+}
+
 document.addEventListener("keydown", (ev) => {
+  if (!ev?.__diffSanCommentCycleHandled && isCommentCycleShortcut(ev)) {
+    ev.__diffSanCommentCycleHandled = true;
+    if (typeof ev.preventDefault === "function") ev.preventDefault();
+    if (typeof ev.stopPropagation === "function") ev.stopPropagation();
+    cyclePrComments(ev.shiftKey ? -1 : 1);
+    return;
+  }
   if (typeof handleSharedDiffKeydown === "function" && handleSharedDiffKeydown(ev, {
     getRows: () => renderedDiffRows,
     getSelectedRowKey: () => selectedDiffRowKey,
@@ -8209,13 +8252,6 @@ document.addEventListener("keydown", (ev) => {
   if ((ev.key === "r" || ev.key === "R") && ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey) {
     ev.preventDefault();
     refreshAll();
-    return;
-  }
-
-  // Ctrl+D / Ctrl+Shift+D cycles through PR comments without auto-expanding resolved threads
-  if ((ev.key === "d" || ev.key === "D") && ev.ctrlKey && !ev.altKey && !ev.metaKey) {
-    ev.preventDefault();
-    cyclePrComments(ev.shiftKey ? -1 : 1);
     return;
   }
 
