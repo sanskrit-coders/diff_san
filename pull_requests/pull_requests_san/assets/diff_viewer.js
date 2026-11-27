@@ -1183,6 +1183,45 @@ function _applyDiffFindUi(scrollToActive = true) {
   }
 }
 
+function _findPreferredDiffFindIdx(matches) {
+  if (!Array.isArray(matches) || !matches.length) return -1;
+  if (typeof document === "undefined") return 0;
+  let curRowEl = null;
+  if (_activeDiffFocus && _activeDiffFocus.domId && typeof document.getElementById === "function") {
+    curRowEl = document.getElementById(_activeDiffFocus.domId);
+  }
+  if (!curRowEl && typeof document.querySelector === "function") {
+    curRowEl = document.querySelector("tr.diff-row-selected");
+  }
+  if (curRowEl) {
+    const FOLLOW_BIT = (typeof Node !== "undefined" && Node.DOCUMENT_POSITION_FOLLOWING) || 4;
+    for (let k = 0; k < matches.length; k++) {
+      const m = matches[k];
+      if (m.rowEl && m.rowEl === curRowEl) return k;
+      const node = m.range && m.range.startContainer;
+      if (!node) continue;
+      if (typeof curRowEl.contains === "function" && curRowEl.contains(node)) return k;
+      if (typeof curRowEl.compareDocumentPosition === "function" && (curRowEl.compareDocumentPosition(node) & FOLLOW_BIT)) {
+        return k;
+      }
+    }
+    return 0;
+  }
+  const pane = typeof document.getElementById === "function" ? document.getElementById("mainPane") : null;
+  if (pane && typeof pane.getBoundingClientRect === "function") {
+    const paneRect = pane.getBoundingClientRect();
+    if (paneRect && paneRect.height > 0) {
+      for (let k = 0; k < matches.length; k++) {
+        const m = matches[k];
+        const rect = (m.visualRange && typeof m.visualRange.getBoundingClientRect === "function" && m.visualRange.getBoundingClientRect())
+          || (m.block && typeof m.block.getBoundingClientRect === "function" && m.block.getBoundingClientRect());
+        if (rect && rect.height > 0 && rect.bottom > paneRect.top + 2) return k;
+      }
+    }
+  }
+  return 0;
+}
+
 function runDiffFind(queryStr = null, { preserveIndex = false, scrollToActive = true } = {}) {
   const inp = typeof document !== "undefined" ? document.getElementById("diffFindInput") : null;
   const q = queryStr !== null ? String(queryStr) : String(inp ? inp.value : _diffFindQuery);
@@ -1190,7 +1229,9 @@ function runDiffFind(queryStr = null, { preserveIndex = false, scrollToActive = 
   const root = (typeof document !== "undefined" && document.getElementById("mainPane")) || null;
   _diffFindMatches = q ? collectCodepointMatchesInRoot(root, q) : [];
   if (!_diffFindMatches.length) _diffFindIdx = -1;
-  else if (!preserveIndex || _diffFindIdx < 0 || _diffFindIdx >= _diffFindMatches.length) _diffFindIdx = 0;
+  else if (!preserveIndex || _diffFindIdx < 0 || _diffFindIdx >= _diffFindMatches.length) {
+    _diffFindIdx = _findPreferredDiffFindIdx(_diffFindMatches);
+  }
   _applyDiffFindUi(scrollToActive);
   return _diffFindMatches.length;
 }

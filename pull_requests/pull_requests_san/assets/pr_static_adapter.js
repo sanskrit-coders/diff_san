@@ -750,12 +750,14 @@
       const [, owner, repo, numStr, draftId] = m;
       const key = _prKeyStr(owner, repo, numStr);
       const list = (staticDraftStore[key] ||= []);
+      let createdDraft = null;
       if (method === "POST") {
-        list.push({ ...reqBody, draft_id: `d_${Date.now()}_${list.length}` });
+        createdDraft = { ...reqBody, draft_id: `d_${Date.now()}_${list.length}` };
+        list.push(createdDraft);
       } else if (method === "DELETE" && draftId) {
         staticDraftStore[key] = list.filter(d => d.draft_id !== draftId);
       }
-      return { pending_drafts: staticDraftStore[key] };
+      return { draft: createdDraft, pending_drafts: staticDraftStore[key] };
     }
 
     // Remaining write mutations to GitHub require a token

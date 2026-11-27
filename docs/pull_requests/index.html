@@ -810,6 +810,7 @@
     gap: 6px;
   }
   .thread-box.resolved { border-left-color: var(--green); opacity: 0.9; background: #fbfdfb; }
+  .thread-box.pending-draft { border-color: #f3d18a; border-left-color: var(--amber); background: #fffdf5; }
   details.thread-box.resolved > summary {
     list-style: none;
     display: flex;
@@ -3801,6 +3802,45 @@ function _applyDiffFindUi(scrollToActive = true) {
   }
 }
 
+function _findPreferredDiffFindIdx(matches) {
+  if (!Array.isArray(matches) || !matches.length) return -1;
+  if (typeof document === "undefined") return 0;
+  let curRowEl = null;
+  if (_activeDiffFocus && _activeDiffFocus.domId && typeof document.getElementById === "function") {
+    curRowEl = document.getElementById(_activeDiffFocus.domId);
+  }
+  if (!curRowEl && typeof document.querySelector === "function") {
+    curRowEl = document.querySelector("tr.diff-row-selected");
+  }
+  if (curRowEl) {
+    const FOLLOW_BIT = (typeof Node !== "undefined" && Node.DOCUMENT_POSITION_FOLLOWING) || 4;
+    for (let k = 0; k < matches.length; k++) {
+      const m = matches[k];
+      if (m.rowEl && m.rowEl === curRowEl) return k;
+      const node = m.range && m.range.startContainer;
+      if (!node) continue;
+      if (typeof curRowEl.contains === "function" && curRowEl.contains(node)) return k;
+      if (typeof curRowEl.compareDocumentPosition === "function" && (curRowEl.compareDocumentPosition(node) & FOLLOW_BIT)) {
+        return k;
+      }
+    }
+    return 0;
+  }
+  const pane = typeof document.getElementById === "function" ? document.getElementById("mainPane") : null;
+  if (pane && typeof pane.getBoundingClientRect === "function") {
+    const paneRect = pane.getBoundingClientRect();
+    if (paneRect && paneRect.height > 0) {
+      for (let k = 0; k < matches.length; k++) {
+        const m = matches[k];
+        const rect = (m.visualRange && typeof m.visualRange.getBoundingClientRect === "function" && m.visualRange.getBoundingClientRect())
+          || (m.block && typeof m.block.getBoundingClientRect === "function" && m.block.getBoundingClientRect());
+        if (rect && rect.height > 0 && rect.bottom > paneRect.top + 2) return k;
+      }
+    }
+  }
+  return 0;
+}
+
 function runDiffFind(queryStr = null, { preserveIndex = false, scrollToActive = true } = {}) {
   const inp = typeof document !== "undefined" ? document.getElementById("diffFindInput") : null;
   const q = queryStr !== null ? String(queryStr) : String(inp ? inp.value : _diffFindQuery);
@@ -3808,7 +3848,9 @@ function runDiffFind(queryStr = null, { preserveIndex = false, scrollToActive = 
   const root = (typeof document !== "undefined" && document.getElementById("mainPane")) || null;
   _diffFindMatches = q ? collectCodepointMatchesInRoot(root, q) : [];
   if (!_diffFindMatches.length) _diffFindIdx = -1;
-  else if (!preserveIndex || _diffFindIdx < 0 || _diffFindIdx >= _diffFindMatches.length) _diffFindIdx = 0;
+  else if (!preserveIndex || _diffFindIdx < 0 || _diffFindIdx >= _diffFindMatches.length) {
+    _diffFindIdx = _findPreferredDiffFindIdx(_diffFindMatches);
+  }
   _applyDiffFindUi(scrollToActive);
   return _diffFindMatches.length;
 }
@@ -5020,12 +5062,14 @@ function handleSharedDiffKeydown(ev, navCtx = null) {
       const [, owner, repo, numStr, draftId] = m;
       const key = _prKeyStr(owner, repo, numStr);
       const list = (staticDraftStore[key] ||= []);
+      let createdDraft = null;
       if (method === "POST") {
-        list.push({ ...reqBody, draft_id: `d_${Date.now()}_${list.length}` });
+        createdDraft = { ...reqBody, draft_id: `d_${Date.now()}_${list.length}` };
+        list.push(createdDraft);
       } else if (method === "DELETE" && draftId) {
         staticDraftStore[key] = list.filter(d => d.draft_id !== draftId);
       }
-      return { pending_drafts: staticDraftStore[key] };
+      return { draft: createdDraft, pending_drafts: staticDraftStore[key] };
     }
 
     // Remaining write mutations to GitHub require a token
@@ -6273,13 +6317,19 @@ function renderActivePr() {
 
   const draftsHtml = drafts.length
     ? `<div style="display:flex; flex-direction:column; gap:5px;">
-        <div style="font-size:16px; font-weight:600; color:var(--amber);">Pending Inline Review Drafts (${drafts.length}):</div>
+        <div class="row" style="justify-content:space-between; gap:8px;">
+          <span style="font-size:16px; font-weight:600; color:var(--amber);">Pending Review Comments (${drafts.length}):</span>
+          <button id="submitPendingReviewTopBtn" class="small primary submit-pending-review-btn" onclick="submitPendingReview()">Submit Pending Review (${drafts.length})</button>
+        </div>
         ${drafts.map((d, di) => `<div class="draft-chip">
           <div style="min-width:0; flex:1;">
-            <div class="mono" style="font-size:15px; color:var(--blue);">${esc(d.path)} : L${d.start_line ? d.start_line + '-' : ''}${d.line} (${esc(d.side)})</div>
-            <div class="comment-body">${esc(d.body)}</div>
+            <div class="row" style="gap:6px;">
+              <span class="pill pill-amber pending-badge" style="padding:0 6px;">Pending</span>
+              <span class="mono" style="font-size:15px; color:var(--blue);">${esc(d.path)} : L${d.start_line ? d.start_line + '-' : ''}${d.line} (${esc(d.side)})</span>
+            </div>
+            <div class="comment-body">${formatCommentBody(d.body)}</div>
           </div>
-          <button class="small" onclick="deleteDraftIdx(${di})">Remove</button>
+          <button class="small" onclick="deleteDraftById(${esc(JSON.stringify(d.draft_id || ''))}, ${di})">Remove</button>
         </div>`).join("")}
       </div>`
     : "";
@@ -6320,6 +6370,7 @@ function renderActivePr() {
         <div class="row">
           <button id="openPrBrowserBtn" class="small" title="Open PR on GitHub in main browser (Alt+B)" onclick="openActivePrInBrowser()">🌐 Open in Browser <span class="kbd-hint">Alt+B</span></button>
           <button id="copyPrUrlBtn" class="small" title="Copy PR URL to clipboard" onclick="copyActivePrUrl()">🔗 Copy PR URL</button>
+          ${drafts.length ? `<button id="submitPendingReviewHeaderBtn" class="small primary submit-pending-review-btn" onclick="submitPendingReview()">Submit Pending Review (${drafts.length})</button>` : ""}
           <button class="small" onclick="refreshActivePr()">↻ Refresh PR</button>
           ${mergeControlsHtml}
           ${stateBtnHtml}
@@ -6362,6 +6413,7 @@ function renderActivePr() {
         <textarea id="prReviewBody" class="review-textarea" placeholder="Write a PR comment or review summary (Alt+3 focuses) · Ctrl+Enter submits" oninput="prReviewDraftText=this.value">${esc(prReviewDraftText)}</textarea>
         <div class="row">
           <button class="primary" onclick="submitSelectedReviewAction()">Submit <span class="kbd-hint" style="background:rgba(255,255,255,0.2); color:#fff;">Ctrl+Enter</span></button>
+          ${drafts.length ? `<button id="submitPendingReviewPanelBtn" class="primary submit-pending-review-btn" onclick="submitPendingReview()">Submit Pending Review (${drafts.length})</button>` : ""}
           <button onclick="submitIssueComment()">Post General Comment</button>
           <button onclick="submitFullReview('COMMENT')">Review: Comment</button>
           <button class="danger" onclick="submitFullReview('REQUEST_CHANGES')">Request Changes</button>
@@ -6598,11 +6650,38 @@ function renderComposerHtml(c) {
   </div>`;
 }
 
-function collectRowExtrasHtml(f, r, pos, anchoredByPos, seenExtras, colspan) {
+function renderDraftThreadHtml(item) {
+  const d = item?.thread || item;
+  const totalDrafts = (activePrData?.pending_drafts || []).length;
+  const locText = `${esc((d.side || "RIGHT").toUpperCase())} L${d.start_line ? `${d.start_line}-` : ""}${d.line ?? "?"}`;
+  const draftId = String(d.draft_id || "");
+  return `<div class="thread-box pending-draft" data-draft-id="${esc(draftId)}">
+    <div class="row" style="justify-content:space-between; gap:8px;">
+      <div class="row" style="gap:6px;">
+        <span class="pill pill-amber pending-badge" style="padding:0 7px;">Pending</span>
+        <span class="mono" style="font-size:15px; color:var(--muted);">${locText}</span>
+        ${item?.matchNote ? `<span class="pill" style="padding:0 5px;">${esc(item.matchNote)}</span>` : ""}
+      </div>
+      <div class="row" style="gap:6px;">
+        <button class="small primary submit-pending-review-btn" onclick="submitPendingReview()">Submit Pending Review (${totalDrafts})</button>
+        <button class="small" onclick="deleteDraftById(${esc(JSON.stringify(draftId))})">Remove</button>
+      </div>
+    </div>
+    <div class="comment-body">${formatCommentBody(d.body)}</div>
+  </div>`;
+}
+
+function collectRowExtrasHtml(f, r, pos, anchoredByPos, seenExtras, colspan, anchoredDraftsByPos = null) {
   const rowThreads = [];
   if (!seenExtras.has(pos) && anchoredByPos[pos]?.length) {
     seenExtras.add(pos);
     rowThreads.push(...anchoredByPos[pos]);
+  }
+  const rowDrafts = [];
+  const draftSeenKey = `D:${pos}`;
+  if (anchoredDraftsByPos && !seenExtras.has(draftSeenKey) && anchoredDraftsByPos[pos]?.length) {
+    seenExtras.add(draftSeenKey);
+    rowDrafts.push(...anchoredDraftsByPos[pos]);
   }
   let compMatch = false;
   if (openComposer && openComposer.filename === f.filename) {
@@ -6615,9 +6694,10 @@ function collectRowExtrasHtml(f, r, pos, anchoredByPos, seenExtras, colspan) {
       compMatch = true;
     }
   }
-  if (!rowThreads.length && !compMatch) return "";
+  if (!rowThreads.length && !rowDrafts.length && !compMatch) return "";
   return `<tr class="thread-row"><td colspan="${colspan}">
       ${rowThreads.map(renderThreadHtml).join("")}
+      ${rowDrafts.map(renderDraftThreadHtml).join("")}
       ${compMatch ? renderComposerHtml(openComposer) : ""}
     </td></tr>`;
 }
@@ -6762,12 +6842,12 @@ function _registerVisibleRowMeta(fi, f, r, pos) {
   return { rowKey, domId, selCls: selectedDiffRowKey === rowKey ? " diff-row-selected" : "" };
 }
 
-function renderSinglePaneRowHtml(fi, f, r, pos, anchoredByPos, seenExtras) {
+function renderSinglePaneRowHtml(fi, f, r, pos, anchoredByPos, seenExtras, anchoredDraftsByPos = null) {
   const { rowKey, domId, selCls } = _registerVisibleRowMeta(fi, f, r, pos);
   const rowCls = `diff-row single-row-${esc(r.kind || 'modify')}${selCls}`;
   const { lhsNum, rhsNum, leftLnClick, rightLnClick } = rowControlsForLine(fi, r);
   const contentHtml = renderDiffSegments(r.segments);
-  const extraRows = collectRowExtrasHtml(f, r, pos, anchoredByPos, seenExtras, 3);
+  const extraRows = collectRowExtrasHtml(f, r, pos, anchoredByPos, seenExtras, 3, anchoredDraftsByPos);
   const rowClick = `onclick="handleDiffRowCtrlClick(event, ${fi}, ${r.left_num ?? 'null'}, ${r.right_num ?? 'null'}, ${Boolean(r.in_diff_hunk)}, ${esc(JSON.stringify(rowKey))})"`;
   return `<tr id="${esc(domId)}" class="${rowCls}" ${rowClick}>
     <td class="ln ln-left ${leftLnClick}>${lhsNum}</td>
@@ -6776,7 +6856,7 @@ function renderSinglePaneRowHtml(fi, f, r, pos, anchoredByPos, seenExtras) {
   </tr>${extraRows}`;
 }
 
-function renderDiffRowHtml(fi, f, r, pos, anchoredByPos, seenExtras) {
+function renderDiffRowHtml(fi, f, r, pos, anchoredByPos, seenExtras, anchoredDraftsByPos = null) {
   const { rowKey, domId, selCls } = _registerVisibleRowMeta(fi, f, r, pos);
   const rowCls = `diff-row diff-row-${esc(r.kind || 'modify')}${selCls}`;
   const { lhsNum, rhsNum, leftLnClick, rightLnClick } = rowControlsForLine(fi, r);
@@ -6784,7 +6864,7 @@ function renderDiffRowHtml(fi, f, r, pos, anchoredByPos, seenExtras) {
   const rhsHtml = r.right_text == null ? "" : renderDiffSegments(r.rhs_segments, null, { leftText: r.left_text, rightText: r.right_text, otherSegments: r.lhs_segments });
   const lhsCellCls = r.left_text == null ? "code-cell lhs-cell diff-empty" : "code-cell lhs-cell";
   const rhsCellCls = r.right_text == null ? "code-cell rhs-cell diff-empty" : "code-cell rhs-cell";
-  const extraRows = collectRowExtrasHtml(f, r, pos, anchoredByPos, seenExtras, 4);
+  const extraRows = collectRowExtrasHtml(f, r, pos, anchoredByPos, seenExtras, 4, anchoredDraftsByPos);
   const rowClick = `onclick="handleDiffRowCtrlClick(event, ${fi}, ${r.left_num ?? 'null'}, ${r.right_num ?? 'null'}, ${Boolean(r.in_diff_hunk)}, ${esc(JSON.stringify(rowKey))})"`;
   return `<tr id="${esc(domId)}" class="${rowCls}" ${rowClick}>
     <td class="ln ln-left ${leftLnClick}>${lhsNum}</td>
@@ -6810,8 +6890,9 @@ function _hunkEndNums(h) {
   return { maxL, maxR };
 }
 
-function _isRowPinnedInPrFile(f, r, pos, anchoredByPos) {
+function _isRowPinnedInPrFile(f, r, pos, anchoredByPos, anchoredDraftsByPos = null) {
   if (anchoredByPos[pos]?.length) return true;
+  if (anchoredDraftsByPos && anchoredDraftsByPos[pos]?.length) return true;
   if (openComposer && openComposer.filename === f.filename && (
     (openComposer.side === "LEFT" && r.left_num === openComposer.line) ||
     (openComposer.side === "RIGHT" && r.right_num === openComposer.line)
@@ -6900,6 +6981,7 @@ function renderActivePrFiles() {
   const files = getDisplayedFiles();
   const allPrFiles = activePrData.files || [];
   const allThreads = activePrData.review_threads || [];
+  const allDrafts = activePrData.pending_drafts || [];
   const conflictMap = {};
   for (const c of (activePrData.conflicts || [])) conflictMap[c.filename] = c;
   const singlePane = isSinglePaneMode();
@@ -6934,7 +7016,9 @@ function renderActivePrFiles() {
   renderedDiffRows = [];
   container.innerHTML = visibleFiles.map(({ f, fi }) => {
     const fileThreads = allThreads.filter(t => t.path === f.filename);
+    const fileDrafts = allDrafts.filter(d => d.path === f.filename);
     const { anchoredByPos, unanchored: unanchoredThreads } = anchorFileThreads(fileThreads, f.hunks, singlePane);
+    const { anchoredByPos: anchoredDraftsByPos, unanchored: unanchoredDrafts } = anchorFileThreads(fileDrafts, f.hunks, singlePane);
     const seenExtras = new Set();
 
     const isCollapsed = !!collapsedFiles[f.filename];
@@ -6947,16 +7031,20 @@ function renderActivePrFiles() {
       : "";
 
     let bodyHtml = "";
-    if (unanchoredThreads.length) {
+    if (unanchoredThreads.length || unanchoredDrafts.length) {
       const loadFullHint = (!f.is_binary && !f.is_full_file)
         ? `<button class="small" onclick="event.stopPropagation(); loadFullFile(${fi})">Load Full File to Anchor</button>`
         : "";
+      const outTitle = (unanchoredThreads.length && unanchoredDrafts.length)
+        ? "Threads & Pending Comments Outside Diff Hunks"
+        : (unanchoredDrafts.length ? "Pending Comments Outside Diff Hunks" : "Threads Outside Diff Hunks");
       bodyHtml += `<div class="outdated-box">
         <div class="row" style="justify-content:space-between; margin-bottom:5px;">
-          <span style="font-size:16px; font-weight:600; color:var(--amber);">Threads Outside Diff Hunks (${unanchoredThreads.length}):</span>
+          <span style="font-size:16px; font-weight:600; color:var(--amber);">${outTitle} (${unanchoredThreads.length + unanchoredDrafts.length}):</span>
           ${loadFullHint}
         </div>
         ${unanchoredThreads.map(renderThreadHtml).join("")}
+        ${unanchoredDrafts.map(renderDraftThreadHtml).join("")}
       </div>`;
     }
 
@@ -6994,7 +7082,7 @@ function renderActivePrFiles() {
           mode: collapseMode,
           contextRadius: 0,
           minCollapse: 1,
-          isPinnedFn: (r, ri) => _isRowPinnedInPrFile(f, r, `${hi}:${ri}`, anchoredByPos),
+          isPinnedFn: (r, ri) => _isRowPinnedInPrFile(f, r, `${hi}:${ri}`, anchoredByPos, anchoredDraftsByPos),
         });
         if (changedOnly && !renderItems.some(it => it.type === "row")) continue;
 
@@ -7002,8 +7090,8 @@ function renderActivePrFiles() {
           if (it.type === "gap") return renderGapRowHtml(it, colspan, "expandGapRow");
           const pos = `${hi}:${it.ri}`;
           return useInline
-            ? renderSinglePaneRowHtml(fi, f, it.r, pos, anchoredByPos, seenExtras)
-            : renderDiffRowHtml(fi, f, it.r, pos, anchoredByPos, seenExtras);
+            ? renderSinglePaneRowHtml(fi, f, it.r, pos, anchoredByPos, seenExtras, anchoredDraftsByPos)
+            : renderDiffRowHtml(fi, f, it.r, pos, anchoredByPos, seenExtras, anchoredDraftsByPos);
         }).join("");
 
         const colgroupHtml = useInline
@@ -7148,16 +7236,31 @@ async function queueInlineDraft() {
     );
     openComposer = null;
     activePrData.pending_drafts = data.pending_drafts || [];
+    const createdId = data.draft?.draft_id || activePrData.pending_drafts[activePrData.pending_drafts.length - 1]?.draft_id || "";
+    const pane = typeof document !== "undefined" ? document.getElementById("mainPane") : null;
+    const prevTop = pane ? pane.scrollTop : null;
     renderActivePr();
-    setStatus("Added to pending review drafts", 2500);
+    const draftEl = (createdId && typeof document !== "undefined" && typeof document.querySelector === "function")
+      ? document.querySelector(`#filesDiffContainer .pending-draft[data-draft-id="${(typeof CSS !== "undefined" && CSS && typeof CSS.escape === "function") ? CSS.escape(createdId) : createdId}"]`)
+      : null;
+    if (draftEl && typeof draftEl.scrollIntoView === "function") {
+      draftEl.scrollIntoView({ block: "center" });
+    } else if (selectedDiffRowKey) {
+      const selMeta = renderedDiffRows.find(r => r.rowKey === selectedDiffRowKey);
+      const selEl = selMeta ? document.getElementById(selMeta.domId) : null;
+      if (selEl && typeof selEl.scrollIntoView === "function") selEl.scrollIntoView({ block: "center" });
+      else if (pane && prevTop != null) pane.scrollTop = prevTop;
+    }
+    setStatus("Added pending review comment", 2500);
   } catch (e) {
     showError(e.message);
   }
 }
 
-async function deleteDraftIdx(di) {
+async function deleteDraftById(draftId, fallbackIdx = -1) {
   if (!activePrKey) return;
-  const draft = activePrData?.pending_drafts?.[di];
+  const list = activePrData?.pending_drafts || [];
+  const draft = (draftId ? list.find(d => String(d.draft_id) === String(draftId)) : null) || list[fallbackIdx];
   if (!draft) return;
   showError("");
   try {
@@ -7167,11 +7270,32 @@ async function deleteDraftIdx(di) {
       { method: "DELETE" },
       "Failed to remove draft"
     );
+    const pane = typeof document !== "undefined" ? document.getElementById("mainPane") : null;
+    const prevTop = pane ? pane.scrollTop : null;
     activePrData.pending_drafts = data.pending_drafts || [];
     renderActivePr();
+    if (pane && prevTop != null) pane.scrollTop = prevTop;
+    setStatus("Removed pending review comment", 2000);
   } catch (e) {
     showError(e.message);
   }
+}
+
+async function deleteDraftIdx(di) {
+  return deleteDraftById("", di);
+}
+
+async function submitPendingReview() {
+  if (!activePrKey || !activePrData) return;
+  const drafts = activePrData.pending_drafts || [];
+  if (!drafts.length) {
+    setStatus("No pending review comments to submit.", 2500);
+    return;
+  }
+  const eventType = (selectedReviewAction === "APPROVE" || selectedReviewAction === "REQUEST_CHANGES")
+    ? selectedReviewAction
+    : "COMMENT";
+  return submitFullReview(eventType);
 }
 
 function autoResizeReplyBox(el) {
