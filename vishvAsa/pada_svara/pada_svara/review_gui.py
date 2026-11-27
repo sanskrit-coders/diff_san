@@ -1431,7 +1431,7 @@ async function loadItems(page) {
 function renderSummary(sum) {
   if (!sum) return;
   document.getElementById("statTotal").innerHTML = `${sum.total_items} suggestions <span class="kbd-hint">Alt+L</span>`;
-  document.getElementById("statPending").innerHTML = `Pending: ${sum.counts.pending} <span class="kbd-hint">Alt+P</span>`;
+  document.getElementById("statPending").innerHTML = `Pending: ${sum.counts.pending} <span class="kbd-hint">Alt+U</span>`;
   document.getElementById("statAccept").innerHTML = `Accepted: ${sum.counts.accept} <span class="kbd-hint">Alt+A</span>`;
   document.getElementById("statReject").innerHTML = `Rejected: ${sum.counts.reject || 0} <span class="kbd-hint">Alt+R</span>`;
   document.getElementById("statHold").innerHTML = `With !!: ${sum.counts.with_feedback || 0} <span class="kbd-hint">Alt+W</span>`;

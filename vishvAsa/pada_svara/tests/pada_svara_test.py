@@ -620,6 +620,7 @@ def test_review_gui_embedded_js_syntax(tmp_path: Path):
       + "focusedIdx = 0;\n"
       + "draftDecisions = { abc123: 'pending' };\n"
       + "renderSummary(data.summary);\n"
+      + 'if (!elems["statPending"].innerHTML.includes("Alt+U") || elems["statPending"].innerHTML.includes("Alt+P")) throw new Error("statPending missing Alt+U hint: " + elems["statPending"].innerHTML);\n'
       + "renderCards(data);\n"
       + 'const out = elems["cardsContainer"].innerHTML;\n'
       + 'if (!out.includes("id=\\"card_0\\"") || !out.includes(\'<span class="inline-note">(टीका)</span>\') || out.includes("+++(टीका)+++") || !out.includes("sug-other") || !out.includes("inline-feedback-tag") || !out.includes("Reject") || !out.includes("Submit") || out.includes("Included in:")) {\n'
@@ -768,6 +769,7 @@ def test_review_gui_embedded_js_syntax(tmp_path: Path):
     font_idx = review_gui._RENDERED_HTML.index('id="fontPxInput"')
     assert n_idx < ref_idx < font_idx
     assert '<option value="pending" selected>' in review_gui._RENDERED_HTML
+    assert "Alt+P" not in review_gui._RENDERED_HTML and "KeyP" not in review_gui._RENDERED_HTML
     assert 'id="statPending"' in review_gui._RENDERED_HTML and "setStatusFilter('pending')" in review_gui._RENDERED_HTML
     assert ".card.focused {" in review_gui._RENDERED_HTML
     assert ".card.focused .active-badge { display: inline-flex; }" in review_gui._RENDERED_HTML
