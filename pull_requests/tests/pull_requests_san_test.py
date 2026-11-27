@@ -212,6 +212,54 @@ class _FakeSession:
     if url.endswith("/pulls/192/reviews"):
       return _FakeResponse(json_data=list(self.reviews))
 
+    if url.endswith("/pulls/192/commits"):
+      return _FakeResponse(
+        json_data=[
+          {
+            "sha": "1111111111111111111111111111111111111111",
+            "html_url": "https://github.com/vishvAsa/mahAbhAratam/pull/192/commits/1111111111111111111111111111111111111111",
+            "commit": {
+              "message": "Initial cleanup\n\nDetails",
+              "author": {"name": "Mrunal", "date": "2026-11-26T06:10:00Z"},
+            },
+            "author": {"login": "mrunaldatar"},
+            "parents": [{"sha": self.base_sha}],
+          },
+          {
+            "sha": "2222222222222222222222222222222222222222",
+            "html_url": "https://github.com/vishvAsa/mahAbhAratam/pull/192/commits/2222222222222222222222222222222222222222",
+            "commit": {
+              "message": "Fix avagraha",
+              "author": {"name": "Mrunal", "date": "2026-11-26T09:35:00Z"},
+            },
+            "author": {"login": "mrunaldatar"},
+            "parents": [{"sha": "1111111111111111111111111111111111111111"}],
+          },
+        ]
+      )
+
+    if url.endswith("/commits/1111111111111111111111111111111111111111"):
+      return _FakeResponse(
+        json_data={
+          "sha": "1111111111111111111111111111111111111111",
+          "html_url": "https://github.com/vishvAsa/mahAbhAratam/commit/1111111111111111111111111111111111111111",
+          "commit": {"message": "Initial cleanup", "author": {"date": "2026-11-26T06:10:00Z"}},
+          "author": {"login": "mrunaldatar"},
+          "parents": [{"sha": self.base_sha}],
+          "files": [
+            {
+              "filename": "01.md",
+              "status": "modified",
+              "additions": 1,
+              "deletions": 1,
+              "changes": 2,
+              "sha": "blobhead01",
+              "patch": "@@ -1,3 +1,3 @@\n title\n-स एव [[दुर्हद्भिर्|असुहृद्भिर्]]\n+स एव दुर्हृद्भिर्\n",
+            }
+          ],
+        }
+      )
+
     if url.endswith("/pulls/192/comments"):
       flat = []
       for th in self.threads:
@@ -700,6 +748,22 @@ def test_gui_endpoints_diff_comments_refresh_and_local_helpers(tmp_path: Path, m
   pr_data = r_pr.json()
   assert pr_data["files"][0]["local_file_path"] == str(local_file)
   assert len(pr_data["review_threads"]) == 1
+  assert len(pr_data["commits"]) == 2
+  assert pr_data["commits"][0]["committed_at"] == "2026-11-26T06:10:00Z"
+
+  # Changelist endpoint returns single commit diff and caches across diff_mode toggles
+  c1_sha = pr_data["commits"][0]["sha"]
+  r_cl = tc.get(f"/api/pr/vishvAsa/mahAbhAratam/192/changelist?sha={c1_sha}&diff_mode=word")
+  assert r_cl.status_code == 200
+  cl_data = r_cl.json()
+  assert cl_data["sha"] == c1_sha
+  assert cl_data["commit"]["title"] == "Initial cleanup"
+  assert len(cl_data["files"]) == 1
+  calls_before_cl = len(fake.calls)
+  r_cl2 = tc.get(f"/api/pr/vishvAsa/mahAbhAratam/192/changelist?sha={c1_sha}&diff_mode=grapheme&ignore_punct=true")
+  assert r_cl2.status_code == 200
+  assert len(fake.calls) == calls_before_cl
+  assert tc.get(f"/api/pr/vishvAsa/mahAbhAratam/192/file_full?filename=01.md&commit_sha={c1_sha}").status_code == 200
 
   # Switching diff_mode / normalize / ignore_punct recomputes segments from cache without hitting GitHub again
   calls_before = len(fake.calls)
@@ -1038,6 +1102,13 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
     "  return {\n"
     "    ok: true,\n"
     "    json: async () => {\n"
+    "      if (method === 'GET' && url.includes('/changelist')) {\n"
+    "        return {\n"
+    "          sha: 'c1sha123',\n"
+    "          commit: { sha: 'c1sha123', short_sha: 'c1sha12', title: 'Initial cleanup', author: 'mrunaldatar', committed_at: '2026-11-26T06:10:00Z', url: '' },\n"
+    "          files: [Object.assign({}, samplePr.files[0], { filename: 'changelist_only.md' })],\n"
+    "        };\n"
+    "      }\n"
     "      if (method === 'GET' && url.startsWith('/api/pr/')) return samplePr;\n"
     "      if (url.endsWith('/state') && opts && opts.body) {\n"
     "        const parsed = JSON.parse(opts.body);\n"
@@ -1209,6 +1280,23 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
     "  }\n"
     "  if (!thHtml.includes('Threads Outside Diff Hunks')) {\n"
     "    throw new Error('Genuinely distant thread should stay in Threads Outside Diff Hunks: ' + thHtml);\n"
+    "  }\n"
+    "  // Changelist dropdown renders default 'All changelists' + commits with date/time, and switches files cleanly\n"
+    "  samplePr.commits = [\n"
+    "    { sha: 'c1sha123', short_sha: 'c1sha12', title: 'Initial cleanup', message: 'Initial cleanup', author: 'mrunaldatar', committed_at: '2026-11-26T06:10:00Z', url: '', parents: [] },\n"
+    "  ];\n"
+    "  renderActivePr();\n"
+    "  const prHtmlWithCl = elems['prContainer'].innerHTML;\n"
+    "  if (!prHtmlWithCl.includes('id=\"changelistSelect\"') || !prHtmlWithCl.includes('All changelists (1 commit') || !prHtmlWithCl.includes('2026-11-26 06:10')) {\n"
+    "    throw new Error('Changelist dropdown missing default or date/time: ' + prHtmlWithCl);\n"
+    "  }\n"
+    "  await selectChangelist('c1sha123');\n"
+    "  if (!fetched.some(c => c.url.includes('/changelist?sha=c1sha123')) || !elems['filesDiffContainer'].innerHTML.includes('changelist_only.md')) {\n"
+    "    throw new Error('selectChangelist did not fetch or render changelist files');\n"
+    "  }\n"
+    "  await selectChangelist('');\n"
+    "  if (selectedChangelistSha !== '' || elems['filesDiffContainer'].innerHTML.includes('changelist_only.md')) {\n"
+    "    throw new Error('Resetting changelist dropdown to All did not restore PR files');\n"
     "  }\n"
     "})().catch(err => { console.error(err); process.exit(1); });\n"
   )

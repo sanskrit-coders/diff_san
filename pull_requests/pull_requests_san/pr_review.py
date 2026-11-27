@@ -27,6 +27,7 @@ from pull_requests_san.diff import (
 from pull_requests_san.models import (
   AlignedDiffRow,
   DiffHunk,
+  PullRequestCommit,
   PullRequestDetail,
   PullRequestFileDiff,
   PullRequestSummary,
@@ -44,6 +45,7 @@ __all__ = [
   "GitHubAPIError",
   "GitHubClient",
   "PRReviewSession",
+  "PullRequestCommit",
   "PullRequestDetail",
   "PullRequestFileDiff",
   "PullRequestSummary",

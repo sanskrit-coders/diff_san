@@ -24,6 +24,7 @@ from pull_requests_san.diff import (
 )
 from pull_requests_san.models import (
   DiffHunk,
+  PullRequestCommit,
   PullRequestDetail,
   PullRequestFileDiff,
   PullRequestSummary,
@@ -965,6 +966,7 @@ class GitHubClient:
       )
       for c in raw_issue_comments
     ]
+    commits = self._fetch_pull_request_commits(owner, repo, number)
     reviews, threads, review_decision, gql_merge = self._fetch_reviews_threads_and_merge(owner, repo, number)
     pr_state = (pr_raw.get("state") or "open").lower()
     merged_flag = bool(pr_raw.get("merged")) or bool(pr_raw.get("merged_at")) or bool(gql_merge.get("merged")) or pr_state == "merged"
@@ -1030,11 +1032,107 @@ class GitHubClient:
       char_diff_mode=char_diff_mode,
       normalize=norm_clean,
       ignore_punct=ignore_punct,
+      commits=commits,
       files=file_diffs,
       issue_comments=issue_comments,
       reviews=reviews,
       review_threads=threads,
     )
+
+  @staticmethod
+  def _commit_from_raw(c: dict[str, Any]) -> PullRequestCommit:
+    sha = str(c.get("sha") or "").strip()
+    commit_obj = c.get("commit") or {}
+    msg = str(commit_obj.get("message") or "")
+    title = msg.splitlines()[0].strip() if msg.strip() else sha[:7]
+    author_info = commit_obj.get("author") or {}
+    committer_info = commit_obj.get("committer") or {}
+    login = ((c.get("author") or {}).get("login")) or author_info.get("name") or committer_info.get("name") or "ghost"
+    committed_at = str(author_info.get("date") or committer_info.get("date") or "")
+    parents = [str(p.get("sha") or "") for p in (c.get("parents") or []) if isinstance(p, dict) and p.get("sha")]
+    return PullRequestCommit(
+      sha=sha,
+      short_sha=sha[:7],
+      title=title,
+      message=msg,
+      author=str(login),
+      committed_at=committed_at,
+      url=str(c.get("html_url") or ""),
+      parents=parents,
+    )
+
+  def _fetch_pull_request_commits(self, owner: str, repo: str, number: int) -> list[PullRequestCommit]:
+    o_seg, r_seg = _safe_segment(owner, "owner"), _safe_segment(repo, "repo")
+    try:
+      raw_commits = self.rest_get_paginated(f"/repos/{o_seg}/{r_seg}/pulls/{int(number)}/commits")
+    except GitHubAPIError:
+      return []
+    return [self._commit_from_raw(c) for c in raw_commits if isinstance(c, dict) and c.get("sha")]
+
+  def get_commit_files(
+    self,
+    owner: str,
+    repo: str,
+    sha: str,
+    *,
+    head_repo_full_name: str = "",
+    char_diff_mode: str = "grapheme",
+    include_full_files: bool = False,
+    normalize: str = "none",
+    ignore_punct: bool = False,
+  ) -> dict[str, Any]:
+    """Fetch changed files and parsed diffs for a single PR commit / changelist."""
+    clean_sha = (sha or "").strip()
+    if not re.match(r"^[0-9a-fA-F]{4,64}$", clean_sha):
+      raise ValueError(f"Invalid commit SHA {sha!r}")
+    if char_diff_mode not in VALID_DIFF_MODES:
+      raise ValueError(f"Unsupported diff mode {char_diff_mode!r}")
+    norm_clean = (normalize or "none").strip().lower()
+    if norm_clean not in VALID_NORMALIZATIONS:
+      raise ValueError(f"Unsupported normalization {normalize!r}")
+
+    o_seg, r_seg = _safe_segment(owner, "owner"), _safe_segment(repo, "repo")
+    commit_raw: dict[str, Any] | None = None
+    try:
+      commit_raw = self.rest_get(f"/repos/{o_seg}/{r_seg}/commits/{clean_sha}").json()
+    except GitHubAPIError as exc:
+      head_owner, head_repo = _split_repo_full_name(head_repo_full_name, owner, repo)
+      if exc.status_code == 404 and (head_owner, head_repo) != (owner, repo):
+        ho_seg, hr_seg = _safe_segment(head_owner, "head_owner"), _safe_segment(head_repo, "head_repo")
+        commit_raw = self.rest_get(f"/repos/{ho_seg}/{hr_seg}/commits/{clean_sha}").json()
+      else:
+        raise
+
+    commit_obj = self._commit_from_raw(commit_raw or {"sha": clean_sha})
+    parent_sha = commit_obj.parents[0] if commit_obj.parents else ""
+    files_raw = (commit_raw or {}).get("files") or []
+    effective_head_repo = head_repo_full_name or f"{owner}/{repo}"
+    file_diffs = [
+      self._build_file_diff(
+        owner,
+        repo,
+        f,
+        base_sha=parent_sha,
+        head_sha=commit_obj.sha or clean_sha,
+        head_repo_full_name=effective_head_repo,
+        fallback_patches={},
+        char_diff_mode=char_diff_mode,
+        include_full_files=include_full_files,
+        normalize=norm_clean,
+        ignore_punct=ignore_punct,
+      )
+      for f in files_raw
+      if isinstance(f, dict)
+    ]
+    return {
+      "sha": commit_obj.sha or clean_sha,
+      "parent_sha": parent_sha,
+      "commit": commit_obj,
+      "char_diff_mode": char_diff_mode,
+      "normalize": norm_clean,
+      "ignore_punct": ignore_punct,
+      "files": file_diffs,
+    }
 
   def get_file_full_diff(
     self,

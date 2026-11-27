@@ -17,6 +17,7 @@ class PRReviewSession:
     self.default_owner = normalize_owner(default_owner)
     self.pr_list_cache: dict[tuple[str, str, str, int], list[PullRequestSummary]] = {}
     self.pr_detail_cache: dict[tuple[str, str, int], PullRequestDetail] = {}
+    self.commit_cache: dict[tuple[str, str, int, str], dict[str, Any]] = {}
     self.pending_drafts: dict[tuple[str, str, int], list[dict[str, Any]]] = {}
     self._next_draft_id = 1
 
@@ -55,6 +56,8 @@ class PRReviewSession:
     ign_punct = bool(ignore_punct)
     prev_decision = self.pr_detail_cache[key].summary.review_decision if key in self.pr_detail_cache else None
     if refresh or key not in self.pr_detail_cache:
+      for ck in [k for k in self.commit_cache if k[:3] == key]:
+        self.commit_cache.pop(ck, None)
       detail = self.client.get_pull_request_detail(
         owner,
         repo,
@@ -94,6 +97,7 @@ class PRReviewSession:
     """Invalidate cached PR data and fetch fresh listings (plus active PR if specified)."""
     self.pr_list_cache.clear()
     self.pr_detail_cache.clear()
+    self.commit_cache.clear()
     prs = self.list_prs(owner=owner, state=state, repo=repo, refresh=True, limit=limit)
     active_detail = None
     if active_pr is not None:
@@ -109,6 +113,64 @@ class PRReviewSession:
       )
     return {"prs": prs, "active_detail": active_detail}
 
+  def get_changelist(
+    self,
+    owner: str,
+    repo: str,
+    number: int,
+    sha: str,
+    *,
+    refresh: bool = False,
+    char_diff_mode: str = "grapheme",
+    normalize: str = "none",
+    ignore_punct: bool = False,
+  ) -> dict[str, Any]:
+    clean_sha = (sha or "").strip()
+    norm_clean = (normalize or "none").strip().lower()
+    ign_punct = bool(ignore_punct)
+    detail = self.get_pr(
+      owner,
+      repo,
+      number,
+      char_diff_mode=char_diff_mode,
+      normalize=norm_clean,
+      ignore_punct=ign_punct,
+    )
+    if not clean_sha:
+      return {
+        "sha": "",
+        "parent_sha": detail.summary.base_sha,
+        "commit": None,
+        "char_diff_mode": detail.char_diff_mode,
+        "normalize": detail.normalize,
+        "ignore_punct": detail.ignore_punct,
+        "files": detail.files,
+      }
+    ck = (owner, repo, int(number), clean_sha)
+    if refresh or ck not in self.commit_cache:
+      self.commit_cache[ck] = self.client.get_commit_files(
+        owner,
+        repo,
+        clean_sha,
+        head_repo_full_name=detail.summary.head_repo_full_name,
+        char_diff_mode=char_diff_mode,
+        normalize=norm_clean,
+        ignore_punct=ign_punct,
+      )
+    else:
+      entry = self.commit_cache[ck]
+      if (
+        entry.get("char_diff_mode") != char_diff_mode
+        or entry.get("normalize") != norm_clean
+        or entry.get("ignore_punct") != ign_punct
+      ):
+        for f in entry.get("files") or []:
+          f.recompute_diff_mode(char_diff_mode, normalize=norm_clean, ignore_punct=ign_punct)
+        entry["char_diff_mode"] = char_diff_mode
+        entry["normalize"] = norm_clean
+        entry["ignore_punct"] = ign_punct
+    return self.commit_cache[ck]
+
   def get_full_file(
     self,
     owner: str,
@@ -116,10 +178,40 @@ class PRReviewSession:
     number: int,
     filename: str,
     *,
+    commit_sha: str = "",
     char_diff_mode: str = "grapheme",
     normalize: str = "none",
     ignore_punct: bool = False,
   ) -> PullRequestFileDiff:
+    clean_sha = (commit_sha or "").strip()
+    if clean_sha:
+      cl = self.get_changelist(
+        owner,
+        repo,
+        number,
+        clean_sha,
+        char_diff_mode=char_diff_mode,
+        normalize=normalize,
+        ignore_punct=ignore_punct,
+      )
+      detail = self.get_pr(owner, repo, number, char_diff_mode=char_diff_mode, normalize=normalize, ignore_punct=ignore_punct)
+      for idx, f in enumerate(cl["files"]):
+        if f.filename == filename:
+          full_f = self.client.get_file_full_diff(
+            owner,
+            repo,
+            f,
+            base_sha=cl.get("parent_sha") or "",
+            head_sha=cl.get("sha") or clean_sha,
+            head_repo_full_name=detail.summary.head_repo_full_name,
+            char_diff_mode=char_diff_mode,
+            normalize=normalize,
+            ignore_punct=ignore_punct,
+          )
+          cl["files"][idx] = full_f
+          return full_f
+      raise FileNotFoundError(f"File {filename!r} not found in changelist {clean_sha[:7]} of {owner}/{repo}#{number}")
+
     detail = self.get_pr(owner, repo, number, char_diff_mode=char_diff_mode, normalize=normalize, ignore_punct=ignore_punct)
     for idx, f in enumerate(detail.files):
       if f.filename == filename:

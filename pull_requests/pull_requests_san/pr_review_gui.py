@@ -326,12 +326,48 @@ def _register_read_routes(
       )
     )
 
+  @app.get("/api/pr/{owner}/{repo}/{number}/changelist")
+  def api_pr_changelist(
+    owner: str,
+    repo: str,
+    number: int,
+    sha: str = Query(""),
+    refresh: bool = Query(False),
+    diff_mode: str = Query("grapheme"),
+    normalize: str = Query("none"),
+    ignore_punct: bool = Query(False),
+  ) -> dict[str, Any]:
+    def _op() -> dict[str, Any]:
+      res = session.get_changelist(
+        owner,
+        repo,
+        number,
+        sha,
+        refresh=refresh,
+        char_diff_mode=diff_mode,
+        normalize=normalize,
+        ignore_punct=ignore_punct,
+      )
+      c_obj = res.get("commit")
+      return {
+        "sha": res.get("sha") or "",
+        "parent_sha": res.get("parent_sha") or "",
+        "commit": c_obj.to_dict() if hasattr(c_obj, "to_dict") else c_obj,
+        "char_diff_mode": res.get("char_diff_mode") or diff_mode,
+        "normalize": res.get("normalize") or normalize,
+        "ignore_punct": bool(res.get("ignore_punct", False)),
+        "files": [f.to_dict() for f in (res.get("files") or [])],
+      }
+
+    return store.run(_op)
+
   @app.get("/api/pr/{owner}/{repo}/{number}/file_full")
   def api_file_full(
     owner: str,
     repo: str,
     number: int,
     filename: str = Query(...),
+    commit_sha: str = Query(""),
     diff_mode: str = Query("grapheme"),
     normalize: str = Query("none"),
     ignore_punct: bool = Query(False),
@@ -343,6 +379,7 @@ def _register_read_routes(
           repo,
           number,
           filename,
+          commit_sha=commit_sha,
           char_diff_mode=diff_mode,
           normalize=normalize,
           ignore_punct=ignore_punct,

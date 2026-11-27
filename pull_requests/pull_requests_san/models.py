@@ -139,6 +139,23 @@ class ReviewComment:
 
 
 @dataclass
+class PullRequestCommit:
+  """One commit / changelist inside a pull request."""
+
+  sha: str
+  short_sha: str
+  title: str
+  message: str
+  author: str
+  committed_at: str
+  url: str = ""
+  parents: list[str] = field(default_factory=list)
+
+  def to_dict(self) -> dict[str, Any]:
+    return asdict(self)
+
+
+@dataclass
 class ReviewThread:
   """One inline PR review thread anchored to a file and line."""
 
@@ -234,6 +251,7 @@ class PullRequestDetail:
   char_diff_mode: str = "grapheme"
   normalize: str = "none"
   ignore_punct: bool = False
+  commits: list[PullRequestCommit] = field(default_factory=list)
   files: list[PullRequestFileDiff] = field(default_factory=list)
   issue_comments: list[ReviewComment] = field(default_factory=list)
   reviews: list[dict[str, Any]] = field(default_factory=list)
@@ -306,6 +324,7 @@ class PullRequestDetail:
       "char_diff_mode": self.char_diff_mode,
       "normalize": self.normalize,
       "ignore_punct": self.ignore_punct,
+      "commits": [c.to_dict() for c in self.commits],
       "files": [f.to_dict() for f in self.files],
       "issue_comments": [c.to_dict() for c in self.issue_comments],
       "reviews": list(self.reviews),

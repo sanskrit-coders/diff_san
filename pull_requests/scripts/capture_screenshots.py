@@ -23,6 +23,7 @@ import uvicorn
 
 from pull_requests_san import (
   PRReviewSession,
+  PullRequestCommit,
   PullRequestDetail,
   PullRequestFileDiff,
   PullRequestSummary,
@@ -182,6 +183,26 @@ class ShowcaseClient:
         char_diff_mode=char_diff_mode,
         normalize=normalize,
         ignore_punct=ignore_punct,
+        commits=[
+          PullRequestCommit(
+            sha="a111111111111111111111111111111111111111",
+            short_sha="a111111",
+            title="वीरराघव-टीका-परिष्कारः (tag & footnote cleanup)",
+            message="वीरराघव-टीका-परिष्कारः (tag & footnote cleanup)",
+            author="mrunaldatar",
+            committed_at="2026-11-26T18:40:00Z",
+            parents=["base192"],
+          ),
+          PullRequestCommit(
+            sha="b222222222222222222222222222222222222222",
+            short_sha="b222222",
+            title="अवग्रह-धातु-शोधनम्",
+            message="अवग्रह-धातु-शोधनम्",
+            author="mrunaldatar",
+            committed_at="2026-11-27T08:15:00Z",
+            parents=["a111111111111111111111111111111111111111"],
+          ),
+        ],
         files=[
           PullRequestFileDiff(
             filename="10/08_05_vIrarAghava.md",
