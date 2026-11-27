@@ -449,6 +449,10 @@ def test_normalize_owner_and_resolve_token(tmp_path: Path, monkeypatch):
   assert resolve_github_token(cred_path=toml_file, allow_gh_cli=False) == "tok_env"
   monkeypatch.delenv("GITHUB_TOKEN")
   assert resolve_github_token(cred_path=toml_file, allow_gh_cli=False) == "tok_toml"
+  import sys
+  monkeypatch.setitem(sys.modules, "curation_utils", None)
+  monkeypatch.setattr("pull_requests_san.auth.tomllib", None)
+  assert resolve_github_token(cred_path=toml_file, allow_gh_cli=False) == "tok_toml"
 
 
 def test_compute_char_diff_devanagari_grapheme_and_codepoint():

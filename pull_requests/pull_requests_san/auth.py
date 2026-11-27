@@ -11,8 +11,11 @@ import subprocess
 
 try:
   import tomllib
-except ImportError:  # Python 3.10 compatibility
-  tomllib = None  # type: ignore[assignment]
+except ImportError:  # Python 3.10 fallback
+  try:
+    import tomli as tomllib  # type: ignore[no-redef]
+  except ImportError:
+    tomllib = None  # type: ignore[assignment]
 
 
 DEFAULT_OWNER = "vishvAsa"
@@ -75,6 +78,53 @@ def _read_gh_hosts_token(hosts_path: str | Path | None = None) -> str | None:
   return None
 
 
+def _read_simple_github_toml(toml_path: Path) -> str | None:
+  """Minimal TOML reader for ``[github]`` tokens when tomllib/tomli is unavailable (Python 3.10)."""
+  try:
+    text = toml_path.read_text(encoding="utf-8")
+  except OSError:
+    return None
+  if tomllib is not None:
+    try:
+      data = tomllib.loads(text)
+      gh = data.get("github")
+      if isinstance(gh, dict):
+        for k in ("general_kv", "checkin"):
+          val = gh.get(k)
+          if isinstance(val, dict):
+            val = val.get("key") or val.get("token")
+          if isinstance(val, str) and val.strip():
+            return val.strip()
+    except Exception:
+      pass
+    return None
+  section = ""
+  found: dict[str, str] = {}
+  for raw_line in text.splitlines():
+    line = raw_line.split("#", 1)[0].strip()
+    if not line:
+      continue
+    if line.startswith("[") and line.endswith("]"):
+      section = line[1:-1].strip()
+      continue
+    if section == "github" and "=" in line:
+      k, v = line.split("=", 1)
+      key = k.strip()
+      val = v.strip().strip("'\"")
+      if key in ("general_kv", "checkin") and val:
+        found[key] = val
+    elif section in ("github.general_kv", "github.checkin") and "=" in line:
+      k, v = line.split("=", 1)
+      if k.strip() in ("key", "token"):
+        val = v.strip().strip("'\"")
+        if val:
+          found.setdefault(section.split(".", 1)[1], val)
+  for k in ("general_kv", "checkin"):
+    if found.get(k):
+      return found[k]
+  return None
+
+
 def resolve_github_token(
   token: str | None = None,
   *,
@@ -121,19 +171,9 @@ def resolve_github_token(
           return val.strip()
   except Exception:
     pass
-  if tomllib is not None:
-    toml_path = Path(cred_path) if cred_path else Path(os.path.expanduser("~/.config/curation_utils/tokens.toml"))
-    if toml_path.is_file():
-      try:
-        data = tomllib.loads(toml_path.read_text(encoding="utf-8"))
-        gh = data.get("github")
-        if isinstance(gh, dict):
-          for k in ("general_kv", "checkin"):
-            val = gh.get(k)
-            if isinstance(val, dict):
-              val = val.get("key") or val.get("token")
-            if isinstance(val, str) and val.strip():
-              return val.strip()
-      except Exception:
-        pass
+  toml_path = Path(cred_path) if cred_path else Path(os.path.expanduser("~/.config/curation_utils/tokens.toml"))
+  if toml_path.is_file():
+    tok = _read_simple_github_toml(toml_path)
+    if tok:
+      return tok
   return None
