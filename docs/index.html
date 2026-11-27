@@ -410,7 +410,6 @@
   .ch-pair > .nl-badge + .ch-ins {
     margin-left: 3px;
   }
-  tr.diff-row { cursor: pointer; }
   tr.diff-row-selected > td {
     box-shadow: inset 0 2px 0 var(--accent), inset 0 -2px 0 var(--accent);
   }
@@ -738,7 +737,7 @@
     <div id="diffContainer">
       <div class="card">Loading diff...</div>
     </div>
-    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: ↑/↓ Select line • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Alt+S Single/2-Pane • Ctrl+R Refresh • j/k Navigate files • Esc Close Settings</div>
+    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Alt+S Single/2-Pane • Ctrl+R Refresh • j/k Navigate files • Esc Close Settings</div>
     <footer id="aboutFooter" class="about-footer">
       <div>
         <strong>diff_san</strong> (<a href="https://github.com/sanskrit-coders/diff_san" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) —
@@ -2457,7 +2456,24 @@ function closeSettingsPane() {
   toggleSettingsPane(false);
 }
 
+let _diffRowMouseBound = false;
+
+function initDiffRowMouseBehavior() {
+  if (_diffRowMouseBound || typeof document === "undefined" || typeof document.addEventListener !== "function") return;
+  _diffRowMouseBound = true;
+  document.addEventListener("mousedown", (ev) => {
+    if (!ev || !ev.shiftKey || ev.ctrlKey || ev.altKey || ev.metaKey) return;
+    const tgt = ev.target;
+    if (!tgt || typeof tgt.closest !== "function") return;
+    if (tgt.closest("button, a, input, textarea, select, summary, .thread-box, .inline-composer")) return;
+    if (tgt.closest("tr.diff-row") && typeof ev.preventDefault === "function") {
+      ev.preventDefault();
+    }
+  });
+}
+
 function initDiffSettingsPane() {
+  initDiffRowMouseBehavior();
   const saved = getCurrentDiffColorMap();
   const pane = document.getElementById("settingsPane");
   if (pane) pane.innerHTML = renderSettingsPaneHtml();
@@ -3001,10 +3017,13 @@ function moveLocalRowSelection(step, diffOnly = false) {
 }
 
 function handleLocalRowClick(ev, rowKey) {
-  const tgt = ev?.target;
+  if (!ev) return;
+  const tgt = ev.target;
   if (tgt && typeof tgt.closest === "function") {
     if (tgt.closest("button, a, input, textarea, select")) return;
   }
+  if (!ev.shiftKey || ev.ctrlKey || ev.altKey || ev.metaKey) return;
+  if (typeof ev.preventDefault === "function") ev.preventDefault();
   selectLocalRow(rowKey, { scroll: false });
 }
 
@@ -3262,7 +3281,7 @@ function renderLocalLineCell(num, diskPath) {
   const numTxt = num != null ? num : "";
   if (num != null && diskPath && !IS_STATIC_HOST) {
     const jsPath = esc(JSON.stringify(diskPath));
-    return `<td class="ln clickable" title="Open in IntelliJ IDEA at line ${num}" onclick="event.stopPropagation(); openPathInIdea(${jsPath}, ${num})">${numTxt}</td>`;
+    return `<td class="ln clickable" title="Open in IntelliJ IDEA at line ${num} (Shift+Click selects line)" onclick="if(event.shiftKey) return; event.stopPropagation(); openPathInIdea(${jsPath}, ${num})">${numTxt}</td>`;
   }
   return `<td class="ln">${numTxt}</td>`;
 }

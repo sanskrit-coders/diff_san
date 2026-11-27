@@ -144,11 +144,16 @@
     overflow-wrap: anywhere;
     margin-top: 2px;
   }
-  input.reply-input {
+  textarea.reply-input {
     flex: 1;
+    min-width: 180px;
     font-family: var(--dev);
     font-size: var(--dev-font-size);
-    line-height: 1.55;
+    line-height: 1.45;
+    min-height: 44px;
+    max-height: 240px;
+    resize: vertical;
+    overflow-y: auto;
   }
   .comment-body img {
     max-width: 100%;
@@ -309,7 +314,7 @@
     <div id="prContainer">
       <div class="card">Loading pull requests...</div>
     </div>
-    <div style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: ↑/↓ Select line • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • ←/→ Collapse/Expand • [/] Prev/Next PR • Esc Close composer/settings</div>
+    <div style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Shift+Enter Multiline reply • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • ←/→ Collapse/Expand • [/] Prev/Next PR • Esc Close composer/settings</div>
   </main>
 </div>
 
@@ -1316,8 +1321,8 @@ function renderThreadHtml(item) {
       <div class="comment-body">${formatCommentBody(c.body)}</div>
     </div>`).join("");
   const replyHtml = rootCommentId
-    ? `<div class="row" style="margin-top:4px;">
-        <input id="replyInput_${tk}" class="reply-input" type="text" placeholder="Reply to thread..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault(); submitReplyIdx(${tk});}" />
+    ? `<div class="row" style="margin-top:4px; align-items:flex-end;">
+        <textarea id="replyInput_${tk}" class="reply-input" rows="1" placeholder="Reply to thread (Shift+Enter for newline, Enter to send)..." oninput="autoResizeReplyBox(this)" onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!event.altKey&&!event.metaKey){event.preventDefault(); event.stopPropagation(); submitReplyIdx(${tk});}"></textarea>
         <button class="small primary" onclick="submitReplyIdx(${tk})">Reply</button>
         ${resolveBtn}
       </div>`
@@ -1549,8 +1554,13 @@ function handleDiffRowCtrlClick(ev, fi, leftNum, rightNum, inDiffHunk, rowKey = 
   if (tgt && typeof tgt.closest === "function") {
     if (tgt.closest("button, a, input, textarea, select, summary, .thread-box, .inline-composer")) return;
   }
-  if (rowKey) selectDiffRow(rowKey, { scroll: false, focusFile: true });
+  if (ev.shiftKey && !ev.ctrlKey && !ev.altKey && !ev.metaKey) {
+    if (typeof ev.preventDefault === "function") ev.preventDefault();
+    if (rowKey) selectDiffRow(rowKey, { scroll: false, focusFile: true });
+    return;
+  }
   if (!ev.ctrlKey || ev.altKey || ev.metaKey || ev.shiftKey) return;
+  if (rowKey) selectDiffRow(rowKey, { scroll: false, focusFile: true });
   let preferLeft = false;
   if (tgt && typeof tgt.closest === "function") {
     if (tgt.closest(".lhs-cell, .ch-del, .nl-del")) preferLeft = true;
@@ -1573,8 +1583,8 @@ function rowControlsForLine(fi, r) {
   const rhsNum = r.right_num != null ? r.right_num : "";
   const canLeft = r.in_diff_hunk && r.left_num != null;
   const canRight = r.in_diff_hunk && r.right_num != null;
-  const leftLnClick = canLeft ? `clickable" title="Comment on LEFT line ${r.left_num} (or Ctrl+Click row)" onclick="event.stopPropagation(); startInlineComposer(${fi}, ${r.left_num}, 'LEFT', ${r.left_num}, ${r.right_num ?? 'null'})"` : '"';
-  const rightLnClick = canRight ? `clickable" title="Comment on RIGHT line ${r.right_num} (or Ctrl+Click row)" onclick="event.stopPropagation(); startInlineComposer(${fi}, ${r.right_num}, 'RIGHT', ${r.left_num ?? 'null'}, ${r.right_num})"` : '"';
+  const leftLnClick = canLeft ? `clickable" title="Comment on LEFT line ${r.left_num} (or Ctrl+Click row; Shift+Click selects line)" onclick="if(event.shiftKey) return; event.stopPropagation(); startInlineComposer(${fi}, ${r.left_num}, 'LEFT', ${r.left_num}, ${r.right_num ?? 'null'})"` : '"';
+  const rightLnClick = canRight ? `clickable" title="Comment on RIGHT line ${r.right_num} (or Ctrl+Click row; Shift+Click selects line)" onclick="if(event.shiftKey) return; event.stopPropagation(); startInlineComposer(${fi}, ${r.right_num}, 'RIGHT', ${r.left_num ?? 'null'}, ${r.right_num})"` : '"';
   return { lhsNum, rhsNum, leftLnClick, rightLnClick };
 }
 
@@ -1963,6 +1973,12 @@ async function deleteDraftIdx(di) {
   }
 }
 
+function autoResizeReplyBox(el) {
+  if (!el || !el.style) return;
+  el.style.height = "auto";
+  el.style.height = `${Math.min(240, Math.max(44, el.scrollHeight || 44))}px`;
+}
+
 async function submitReplyIdx(tk) {
   if (!activePrKey) return;
   const t = threadRegistry[tk];
@@ -2303,11 +2319,14 @@ document.addEventListener("keydown", (ev) => {
     }
   }
 
-  // Ctrl+Enter submits inline composer if open; submits PR review if in review box or no line selected; else opens inline comment composer on selected line
+  // Ctrl+Enter submits active reply/composer/PR review or opens inline comment composer on selected line
   if (ev.key === "Enter" && ev.ctrlKey && !ev.altKey && !ev.metaKey) {
     if (id !== "ownerInput") {
       ev.preventDefault();
-      if (openComposer) {
+      const replyMatch = id ? id.match(/^replyInput_(\d+)$/) : null;
+      if (replyMatch) {
+        submitReplyIdx(Number(replyMatch[1]));
+      } else if (openComposer) {
         postInlineComposer();
       } else if (id === "prReviewBody" || (target && typeof target.closest === "function" && target.closest(".review-box"))) {
         submitSelectedReviewAction();

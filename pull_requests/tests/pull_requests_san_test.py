@@ -969,7 +969,7 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
   assert "#9ef0b5" not in html_src
   assert "Alt+P" not in html_src and "KeyP" not in html_src
   # Comment & review typography matches the main diff pane (var(--dev-font-size))
-  for css_rule in (".comment-body {", ".review-textarea {", ".pr-body-box {", "input.reply-input {", ".thread-resolved-preview {"):
+  for css_rule in (".comment-body {", ".review-textarea {", ".pr-body-box {", "textarea.reply-input {", ".thread-resolved-preview {"):
     assert "font-size: var(--dev-font-size);" in html_src.split(css_rule)[1].split("}")[0]
   assert 'id="reloadBtn"' in html_src and 'onclick="reloadUi()"' in html_src
   assert 'id="settingsBtn"' in html_src and 'id="settingsPane"' in html_src
@@ -1400,10 +1400,26 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
     "  }\n"
     "  listeners['keydown']({ key: 'Escape', altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
     "  if (isSettingsPaneOpen()) throw new Error('Escape did not close settings pane');\n"
-    "  // Ctrl+Click opens inline comment composer (LEFT on del/.lhs-cell, RIGHT otherwise); normal click does not\n"
+    "  // Normal click / drag does not select row or open composer; Shift+Click selects row; Ctrl+Click opens composer\n"
+    "  selectedDiffRowKey = null; openComposer = null;\n"
+    "  handleDiffRowCtrlClick({ ctrlKey: false, altKey: false, metaKey: false, shiftKey: false, target: {} }, 0, 1, 2, true, '01.md:0:0');\n"
+    "  if (openComposer !== null || selectedDiffRowKey !== null) throw new Error('Normal click unexpectedly opened composer or selected row');\n"
+    "  handleDiffRowCtrlClick({ ctrlKey: false, altKey: false, metaKey: false, shiftKey: true, target: {}, preventDefault(){} }, 0, 1, 2, true, '01.md:0:0');\n"
+    "  if (openComposer !== null || selectedDiffRowKey !== '01.md:0:0') throw new Error('Shift+Click did not select row cleanly');\n"
+    "  selectedDiffRowKey = null;\n"
+    "  // Multiline reply textarea allows Shift+Enter newlines and submits via Ctrl+Enter without triggering PR review/composer\n"
+    "  if (!html.includes('<textarea id=\"replyInput_0\" class=\"reply-input\"') || !html.includes(\"event.key==='Enter'&&!event.shiftKey\")) {\n"
+    "    throw new Error('Reply box is not a multiline textarea supporting Shift+Enter: ' + html);\n"
+    "  }\n"
+    "  elems['replyInput_0'] = Object.assign(makeEl('replyInput_0'), { value: 'Line 1\\nLine 2' });\n"
+    "  const beforeReplyCount = fetched.filter(c => c.url.endsWith('/reply')).length;\n"
+    "  listeners['keydown']({ key: 'Enter', altKey: false, ctrlKey: true, metaKey: false, shiftKey: false, target: { id: 'replyInput_0', tagName: 'TEXTAREA' }, preventDefault(){} });\n"
+    "  await new Promise(r => setTimeout(r, 20));\n"
+    "  const replyCall = fetched.filter(c => c.url.endsWith('/reply')).slice(beforeReplyCount)[0];\n"
+    "  if (!replyCall || !replyCall.body.includes('Line 1\\\\nLine 2')) {\n"
+    "    throw new Error('Ctrl+Enter inside multiline replyInput_0 did not submit multiline reply: ' + JSON.stringify(replyCall));\n"
+    "  }\n"
     "  openComposer = null;\n"
-    "  handleDiffRowCtrlClick({ ctrlKey: false, altKey: false, metaKey: false, shiftKey: false, target: {} }, 0, 1, 2, true);\n"
-    "  if (openComposer !== null) throw new Error('Normal click unexpectedly opened composer');\n"
     "  handleDiffRowCtrlClick({ ctrlKey: true, altKey: false, metaKey: false, shiftKey: false, target: { closest(sel){ return sel.includes('.ch-del') ? {} : null; } }, preventDefault(){}, stopPropagation(){} }, 0, 1, 2, true);\n"
     "  if (!openComposer || openComposer.side !== 'LEFT' || openComposer.line !== 1) throw new Error('Ctrl+Click on del did not open LEFT composer');\n"
     "  openComposer = null;\n"

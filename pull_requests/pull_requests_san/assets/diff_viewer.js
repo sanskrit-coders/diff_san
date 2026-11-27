@@ -227,7 +227,24 @@ function closeSettingsPane() {
   toggleSettingsPane(false);
 }
 
+let _diffRowMouseBound = false;
+
+function initDiffRowMouseBehavior() {
+  if (_diffRowMouseBound || typeof document === "undefined" || typeof document.addEventListener !== "function") return;
+  _diffRowMouseBound = true;
+  document.addEventListener("mousedown", (ev) => {
+    if (!ev || !ev.shiftKey || ev.ctrlKey || ev.altKey || ev.metaKey) return;
+    const tgt = ev.target;
+    if (!tgt || typeof tgt.closest !== "function") return;
+    if (tgt.closest("button, a, input, textarea, select, summary, .thread-box, .inline-composer")) return;
+    if (tgt.closest("tr.diff-row") && typeof ev.preventDefault === "function") {
+      ev.preventDefault();
+    }
+  });
+}
+
 function initDiffSettingsPane() {
+  initDiffRowMouseBehavior();
   const saved = getCurrentDiffColorMap();
   const pane = document.getElementById("settingsPane");
   if (pane) pane.innerHTML = renderSettingsPaneHtml();
