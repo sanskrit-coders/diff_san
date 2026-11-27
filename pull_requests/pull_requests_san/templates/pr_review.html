@@ -230,7 +230,13 @@
 <header>
   <div class="row">
     <strong style="font-size:21px;">GitHub PR Character-Level Reviewer</strong>
-    <label>Owner/Org: <input id="ownerInput" type="text" value="vishvAsa" style="width:170px;" /></label>
+    <label id="ownerWrap">Owner/Org: <input id="ownerInput" type="text" value="vishvAsa" style="width:170px;" /></label>
+    <span id="staticPrControls" class="row" style="gap:6px; display:none;">
+      <label>PR / Repo: <input id="staticPrUrlInput" type="text" placeholder="https://github.com/owner/repo/pull/123 or owner/repo" style="width:330px;" onkeydown="if(event.key==='Enter') loadStaticPrFromInput()" /></label>
+      <button id="staticLoadPrBtn" class="primary" type="button" onclick="loadStaticPrFromInput()">Load PR</button>
+      <button id="staticSamplePrBtn" class="small" type="button" onclick="loadStaticSamplePr()">Sample PR</button>
+      <button id="staticTokenBtn" class="small" type="button" title="Optional GitHub Personal Access Token (browser localStorage only) for private repos, 5000 req/hr, and posting comments/reviews" onclick="toggleStaticTokenRow()">🔑 Token</button>
+    </span>
     <label>State:
       <select id="stateSelect" onchange="setStateFilter(this.value)">
         <option value="open" selected>Open</option>
@@ -249,6 +255,12 @@
     <button id="reloadBtn" class="small" title="Reload UI (Ctrl+R refreshes from GitHub)" onclick="reloadUi()">↻ Reload</button>
     <span id="authBadge" class="pill">Checking auth...</span>
     <span id="statusText" style="color:var(--muted); font-size:16px;"></span>
+  </div>
+  <div id="staticTokenRow" class="row" style="display:none; padding:4px 8px; background:var(--surface-2); border:1px solid var(--border); border-radius:7px;">
+    <label style="font-size:15.5px;">GitHub PAT (saved only in browser localStorage): <input id="staticTokenInput" type="password" placeholder="ghp_... or github_pat_..." style="width:270px;" onkeydown="if(event.key==='Enter') saveStaticGithubToken(false)" /></label>
+    <button id="saveStaticTokenBtn" class="small primary" type="button" onclick="saveStaticGithubToken(false)">Save</button>
+    <button id="clearStaticTokenBtn" class="small" type="button" onclick="saveStaticGithubToken(true)">Clear</button>
+    <button class="small" type="button" onclick="toggleStaticTokenRow()">Close</button>
   </div>
   <div class="row">
     <label>Diff unit:
@@ -315,12 +327,27 @@
       <div class="card">Loading pull requests...</div>
     </div>
     <div style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Shift+Enter Multiline reply • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • ←/→ Collapse/Expand • [/] Prev/Next PR • Esc Close composer/settings</div>
+    <footer id="aboutFooter" class="about-footer">
+      <div>
+        <strong>diff_san — Pull Requests</strong> (<a href="https://github.com/sanskrit-coders/diff_san" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) —
+        Sanskrit &amp; Indic <strong>character-level</strong>, <strong>Vedic grapheme (<code>\X</code>)</strong>, and <strong>single-pane inline word-flow</strong> GitHub Pull Request viewer with Sandhi diff highlighting, intra-word sub-highlights, collapsible context, and review threads.
+      </div>
+      <div>
+        Python / CLI packages on PyPI:
+        <a href="https://pypi.org/project/pull-requests-san/" target="_blank" rel="noopener noreferrer"><code>pip install pull_requests_san</code></a>
+        · <a href="https://pypi.org/project/local-diff-san/" target="_blank" rel="noopener noreferrer"><code>pip install local-diff-san</code></a>
+        · Web apps: <a href="https://sanskrit-coders.github.io/diff_san/" rel="noopener noreferrer">All <code>diff_san</code> tools</a>
+        · <a href="https://sanskrit-coders.github.io/diff_san/local_diff/" rel="noopener noreferrer">Local / File Diff Viewer</a>.
+      </div>
+    </footer>
   </main>
 </div>
 
 <script>
 // {{SHARED_DIFF_ENGINE_JS}}
 // {{SHARED_DIFF_JS}}
+// {{PR_STATIC_ADAPTER_JS}}
+const IS_STATIC_HOST = /* {{PR_REVIEW_STATIC_FLAG}} */ false || (typeof window !== "undefined" && window.location && window.location.protocol === "file:");
 let allPrs = [];
 let filteredPrs = [];
 let activePrKey = null;
@@ -495,6 +522,10 @@ async function init() {
       ipChk.checked = savedIp === "true";
     }
   } catch (_) {}
+  if (IS_STATIC_HOST && typeof initStaticPrMode === "function") {
+    const res = await initStaticPrMode();
+    if (res && res.handledInitialLoad) return;
+  }
   try {
     metaInfo = await apiJson("/api/meta", null, "Failed to load metadata");
     if (metaInfo.default_owner) document.getElementById("ownerInput").value = metaInfo.default_owner;
@@ -2321,7 +2352,7 @@ document.addEventListener("keydown", (ev) => {
 
   // Ctrl+Enter submits active reply/composer/PR review or opens inline comment composer on selected line
   if (ev.key === "Enter" && ev.ctrlKey && !ev.altKey && !ev.metaKey) {
-    if (id !== "ownerInput") {
+    if (id !== "ownerInput" && id !== "staticPrUrlInput" && id !== "staticTokenInput") {
       ev.preventDefault();
       const replyMatch = id ? id.match(/^replyInput_(\d+)$/) : null;
       if (replyMatch) {

@@ -1492,3 +1492,90 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
   js_file = tmp_path / "test_github_gui.js"
   js_file.write_text(harness, encoding="utf-8")
   subprocess.check_call(["node", str(js_file)])
+
+
+def test_static_pr_export_and_github_rest_adapter(tmp_path: Path):
+  if not shutil.which("node"):
+    pytest.skip("node binary not installed")
+  import base64
+  from pull_requests_san import pr_review_gui
+  from pull_requests_san.diff import parse_patch_hunks
+
+  patch = "@@ -1,3 +1,3 @@\n ॐ\n-पा० देवः अस्ति\n+पा॰ देवोऽस्ति\n समाप्तम्\n"
+  py_hunk = parse_patch_hunks(patch, char_diff_mode="word")[0]
+
+  out_static = tmp_path / "static_pr" / "index.html"
+  assert pr_review_gui.main(["--export-static", str(out_static)]) == 0
+  static_html = out_static.read_text(encoding="utf-8")
+  assert "const IS_STATIC_HOST = true" in static_html
+  assert "https://sanskrit-coders.github.io/diff_san/local_diff/" in static_html
+  assert "pip install pull_requests_san" in static_html
+
+  m = re.search(r"<script>\n(.*?)\n</script>", static_html, re.S)
+  assert m is not None
+  static_js = m.group(1)
+
+  b64_left = base64.b64encode("ॐ\nपा० देवः अस्ति\nसमाप्तम्\n".encode("utf-8")).decode("ascii")
+  b64_right = base64.b64encode("ॐ\nपा॰ देवोऽस्ति\nसमाप्तम्\n".encode("utf-8")).decode("ascii")
+
+  harness = (
+    "const elems = {};\n"
+    "const listeners = {};\n"
+    "const lsStore = {};\n"
+    "function makeClassList(){ const s = new Set(); return { add(c){s.add(c);}, remove(c){s.delete(c);}, toggle(c,f){ if(f===undefined){if(s.has(c))s.delete(c);else s.add(c);} else if(f)s.add(c); else s.delete(c); }, contains(c){return s.has(c);} }; }\n"
+    "function makeEl(id){ return { id, value: '', checked: false, innerHTML: '', textContent: '', style: {}, classList: makeClassList(), querySelectorAll(){ return []; }, focus(){}, scrollIntoView(){} }; }\n"
+    "global.document = {\n"
+    "  documentElement: { style: { setProperty(){} } },\n"
+    "  getElementById(id){ if (!elems[id]) elems[id] = makeEl(id); return elems[id]; },\n"
+    "  querySelectorAll(){ return []; },\n"
+    "  addEventListener(e, fn){ listeners[e] = fn; },\n"
+    "};\n"
+    "elems['ownerInput'] = Object.assign(makeEl('ownerInput'), { value: 'vishvAsa' });\n"
+    "elems['stateSelect'] = Object.assign(makeEl('stateSelect'), { value: 'open' });\n"
+    "elems['diffModeSelect'] = Object.assign(makeEl('diffModeSelect'), { value: 'word' });\n"
+    "elems['normalizeSelect'] = Object.assign(makeEl('normalizeSelect'), { value: 'none' });\n"
+    "elems['ignorePunctChk'] = Object.assign(makeEl('ignorePunctChk'), { checked: false });\n"
+    "elems['singlePaneChk'] = Object.assign(makeEl('singlePaneChk'), { checked: true });\n"
+    "elems['wrapLinesChk'] = Object.assign(makeEl('wrapLinesChk'), { checked: true });\n"
+    "elems['changedOnlyChk'] = Object.assign(makeEl('changedOnlyChk'), { checked: false });\n"
+    "global.localStorage = { getItem(k){ return Object.prototype.hasOwnProperty.call(lsStore, k) ? lsStore[k] : null; }, setItem(k, v){ lsStore[k] = String(v); }, removeItem(k){ delete lsStore[k]; } };\n"
+    "global.window = global;\n"
+    "global.location = { protocol: 'https:', search: '', href: 'https://sanskrit-coders.github.io/diff_san/pull_requests/' };\n"
+    "global.history = { replaceState(){} };\n"
+    "global.getSelection = () => ({ toString(){ return ''; } });\n"
+    "const ghCalls = [];\n"
+    "global.fetch = async (url) => {\n"
+    "  ghCalls.push(url);\n"
+    "  const mk = (obj) => ({ ok: true, status: 200, headers: { get(){ return 'application/json'; } }, json: async () => obj });\n"
+    "  if (url.endsWith('/pulls/9')) return mk({ number: 9, title: 'Live GH Mock', body: 'Test', state: 'open', merged: false, draft: false, mergeable: true, mergeable_state: 'clean', html_url: 'https://github.com/vishvAsa/test/pull/9', user: { login: 'u' }, base: { ref: 'master', sha: 'b9' }, head: { ref: 'feat', sha: 'h9' }, additions: 1, deletions: 1, changed_files: 1, commits: 1 });\n"
+    f"  if (url.includes('/pulls/9/files')) return mk([{{ filename: 'a.md', status: 'modified', additions: 1, deletions: 1, changes: 2, patch: {json.dumps(patch)} }}]);\n"
+    "  if (url.includes('/pulls/9/commits')) return mk([{ sha: 'h9', html_url: '', author: { login: 'u' }, commit: { message: 'Update', committer: { date: '2026-11-27T09:00:00Z' } }, parents: [{ sha: 'b9' }] }]);\n"
+    "  if (url.includes('/pulls/9/comments')) return mk([{ id: 701, path: 'a.md', line: 2, original_line: 2, side: 'RIGHT', position: 1, user: { login: 'rev' }, body: 'Nice!', created_at: '2026-11-27T09:05:00Z' }]);\n"
+    "  if (url.includes('/issues/9/comments') || url.includes('/pulls/9/reviews')) return mk([]);\n"
+    f"  if (url.includes('/contents/a.md?ref=b9')) return mk({{ encoding: 'base64', content: {json.dumps(b64_left)} }});\n"
+    f"  if (url.includes('/contents/a.md?ref=h9')) return mk({{ encoding: 'base64', content: {json.dumps(b64_right)} }});\n"
+    "  throw new Error('Unexpected fetch URL: ' + url);\n"
+    "};\n"
+    + static_js.replace("init();", "")
+    + "\n(async () => {\n"
+    f"  const canonRow = r => ({{ kind: r.kind, left_num: r.left_num, right_num: r.right_num, left_text: r.left_text, right_text: r.right_text, in_diff_hunk: r.in_diff_hunk, lhs_segments: r.lhs_segments, rhs_segments: r.rhs_segments }});\n"
+    f"  const jsHunk = DiffSanEngine.parsePatchHunks({json.dumps(patch)}, {{ charDiffMode: 'word' }})[0];\n"
+    f"  if (JSON.stringify(jsHunk.rows.map(canonRow)) !== JSON.stringify({json.dumps([r.__dict__ for r in py_hunk.rows])}.map(canonRow))) throw new Error('parsePatchHunks rows mismatch');\n"
+    f"  if (JSON.stringify(jsHunk.inline_rows) !== JSON.stringify({json.dumps(py_hunk.inline_rows)})) throw new Error('parsePatchHunks inline_rows mismatch');\n"
+    "  if (decodeBase64Utf8(" + json.dumps(b64_left) + ").indexOf('देवः') < 0) throw new Error('decodeBase64Utf8 Devanagari failed');\n"
+    "  if (JSON.stringify(parseStaticPrRef('https://github.com/vishvAsa/test/pull/9')) !== JSON.stringify({ owner: 'vishvAsa', repo: 'test', number: 9 })) throw new Error('parseStaticPrRef URL failed');\n"
+    "  if (JSON.stringify(parseStaticPrRef('vishvAsa/test#12')) !== JSON.stringify({ owner: 'vishvAsa', repo: 'test', number: 12 })) throw new Error('parseStaticPrRef short ref failed');\n"
+    "  await init();\n"
+    "  if (ghCalls.length !== 0 || !elems['prContainer'].innerHTML.includes('welcomeSamplePrBtn')) throw new Error('Static PR welcome screen failed');\n"
+    "  await loadStaticSamplePr();\n"
+    "  if (ghCalls.length !== 0 || !elems['filesDiffContainer'].innerHTML.includes('वीरराघवः') || !elems['filesDiffContainer'].innerHTML.includes('पा<span class=\"ch-sub\">०</span>')) throw new Error('Sample PR offline load failed');\n"
+    "  await openStaticPrRef('https://github.com/vishvAsa/test/pull/9');\n"
+    "  if (!elems['filesDiffContainer'].innerHTML.includes('Nice!') || !elems['filesDiffContainer'].innerHTML.includes('वोऽ</span>स्ति')) throw new Error('Mock GitHub REST PR load failed: ' + elems['errorBanner'].textContent + ' | ' + elems['filesDiffContainer'].innerHTML);\n"
+    "  const callsBeforeFull = ghCalls.length;\n"
+    "  await loadFullFile(0);\n"
+    "  if (ghCalls.length !== callsBeforeFull + 2 || !activePrData.files[0].is_full_file) throw new Error('Static full-file content load failed');\n"
+    "})().catch(err => { console.error(err); process.exit(1); });\n"
+  )
+  js_file = tmp_path / "test_static_pr.js"
+  js_file.write_text(harness, encoding="utf-8")
+  subprocess.check_call(["node", str(js_file)])

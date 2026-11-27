@@ -1,6 +1,11 @@
 # diff_san
 
-Diff tools tailored for Sanskrit and Indic scholarship (Devanagari, Vedic accents, punctuation-aware proofreading, and multi-repository GitHub review workflows).
+Diff tools tailored for Sanskrit and Indic scholarship (Devanagari, Vedic accents, Sandhi-aware diffs, punctuation-aware proofreading, and multi-repository GitHub review workflows).
+
+- **Static browser apps (zero install / pure JS):**
+  - [Hub (`sanskrit-coders.github.io/diff_san/`)](https://sanskrit-coders.github.io/diff_san/)
+  - **[Local / Text / File Diff](https://sanskrit-coders.github.io/diff_san/local_diff/)** (`docs/local_diff/index.html`) — upload, drag-and-drop, or paste two texts directly in your browser.
+  - **[GitHub Pull Request Diff](https://sanskrit-coders.github.io/diff_san/pull_requests/)** (`docs/pull_requests/index.html`) — load any public GitHub PR by URL (or try the offline Sample Sanskrit PR; optional GitHub PAT for private repos & commenting).
 
 ## Tools
 
@@ -15,9 +20,12 @@ Interactive FastAPI web reviewer for GitHub Pull Requests across an entire organ
 - **Full PR Workflow** — inline comments (`Ctrl+Click` any hunk line or click `+💬` / line number), line-range comments, expandable collapsed lines above/between/below hunks, thread replies, draft batching, approvals/request-changes reviews, resolve/unresolve threads, mergeability & 3-way merge conflict diff inspection, open in main browser (`Alt+B`), merge PR (`Alt+Shift+M`), close/reopen PR (`Alt+Shift+C`).
 - **Scholarship Typography & Local Helpers** — uses the `Adishila SanVedic` Devanagari font stack, GoldenDict lookup, and IntelliJ IDEA jump-to-line support.
 
+- **Static website bundle ([`pull_requests/` web app](https://sanskrit-coders.github.io/diff_san/pull_requests/))** — load any GitHub Pull Request directly in your browser via GitHub REST API + pure-JS `DiffSanEngine` (`pull_requests_san --export-static docs/pull_requests/index.html`).
+
 ```bash
 pip install pull_requests_san
 pull_requests_san --owner vishvAsa --state open
+pull_requests_san --export-static docs/pull_requests/index.html
 ```
 
 #### Screenshots
@@ -40,14 +48,14 @@ Local file and Git `HEAD` diff viewer built on [`pull_requests_san`](pull_reques
 
 - **Compare a local file or repo against Git `HEAD`** (or `--rev HEAD~1`, branch, or commit), discovering modified, deleted, and untracked files cleanly.
 - **Compare two local files directly** with intra-word character highlights, expandable collapsed context lines, Vedic grapheme (`\X`) & codepoint modes, normalization/`Ignore punct`, custom color settings, GoldenDict lookup, and click-to-jump IntelliJ IDEA support.
-- **Static website bundle (`docs/index.html`)** — pure-JS `DiffSanEngine` diffs 2 uploaded/dragged files or pasted texts right in the browser with zero server backend (`local-diff-san --export-static docs/index.html`).
+- **Static website bundle ([`local_diff/` web app](https://sanskrit-coders.github.io/diff_san/local_diff/))** — pure-JS `DiffSanEngine` diffs 2 uploaded/dragged files or pasted texts right in the browser with zero server backend (`local-diff-san --export-static docs/local_diff/index.html`).
 
 ```bash
 pip install local-diff-san
 local-diff-san path/to/file.md              # file vs HEAD
 local-diff-san left.md right.md             # 2 local files
 local-diff-san                              # all dirty files in repo vs HEAD
-local-diff-san --export-static docs/index.html
+local-diff-san --export-static docs/local_diff/index.html
 ```
 
 ### [`vishvAsa/pada_svara/`](vishvAsa/pada_svara/README.md) (`pada_svara`)

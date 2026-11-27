@@ -1448,6 +1448,80 @@
     return merged;
   }
 
+  const _HUNK_HEADER_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/;
+
+  function parsePatchHunks(patch, { charDiffMode = "grapheme", normalize = "none", ignorePunct = false } = {}) {
+    if (!patch) return [];
+    const hunks = [];
+    let curHunk = null;
+    let oldLn = 0;
+    let newLn = 0;
+    let delBuf = [];
+    let addBuf = [];
+
+    const flushChanges = () => {
+      if (curHunk && (delBuf.length || addBuf.length)) {
+        const pairs = alignChangeBlockLines(delBuf, addBuf);
+        curHunk.rows.push(..._buildRowsFromPairs(pairs, { charDiffMode, inDiffHunk: true, normalize, ignorePunct }));
+      }
+      delBuf = [];
+      addBuf = [];
+    };
+
+    const finalizeHunk = () => {
+      flushChanges();
+      if (curHunk && curHunk.rows.length) {
+        curHunk.rows = _realignRowsAcrossBlanks(curHunk.rows, { charDiffMode, normalize, ignorePunct });
+        curHunk.inline_rows = buildInlineFlowRows(curHunk.rows, { charDiffMode, normalize, ignorePunct });
+      }
+    };
+
+    for (const rawLine of _splitLinesClean(patch)) {
+      const m = _HUNK_HEADER_RE.exec(rawLine);
+      if (m) {
+        finalizeHunk();
+        oldLn = parseInt(m[1], 10);
+        const oldCnt = m[2] !== undefined ? parseInt(m[2], 10) : 1;
+        newLn = parseInt(m[3], 10);
+        const newCnt = m[4] !== undefined ? parseInt(m[4], 10) : 1;
+        curHunk = {
+          header: rawLine,
+          old_start: oldLn,
+          old_count: oldCnt,
+          new_start: newLn,
+          new_count: newCnt,
+          context: (m[5] || "").trim(),
+          rows: [],
+          inline_rows: [],
+        };
+        hunks.push(curHunk);
+        continue;
+      }
+      if (!curHunk || rawLine.startsWith("\\")) continue;
+      if (rawLine.startsWith("-")) {
+        delBuf.push([oldLn, rawLine.slice(1)]);
+        oldLn += 1;
+      } else if (rawLine.startsWith("+")) {
+        addBuf.push([newLn, rawLine.slice(1)]);
+        newLn += 1;
+      } else if (rawLine.startsWith(" ") || rawLine === "") {
+        flushChanges();
+        const text = rawLine.startsWith(" ") ? rawLine.slice(1) : "";
+        const row = _recomputeRowSegments(
+          { kind: "context", left_num: oldLn, right_num: newLn, left_text: text, right_text: text, in_diff_hunk: true },
+          charDiffMode,
+          normalize,
+          ignorePunct
+        );
+        curHunk.rows.push(row);
+        oldLn += 1;
+        newLn += 1;
+      }
+    }
+    finalizeHunk();
+    return hunks;
+  }
+
   const api = {
     VALID_DIFF_MODES,
     VALID_NORMALIZATIONS,
@@ -1459,6 +1533,7 @@
     computeStreamDiff,
     buildInlineFlowRows,
     buildFullFileHunk,
+    parsePatchHunks,
     isInterwordSandhiPair,
     findSandhiMarkedIndices,
     splitMixedSandhiPair,

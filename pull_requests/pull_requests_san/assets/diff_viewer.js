@@ -52,6 +52,9 @@ function showError(msg) {
 }
 
 async function apiJson(url, opts = null, fallbackErr = "Request failed") {
+  if (typeof window !== "undefined" && typeof window.staticApiHandler === "function") {
+    return window.staticApiHandler(url, opts, fallbackErr);
+  }
   let resp;
   try {
     resp = await fetch(url, opts || undefined);

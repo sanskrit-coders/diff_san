@@ -34,9 +34,27 @@ _T = TypeVar("_T")
 _TEMPLATE_PATH = Path(__file__).with_name("templates") / "pr_review.html"
 
 
-def load_html_template() -> str:
+def load_html_template(*, static_mode: bool = False) -> str:
   """Read the standalone HTML/CSS/JS review application template with shared diff assets injected."""
-  return render_html_with_shared_assets(_TEMPLATE_PATH.read_text(encoding="utf-8"))
+  raw = _TEMPLATE_PATH.read_text(encoding="utf-8")
+  flag = "true" if static_mode else "false"
+  raw = raw.replace("/* {{PR_REVIEW_STATIC_FLAG}} */ false", flag)
+  if not static_mode:
+    raw = raw.replace("// {{PR_STATIC_ADAPTER_JS}}", "")
+  return render_html_with_shared_assets(raw)
+
+
+def render_static_html() -> str:
+  """Render a self-contained static GitHub PR viewer HTML page powered by GitHub REST API + pure JS diffing."""
+  return load_html_template(static_mode=True)
+
+
+def export_static_html(output_path: str | Path) -> Path:
+  """Write the self-contained static PR viewer HTML bundle to ``output_path``."""
+  dest = Path(output_path).expanduser().resolve()
+  dest.parent.mkdir(parents=True, exist_ok=True)
+  dest.write_text(render_static_html(), encoding="utf-8")
+  return dest
 
 
 class _DiffOptionsModel(BaseModel):
@@ -529,7 +547,13 @@ def main(argv: Sequence[str] | None = None) -> int:
   p.add_argument("--local-org-dir", default=pr_review.DEFAULT_LOCAL_ORG_DIR, help="Optional local checkout root for opening files in IDEA.")
   p.add_argument("--port", type=int, default=8770, help="Port to bind on 127.0.0.1 (default: 8770 or next free port).")
   p.add_argument("--no-browser", action="store_true", help="Do not auto-open browser window.")
+  p.add_argument("--export-static", default="", help="Write a self-contained pure-JS static PR viewer HTML page to FILE and exit.")
   args = p.parse_args(argv)
+
+  if args.export_static:
+    out = export_static_html(args.export_static)
+    print(f"Exported standalone static pull_requests_san page to {out}", flush=True)
+    return 0
 
   app = create_app(
     default_owner=args.owner,

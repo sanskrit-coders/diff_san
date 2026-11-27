@@ -22,8 +22,10 @@ local-diff-san old_file.md new_file.md
 local-diff-san
 local-diff-san path/to/dir
 
+- Live web app (pure-JS file/text diff): [sanskrit-coders.github.io/diff_san/local_diff/](https://sanskrit-coders.github.io/diff_san/local_diff/)
+
 # Export a standalone static HTML website (pure JS client-side file/text diffing)
-local-diff-san --export-static docs/index.html
+local-diff-san --export-static docs/local_diff/index.html
 
 # Or invoke as a Python module
 python -m local_diff_san old_file.md new_file.md

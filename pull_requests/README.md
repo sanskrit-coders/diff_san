@@ -11,6 +11,11 @@ pip install pull_requests_san
 ## Usage
 
 ```bash
+- Live static web app (load any GitHub PR in browser): [sanskrit-coders.github.io/diff_san/pull_requests/](https://sanskrit-coders.github.io/diff_san/pull_requests/)
+
+# Export a standalone static HTML PR reviewer page
+pull_requests_san --export-static docs/pull_requests/index.html
+
 # Review all open PRs in vishvAsa repos (or specify any GitHub user/org)
 pull_requests_san --owner vishvAsa --state open
 

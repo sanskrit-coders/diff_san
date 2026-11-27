@@ -23,6 +23,11 @@ def load_shared_diff_engine_js() -> str:
   return (_ASSETS_DIR / "diff_engine.js").read_text(encoding="utf-8")
 
 
+def load_pr_static_adapter_js() -> str:
+  """Return the static browser GitHub API adapter for pull_requests_san."""
+  return (_ASSETS_DIR / "pr_static_adapter.js").read_text(encoding="utf-8")
+
+
 def render_html_with_shared_assets(template_html: str) -> str:
   """Inject shared CSS and JS assets into an HTML template string."""
   return (
@@ -30,4 +35,5 @@ def render_html_with_shared_assets(template_html: str) -> str:
     .replace("/* {{SHARED_DIFF_CSS}} */", load_shared_diff_css())
     .replace("// {{SHARED_DIFF_ENGINE_JS}}", load_shared_diff_engine_js())
     .replace("// {{SHARED_DIFF_JS}}", load_shared_diff_js())
+    .replace("// {{PR_STATIC_ADAPTER_JS}}", load_pr_static_adapter_js())
   )
