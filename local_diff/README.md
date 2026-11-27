@@ -34,7 +34,7 @@ python -m local_diff_san old_file.md new_file.md
 ## Key Features
 
 - **Single-pane word-flow diff** (default) with intra-word character highlights and **2-pane LHS/RHS mode** (`Alt+S`), powered by `pull_requests_san.diff` on the CLI or pure-JS `DiffSanEngine` in static browser mode.
-- **Vedic grapheme (`\X`) & raw codepoint modes** keeping Vedic svara marks (`U+1CD3` `᳓`, etc.) attached to their akṣara.
+- **Vedic grapheme (`\X`) & raw codepoint modes** keeping Vedic svara marks (`U+1CD3` `᳓`, etc.) attached to their akṣara (`Alt+W` toggles between `Word` and `Char (Grapheme \X)`).
 - **Expandable collapsed context lines** (click any collapsed-lines bar to expand), **Sandhi diff** highlighting (active by default for interword sandhi like `अस्ति इति` ↔ `अस्तीति` or `ऽस्मिन्न् इति` ↔ `ऽस्मिन् इति`, with `◀`/`▶` & `Alt+Shift+↑`/`↓` jump between sandhi diffs), unified **OLD/NEW dashed-pair boxing**, keyboard & mouse navigation (`Shift+Click` or `↑`/`↓` select line, right-click **Copy diff for bug report**, `Ctrl+F` codepoint-exact find supporting combining marks like `ँ`, `PgUp`/`PgDn` scroll page & select first visible line, `Alt+↑`/`Alt+↓` jump prev/next diff line), Unicode normalization (`NFC`/`NFD`/`NFKC`/`NFKD`), `Ignore punct`, customizable **Settings color pickers**, **GoldenDict** lookup, and click-to-jump **IntelliJ IDEA** line opening.
 
 ## IDE Integrations

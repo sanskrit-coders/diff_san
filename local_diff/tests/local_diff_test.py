@@ -472,6 +472,11 @@ def test_pure_js_diff_engine_parity_and_static_export_with_gap_expand(tmp_path: 
     "  if (elems['mainPane'].scrollTop !== 0 || selectedLocalRowKey !== lr0.rowKey) {\n"
     "    throw new Error('Local diff PageUp failed: scrollTop=' + elems['mainPane'].scrollTop + ' selected=' + selectedLocalRowKey);\n"
     "  }\n"
+    "  // Alt+W toggles diffModeSelect between word and grapheme\n"
+    "  listeners['keydown']({ key: 'w', code: 'KeyW', altKey: true, shiftKey: false, ctrlKey: false, metaKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
+    "  if (elems['diffModeSelect'].value !== 'grapheme') throw new Error('Local Alt+W word->grapheme failed: ' + elems['diffModeSelect'].value);\n"
+    "  listeners['keydown']({ key: 'w', code: 'KeyW', altKey: true, shiftKey: false, ctrlKey: false, metaKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
+    "  if (elems['diffModeSelect'].value !== 'word') throw new Error('Local Alt+W grapheme->word failed: ' + elems['diffModeSelect'].value);\n"
     "})().catch(err => { console.error(err); process.exit(1); });\n"
   )
   s_js = tmp_path / "static_test.js"

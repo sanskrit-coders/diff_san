@@ -1502,6 +1502,7 @@ def test_static_pr_export_and_github_rest_adapter(tmp_path: Path):
   if not shutil.which("node"):
     pytest.skip("node binary not installed")
   import base64
+  import hashlib
   from pull_requests_san import pr_review_gui
   from pull_requests_san.diff import parse_patch_hunks
 
@@ -1522,10 +1523,14 @@ def test_static_pr_export_and_github_rest_adapter(tmp_path: Path):
   b64_left = base64.b64encode("ॐ\nपा० देवः अस्ति\nसमाप्तम्\n".encode("utf-8")).decode("ascii")
   b64_right = base64.b64encode("ॐ\nपा॰ देवोऽस्ति\nसमाप्तम्\n".encode("utf-8")).decode("ascii")
 
+  expected_sha_ascii = hashlib.sha256(b"a.md").hexdigest()
+  expected_sha_utf8 = hashlib.sha256("skandha_10/ऋक्_01.md".encode("utf-8")).hexdigest()
+
   harness = (
     "const elems = {};\n"
     "const listeners = {};\n"
     "const lsStore = {};\n"
+    "const clipboardWrites = [];\n"
     "function makeClassList(){ const s = new Set(); return { add(c){s.add(c);}, remove(c){s.delete(c);}, toggle(c,f){ if(f===undefined){if(s.has(c))s.delete(c);else s.add(c);} else if(f)s.add(c); else s.delete(c); }, contains(c){return s.has(c);} }; }\n"
     "function makeEl(id){ return { id, value: '', checked: false, innerHTML: '', textContent: '', style: {}, classList: makeClassList(), querySelectorAll(){ return []; }, focus(){}, scrollIntoView(){} }; }\n"
     "global.document = {\n"
@@ -1547,6 +1552,7 @@ def test_static_pr_export_and_github_rest_adapter(tmp_path: Path):
     "global.location = { protocol: 'https:', search: '', href: 'https://sanskrit-coders.github.io/diff_san/pull_requests/' };\n"
     "global.history = { replaceState(){} };\n"
     "global.getSelection = () => ({ toString(){ return ''; } });\n"
+    "global.navigator = { clipboard: { writeText: async (txt) => { clipboardWrites.push(String(txt)); } } };\n"
     "const ghCalls = [];\n"
     "global.fetch = async (url) => {\n"
     "  ghCalls.push(url);\n"
@@ -1578,6 +1584,37 @@ def test_static_pr_export_and_github_rest_adapter(tmp_path: Path):
     "  const callsBeforeFull = ghCalls.length;\n"
     "  await loadFullFile(0);\n"
     "  if (ghCalls.length !== callsBeforeFull + 2 || !activePrData.files[0].is_full_file) throw new Error('Static full-file content load failed');\n"
+    f"  if (sha256Hex('a.md') !== {json.dumps(expected_sha_ascii)} || sha256Hex('skandha_10/ऋक्_01.md') !== {json.dumps(expected_sha_utf8)}) throw new Error('sha256Hex UTF-8 mismatch');\n"
+    "  if (!elems['prList'].innerHTML.includes('pr-item-copy-url-btn') || !elems['prList'].innerHTML.includes('pr-item-browser-btn')) throw new Error('Sidebar copy PR URL button missing next to globe');\n"
+    "  if (!elems['prContainer'].innerHTML.includes('id=\"copyPrUrlBtn\"')) throw new Error('PR header copyPrUrlBtn missing');\n"
+    "  await copyActivePrUrl();\n"
+    "  await copyPrUrlIdx(0);\n"
+    "  if (clipboardWrites[0] !== 'https://github.com/vishvAsa/test/pull/9' || clipboardWrites[1] !== 'https://github.com/vishvAsa/test/pull/9') throw new Error('Copy PR URL mismatch: ' + JSON.stringify(clipboardWrites));\n"
+    "  const modRow = renderedDiffRows.find(r => r.filename === 'a.md' && r.rightNum === 2);\n"
+    f"  const expectedGhLine = 'https://github.com/vishvAsa/test/pull/9/files#diff-{expected_sha_ascii}R2';\n"
+    f"  const expectedGhLeftLine = 'https://github.com/vishvAsa/test/pull/9/files#diff-{expected_sha_ascii}L2';\n"
+    "  if (buildGithubPrLineUrl(modRow, null) !== expectedGhLine) throw new Error('buildGithubPrLineUrl RIGHT mismatch: ' + buildGithubPrLineUrl(modRow, null));\n"
+    "  const delFakeEl = { closest(sel){ return sel.includes('.ch-del') ? {} : null; } };\n"
+    "  if (buildGithubPrLineUrl(modRow, delFakeEl) !== expectedGhLeftLine) throw new Error('buildGithubPrLineUrl LEFT mismatch: ' + buildGithubPrLineUrl(modRow, delFakeEl));\n"
+    "  const viewerUrl = buildDiffSanPrLineUrl(modRow, null);\n"
+    "  if (!viewerUrl.includes('pr=vishvAsa%2Ftest%239') || !viewerUrl.includes('file=a.md') || !viewerUrl.includes('side=R') || !viewerUrl.includes('line=2')) throw new Error('buildDiffSanPrLineUrl mismatch: ' + viewerUrl);\n"
+    "  // Alt+W toggles between word and grapheme diff units\n"
+    "  listeners['keydown']({ key: 'w', code: 'KeyW', altKey: true, shiftKey: false, ctrlKey: false, metaKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
+    "  await new Promise(r => setTimeout(r, 15));\n"
+    "  if (elems['diffModeSelect'].value !== 'grapheme' || lsStore['github_pr_review_diff_mode'] !== 'grapheme') throw new Error('Alt+W did not switch word->grapheme: ' + elems['diffModeSelect'].value);\n"
+    "  listeners['keydown']({ key: 'w', code: 'KeyW', altKey: true, shiftKey: false, ctrlKey: false, metaKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
+    "  await new Promise(r => setTimeout(r, 15));\n"
+    "  if (elems['diffModeSelect'].value !== 'word' || lsStore['github_pr_review_diff_mode'] !== 'word') throw new Error('Alt+W did not toggle grapheme->word: ' + elems['diffModeSelect'].value);\n"
+    "  elems['diffModeSelect'].value = 'codepoint';\n"
+    "  listeners['keydown']({ key: 'w', code: 'KeyW', altKey: true, shiftKey: false, ctrlKey: false, metaKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
+    "  await new Promise(r => setTimeout(r, 15));\n"
+    "  if (elems['diffModeSelect'].value !== 'word') throw new Error('Alt+W from codepoint should switch to word');\n"
+    "  // Deep link to ?pr=sample&file=skandha_10/01.md&side=R&line=17 auto-selects matching row\n"
+    "  global.location.search = '?pr=sample&file=skandha_10/01.md&side=R&line=17';\n"
+    "  await init();\n"
+    "  if (!selectedDiffRowKey || !selectedDiffRowKey.startsWith('skandha_10/01.md:') || !renderedDiffRows.some(r => r.rowKey === selectedDiffRowKey && r.rightNum === 17)) {\n"
+    "    throw new Error('Deep link did not select target row: ' + selectedDiffRowKey);\n"
+    "  }\n"
     "})().catch(err => { console.error(err); process.exit(1); });\n"
   )
   js_file = tmp_path / "test_static_pr.js"

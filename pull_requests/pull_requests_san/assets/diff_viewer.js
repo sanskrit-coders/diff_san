@@ -839,13 +839,114 @@ async function copyTextToClipboard(text) {
 
 let _ctxMenuBound = false;
 let _activeCtxMeta = null;
+let _activeCtxTarget = null;
 let _ctxSelectFn = null;
 let _ctxAppLabelFn = null;
+let _ctxExtraItems = [];
+
+function sha256Hex(input) {
+  const s = String(input ?? "");
+  let bytes;
+  if (typeof TextEncoder !== "undefined") {
+    bytes = new TextEncoder().encode(s);
+  } else {
+    const utf8 = unescape(encodeURIComponent(s));
+    bytes = new Uint8Array(utf8.length);
+    for (let i = 0; i < utf8.length; i++) bytes[i] = utf8.charCodeAt(i);
+  }
+  const K = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+  ];
+  const H = [
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+  ];
+  const bitLen = bytes.length * 8;
+  const totalLen = Math.ceil((bytes.length + 9) / 64) * 64;
+  const padded = new Uint8Array(totalLen);
+  padded.set(bytes);
+  padded[bytes.length] = 0x80;
+  const hiBits = Math.floor(bitLen / 0x100000000);
+  const loBits = bitLen >>> 0;
+  const dv = new DataView(padded.buffer);
+  dv.setUint32(totalLen - 8, hiBits, false);
+  dv.setUint32(totalLen - 4, loBits, false);
+  const w = new Uint32Array(64);
+  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+  for (let off = 0; off < totalLen; off += 64) {
+    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(off + i * 4, false);
+    for (let i = 16; i < 64; i++) {
+      const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
+      const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, h] = H;
+    for (let i = 0; i < 64; i++) {
+      const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+      const ch = (e & f) ^ ((~e) & g);
+      const t1 = (h + S1 + ch + K[i] + w[i]) >>> 0;
+      const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const t2 = (S0 + maj) >>> 0;
+      h = g; g = f; f = e; e = (d + t1) >>> 0;
+      d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    H[0] = (H[0] + a) >>> 0; H[1] = (H[1] + b) >>> 0; H[2] = (H[2] + c) >>> 0; H[3] = (H[3] + d) >>> 0;
+    H[4] = (H[4] + e) >>> 0; H[5] = (H[5] + f) >>> 0; H[6] = (H[6] + g) >>> 0; H[7] = (H[7] + h) >>> 0;
+  }
+  return H.map(v => v.toString(16).padStart(8, "0")).join("");
+}
+
+function resolveDiffRowSideAndLine(meta, targetEl = null) {
+  if (!meta) return null;
+  const leftNum = meta.leftNum != null ? Number(meta.leftNum) : null;
+  const rightNum = meta.rightNum != null ? Number(meta.rightNum) : null;
+  if (leftNum == null && rightNum == null) return null;
+  const preferLeft = Boolean(
+    targetEl && typeof targetEl.closest === "function" && targetEl.closest(".lhs-cell, .ln-left, .ch-del, .nl-del")
+  );
+  const side = preferLeft
+    ? (leftNum != null ? "LEFT" : "RIGHT")
+    : (rightNum != null ? "RIGHT" : "LEFT");
+  const line = side === "LEFT" ? leftNum : rightNum;
+  if (line == null) return null;
+  return { side, sideChar: side === "LEFT" ? "L" : "R", line };
+}
+
+function toggleWordGraphemeDiffMode(onChangedFn = null) {
+  const sel = typeof document !== "undefined" ? document.getElementById("diffModeSelect") : null;
+  if (!sel) return null;
+  const next = sel.value === "word" ? "grapheme" : "word";
+  sel.value = next;
+  const opt = sel.options && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex] : null;
+  const label = opt ? opt.textContent : next;
+  setStatus(`Diff unit: ${label}`, 2000);
+  const res = typeof onChangedFn === "function"
+    ? onChangedFn(next)
+    : (typeof sel.onchange === "function" ? sel.onchange() : null);
+  if (res && typeof res.then === "function") {
+    res.then(() => {
+      const errEl = typeof document !== "undefined" ? document.getElementById("errorBanner") : null;
+      if (!errEl || errEl.style.display === "none" || !errEl.textContent) {
+        setStatus(`Diff unit: ${label}`, 2000);
+      }
+    }).catch(() => {});
+  }
+  return next;
+}
 
 function closeDiffRowContextMenu() {
   const menu = typeof document !== "undefined" ? document.getElementById("diffRowContextMenu") : null;
   if (menu) menu.style.display = "none";
   _activeCtxMeta = null;
+  _activeCtxTarget = null;
 }
 
 function _ensureDiffRowContextMenuEl() {
@@ -855,11 +956,26 @@ function _ensureDiffRowContextMenuEl() {
     menu = document.createElement("div");
     menu.id = "diffRowContextMenu";
     menu.className = "diff-ctx-menu";
+    const extraHtml = (_ctxExtraItems || [])
+      .map(it => `<button id="${esc(it.id)}" class="diff-ctx-item" type="button">${esc(it.label)}</button>`)
+      .join("");
     menu.innerHTML = `
+      ${extraHtml}
       <button id="ctxCopyBugDiffBtn" class="diff-ctx-item" type="button">📋 Copy diff for bug report</button>
       <button id="ctxSelectLineBtn" class="diff-ctx-item" type="button">☑ Select line</button>
     `;
     document.body.appendChild(menu);
+    for (const it of (_ctxExtraItems || [])) {
+      const btn = document.getElementById(it.id);
+      if (btn) {
+        btn.onclick = async () => {
+          const meta = _activeCtxMeta;
+          const tgt = _activeCtxTarget;
+          closeDiffRowContextMenu();
+          if (meta && typeof it.onClick === "function") await it.onClick(meta, tgt);
+        };
+      }
+    }
     const copyBtn = document.getElementById("ctxCopyBugDiffBtn");
     if (copyBtn) {
       copyBtn.onclick = async () => {
@@ -884,9 +1000,10 @@ function _ensureDiffRowContextMenuEl() {
   return menu;
 }
 
-function bindDiffRowContextMenu(getRowsFn, selectRowFn, getAppLabelFn = () => "diff_san") {
+function bindDiffRowContextMenu(getRowsFn, selectRowFn, getAppLabelFn = () => "diff_san", extraItems = []) {
   _ctxSelectFn = selectRowFn;
   _ctxAppLabelFn = getAppLabelFn;
+  _ctxExtraItems = Array.isArray(extraItems) ? extraItems : [];
   if (_ctxMenuBound || typeof document === "undefined" || typeof document.addEventListener !== "function") return;
   _ctxMenuBound = true;
   document.addEventListener("contextmenu", (ev) => {
@@ -905,11 +1022,21 @@ function bindDiffRowContextMenu(getRowsFn, selectRowFn, getAppLabelFn = () => "d
     if (!menu) return;
     ev.preventDefault();
     _activeCtxMeta = meta;
+    _activeCtxTarget = tgt;
+    for (const it of (_ctxExtraItems || [])) {
+      const btn = document.getElementById(it.id);
+      if (btn && btn.style) {
+        const vis = typeof it.isVisible === "function" ? it.isVisible(meta, tgt) : true;
+        btn.style.display = vis ? "block" : "none";
+      }
+    }
     menu.style.display = "flex";
     const vw = typeof window !== "undefined" ? (window.innerWidth || 1024) : 1024;
     const vh = typeof window !== "undefined" ? (window.innerHeight || 768) : 768;
-    const leftPx = Math.max(8, Math.min(vw - 260, Number(ev.clientX || 0)));
-    const topPx = Math.max(8, Math.min(vh - 110, Number(ev.clientY || 0)));
+    const mw = Math.max(260, menu.offsetWidth || 260);
+    const mh = Math.max(100, menu.offsetHeight || 160);
+    const leftPx = Math.max(8, Math.min(vw - mw - 8, Number(ev.clientX || 0)));
+    const topPx = Math.max(8, Math.min(vh - mh - 8, Number(ev.clientY || 0)));
     menu.style.left = `${leftPx}px`;
     menu.style.top = `${topPx}px`;
   });

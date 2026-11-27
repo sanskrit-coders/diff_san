@@ -809,12 +809,18 @@
     throw new Error(`Unsupported static PR endpoint: ${path}`);
   }
 
-  function _updateStaticPrUrlQuery(refStr) {
+  function _updateStaticPrUrlQuery(refStr, preserveTargetParams = false) {
     try {
       if (typeof window === "undefined" || !window.history || typeof window.history.replaceState !== "function") return;
       const u = new URL(window.location.href);
       if (refStr) u.searchParams.set("pr", refStr);
       else u.searchParams.delete("pr");
+      if (!preserveTargetParams) {
+        u.searchParams.delete("file");
+        u.searchParams.delete("side");
+        u.searchParams.delete("line");
+        u.searchParams.delete("commit");
+      }
       window.history.replaceState({}, "", u.toString());
     } catch (_) {}
   }
@@ -843,9 +849,10 @@
     if (diffEl) diffEl.innerHTML = "";
   }
 
-  async function openStaticPrRef(refText) {
+  async function openStaticPrRef(refText, opts = {}) {
     const inp = document.getElementById("staticPrUrlInput");
     if (inp && refText) inp.value = refText;
+    const preserveTargetParams = Boolean(opts && opts.preserveTargetParams);
     const parsed = parseStaticPrRef(refText, activePrKey ? `${activePrKey.owner}/${activePrKey.repo}` : (staticRepoTarget ? `${staticRepoTarget.owner}/${staticRepoTarget.repo}` : ""));
     if (!parsed) {
       if (typeof showError === "function") showError("Enter a valid GitHub PR URL (e.g. https://github.com/owner/repo/pull/123), owner/repo#123, or owner/repo.");
@@ -856,7 +863,7 @@
     const ownerEl = document.getElementById("ownerInput");
     if (ownerEl) ownerEl.value = parsed.owner;
     if (parsed.number != null) {
-      _updateStaticPrUrlQuery(`${parsed.owner}/${parsed.repo}#${parsed.number}`);
+      _updateStaticPrUrlQuery(`${parsed.owner}/${parsed.repo}#${parsed.number}`, preserveTargetParams);
       if (typeof openPr === "function") {
         await openPr(parsed.owner, parsed.repo, parsed.number, false);
       }
@@ -867,7 +874,7 @@
         if (typeof applyPrFilters === "function") applyPrFilters();
       }
     } else {
-      _updateStaticPrUrlQuery(`${parsed.owner}/${parsed.repo}`);
+      _updateStaticPrUrlQuery(`${parsed.owner}/${parsed.repo}`, preserveTargetParams);
       if (typeof loadPrList === "function") {
         await loadPrList(false, parsed.repo);
       }
@@ -978,7 +985,11 @@
     } catch (_) {}
 
     if (queryPr) {
-      await openStaticPrRef(queryPr);
+      if (queryPr.toLowerCase() === "sample") {
+        await loadStaticSamplePr();
+        return { handledInitialLoad: true };
+      }
+      await openStaticPrRef(queryPr, { preserveTargetParams: true });
       return { handledInitialLoad: true };
     }
     if (typeof allPrs !== "undefined") allPrs = staticRecentPrs.slice();

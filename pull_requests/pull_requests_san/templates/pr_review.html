@@ -177,8 +177,13 @@
     background: #fffcf5;
     border-bottom: 1px solid var(--border);
   }
-  .pr-item-browser-btn {
+  .pr-item-actions {
     margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .pr-item-icon-btn, .pr-item-browser-btn {
     padding: 2px 7px;
     font-size: 15px;
     line-height: 1.2;
@@ -263,12 +268,13 @@
     <button class="small" type="button" onclick="toggleStaticTokenRow()">Close</button>
   </div>
   <div class="row">
-    <label>Diff unit:
+    <label title="Toggle Word / Char (Grapheme \X) diff unit (Alt+W)">Diff unit:
       <select id="diffModeSelect" onchange="changeDiffMode()">
         <option value="word" selected>Word (space-separated)</option>
         <option value="grapheme">Char (Grapheme \X)</option>
         <option value="codepoint">Codepoint (Raw)</option>
       </select>
+      <span class="kbd-hint">Alt+W</span>
     </label>
     <label title="Apply Unicode normalization before diffing">Norm:
       <select id="normalizeSelect" onchange="changeDiffMode()">
@@ -331,7 +337,7 @@
     <div id="prContainer">
       <div class="card">Loading pull requests...</div>
     </div>
-    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • Right-click Copy diff • Ctrl+F Find (supports ँ) • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Shift+Enter Multiline reply • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • ←/→ Collapse/Expand • [/] Prev/Next PR • Esc Close bar/composer/settings</div>
+    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • Right-click Copy diff / PR line link • Ctrl+F Find (supports ँ) • Alt+W Word/Char diff • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Shift+Enter Multiline reply • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • ←/→ Collapse/Expand • [/] Prev/Next PR • Esc Close bar/composer/settings</div>
     <footer id="aboutFooter" class="about-footer">
       <div>
         <strong>diff_san — Pull Requests</strong> (<a href="https://github.com/sanskrit-coders/diff_san" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) —
@@ -377,6 +383,112 @@ let prPartialFullMode = {};
 let prExpandedHunkWindows = {};
 let renderedDiffRows = [];
 let selectedDiffRowKey = null;
+let pendingPrDeepLink = null;
+const DIFF_SAN_STATIC_PR_VIEWER_URL = "https://sanskrit-coders.github.io/diff_san/pull_requests/";
+
+function parsePrDeepLinkTargetFromLocation() {
+  try {
+    const search = (typeof window !== "undefined" && window.location && window.location.search) || "";
+    if (!search || typeof URLSearchParams === "undefined") return null;
+    const usp = new URLSearchParams(search);
+    const prParam = (usp.get("pr") || usp.get("url") || "").trim();
+    let owner = (usp.get("owner") || "").trim();
+    let repo = (usp.get("repo") || "").trim();
+    let numStr = (usp.get("number") || usp.get("num") || "").trim();
+    if (prParam) {
+      let m = prParam.match(/github\.com\/([^/\s#?]+)\/([^/\s#?]+)\/pull\/(\d+)/i);
+      if (m) {
+        owner = m[1];
+        repo = m[2].replace(/\.git$/i, "");
+        numStr = m[3];
+      } else {
+        m = prParam.match(/^([^/\s#]+)\/([^/\s#]+)(?:\/pull\/|#|\/)(\d+)$/i);
+        if (m) {
+          owner = m[1];
+          repo = m[2];
+          numStr = m[3];
+        }
+      }
+    }
+    const number = (numStr && !Number.isNaN(Number(numStr))) ? Number(numStr) : null;
+    const prRef = prParam || ((owner && repo && number != null) ? `${owner}/${repo}#${number}` : "");
+    const file = usp.get("file") || "";
+    const side = (usp.get("side") || "").toUpperCase();
+    const lineRaw = usp.get("line");
+    const line = (lineRaw != null && lineRaw !== "" && !Number.isNaN(Number(lineRaw))) ? Number(lineRaw) : null;
+    const commit = usp.get("commit") || "";
+    if (!prRef && !file && line == null && !commit) return null;
+    return { prRef, owner, repo, number, file, side, line, commit, triedFullFile: false };
+  } catch (_) {
+    return null;
+  }
+}
+
+function _getActivePrGithubBaseUrl() {
+  const s = activePrData?.summary;
+  if (s?.url && /\/pull\/\d+/i.test(s.url)) return s.url.replace(/\/+$/, "");
+  const owner = s?.owner || activePrKey?.owner;
+  const repo = s?.repo || activePrKey?.repo;
+  const num = s?.number || activePrKey?.number;
+  return (owner && repo && num) ? `https://github.com/${owner}/${repo}/pull/${num}` : "";
+}
+
+function buildGithubPrLineUrl(meta, targetEl = null) {
+  const basePrUrl = _getActivePrGithubBaseUrl();
+  if (!basePrUrl || !meta) return "";
+  const info = resolveDiffRowSideAndLine(meta, targetEl);
+  const hashHex = sha256Hex(meta.filename || "");
+  const suffix = info ? `${info.sideChar}${info.line}` : "";
+  const pagePath = selectedChangelistSha ? `/commits/${selectedChangelistSha}` : "/files";
+  return `${basePrUrl}${pagePath}#diff-${hashHex}${suffix}`;
+}
+
+function buildDiffSanPrLineUrl(meta, targetEl = null) {
+  if (!meta || !activePrKey) return "";
+  let baseUrl = DIFF_SAN_STATIC_PR_VIEWER_URL;
+  try {
+    if (typeof window !== "undefined" && window.location && window.location.href) {
+      const proto = window.location.protocol || "";
+      const host = window.location.hostname || "";
+      if (proto === "file:" || (IS_STATIC_HOST && host && host !== "127.0.0.1" && host !== "localhost")) {
+        baseUrl = window.location.href.split("#")[0].split("?")[0];
+      }
+    }
+  } catch (_) {}
+  try {
+    const u = new URL(baseUrl);
+    u.searchParams.set("pr", activePrData?.is_sample ? "sample" : `${activePrKey.owner}/${activePrKey.repo}#${activePrKey.number}`);
+    if (meta.filename) u.searchParams.set("file", meta.filename);
+    if (selectedChangelistSha) u.searchParams.set("commit", selectedChangelistSha);
+    const info = resolveDiffRowSideAndLine(meta, targetEl);
+    if (info) {
+      u.searchParams.set("side", info.sideChar);
+      u.searchParams.set("line", String(info.line));
+    }
+    return u.toString();
+  } catch (_) {
+    return baseUrl;
+  }
+}
+
+function _findMatchingDiffRowForTarget(target) {
+  if (!target || !renderedDiffRows.length) return null;
+  const tFile = target.file || "";
+  const tLine = target.line != null && !Number.isNaN(Number(target.line)) ? Number(target.line) : null;
+  const tSide = (target.side || "").toUpperCase();
+  const preferLeft = tSide === "L" || tSide === "LEFT";
+  const preferRight = tSide === "R" || tSide === "RIGHT";
+  const fileRows = tFile ? renderedDiffRows.filter(r => r.filename === tFile) : renderedDiffRows;
+  if (!fileRows.length) return null;
+  if (tLine == null) return fileRows[0];
+  if (preferLeft) {
+    return fileRows.find(r => r.leftNum === tLine) || fileRows.find(r => r.rightNum === tLine) || null;
+  }
+  if (preferRight) {
+    return fileRows.find(r => r.rightNum === tLine) || fileRows.find(r => r.leftNum === tLine) || null;
+  }
+  return fileRows.find(r => r.rightNum === tLine || r.leftNum === tLine) || null;
+}
 
 function onToggleSandhiHighlight() {
   setSandhiHighlightEnabled(!isSandhiHighlightEnabled(), true);
@@ -518,10 +630,35 @@ function toggleSinglePane(checked) {
 
 async function init() {
   initDiffSettingsPane();
+  pendingPrDeepLink = parsePrDeepLinkTargetFromLocation();
   bindDiffRowContextMenu(
     () => renderedDiffRows,
     rowKey => selectDiffRow(rowKey, { scroll: false, focusFile: true }),
-    () => "pull_requests_san"
+    () => "pull_requests_san",
+    [
+      {
+        id: "ctxCopyPrLineUrlBtn",
+        label: "🔗 Copy link to line in PR",
+        isVisible: (meta) => Boolean(meta && (activePrKey || activePrData?.summary)),
+        onClick: async (meta, tgt) => {
+          const url = buildGithubPrLineUrl(meta, tgt);
+          if (!url) return showError("No active PR line URL to copy.");
+          const ok = await copyTextToClipboard(url);
+          setStatus(ok ? "Copied link to line in PR" : "Copy failed — check clipboard permissions", 2500);
+        },
+      },
+      {
+        id: "ctxCopyViewerLineUrlBtn",
+        label: "🔗 Copy diff_san line link",
+        isVisible: (meta) => Boolean(meta && activePrKey),
+        onClick: async (meta, tgt) => {
+          const url = buildDiffSanPrLineUrl(meta, tgt);
+          if (!url) return showError("No diff_san line URL to copy.");
+          const ok = await copyTextToClipboard(url);
+          setStatus(ok ? "Copied diff_san link to line" : "Copy failed — check clipboard permissions", 2500);
+        },
+      },
+    ]
   );
   try {
     const savedPx = localStorage.getItem("github_pr_review_font_px") || localStorage.getItem("accent_review_font_px");
@@ -573,6 +710,15 @@ async function init() {
     showError(e.message);
   }
   await loadPrList(false, metaInfo.default_repo || "");
+  if (pendingPrDeepLink?.owner && pendingPrDeepLink?.repo && pendingPrDeepLink?.number) {
+    const alreadyOpen = activePrKey
+      && activePrKey.owner.toLowerCase() === pendingPrDeepLink.owner.toLowerCase()
+      && activePrKey.repo.toLowerCase() === pendingPrDeepLink.repo.toLowerCase()
+      && Number(activePrKey.number) === Number(pendingPrDeepLink.number);
+    if (!alreadyOpen) {
+      await openPr(pendingPrDeepLink.owner, pendingPrDeepLink.repo, pendingPrDeepLink.number, false);
+    }
+  }
 }
 
 async function loadPrList(forceRefresh = false, preferredRepo = null) {
@@ -767,7 +913,10 @@ function renderPrSidebar() {
         ${ms.badgeHtml}
         ${decPill}
         ${commentsTotal ? `<span class="pill" style="padding:0 5px;">💬 ${commentsTotal}</span>` : ""}
-        <button class="small pr-item-browser-btn" title="Open ${esc(p.repo)}#${p.number} in main browser" onclick="event.stopPropagation(); openPrInBrowserIdx(${idx})">🌐</button>
+        <span class="pr-item-actions">
+          <button class="small pr-item-icon-btn pr-item-copy-url-btn" title="Copy PR URL (${esc(p.url || '')})" onclick="event.stopPropagation(); copyPrUrlIdx(${idx})">🔗</button>
+          <button class="small pr-item-icon-btn pr-item-browser-btn" title="Open ${esc(p.repo)}#${p.number} in main browser" onclick="event.stopPropagation(); openPrInBrowserIdx(${idx})">🌐</button>
+        </span>
       </div>
       <div class="pr-item-title">${esc(p.title)}</div>
       <div class="pr-item-meta">
@@ -795,6 +944,13 @@ async function openPr(owner, repo, number, forceRefresh = false, { preserveUi = 
   showError("");
   const switchingPr = !activePrKey || activePrKey.owner !== owner || activePrKey.repo !== repo || activePrKey.number !== number;
   activePrKey = { owner, repo, number };
+  if (pendingPrDeepLink && pendingPrDeepLink.number && (
+    pendingPrDeepLink.owner?.toLowerCase() !== String(owner || "").toLowerCase()
+    || pendingPrDeepLink.repo?.toLowerCase() !== String(repo || "").toLowerCase()
+    || Number(pendingPrDeepLink.number) !== Number(number)
+  )) {
+    pendingPrDeepLink = null;
+  }
   if (switchingPr) {
     selectedFileFilter = "";
     openComposer = null;
@@ -802,7 +958,7 @@ async function openPr(owner, repo, number, forceRefresh = false, { preserveUi = 
     selectedReviewAction = "issue_comment";
     focusedFileIdx = 0;
     expandedResolvedThreads = {};
-    selectedChangelistSha = "";
+    selectedChangelistSha = (pendingPrDeepLink && pendingPrDeepLink.commit) ? pendingPrDeepLink.commit : "";
     activeChangelistData = null;
     prPartialFullMode = {};
     prExpandedHunkWindows = {};
@@ -1237,6 +1393,7 @@ function renderActivePr() {
         </div>
         <div class="row">
           <button id="openPrBrowserBtn" class="small" title="Open PR on GitHub in main browser (Alt+B)" onclick="openActivePrInBrowser()">🌐 Open in Browser <span class="kbd-hint">Alt+B</span></button>
+          <button id="copyPrUrlBtn" class="small" title="Copy PR URL to clipboard" onclick="copyActivePrUrl()">🔗 Copy PR URL</button>
           <button class="small" onclick="refreshActivePr()">↻ Refresh PR</button>
           ${mergeControlsHtml}
           ${stateBtnHtml}
@@ -1674,8 +1831,8 @@ function renderSinglePaneRowHtml(fi, f, r, pos, anchoredByPos, seenExtras) {
   const extraRows = collectRowExtrasHtml(f, r, pos, anchoredByPos, seenExtras, 3);
   const rowClick = `onclick="handleDiffRowCtrlClick(event, ${fi}, ${r.left_num ?? 'null'}, ${r.right_num ?? 'null'}, ${Boolean(r.in_diff_hunk)}, ${esc(JSON.stringify(rowKey))})"`;
   return `<tr id="${esc(domId)}" class="${rowCls}" ${rowClick}>
-    <td class="ln ${leftLnClick}>${lhsNum}</td>
-    <td class="ln ${rightLnClick}>${rhsNum}</td>
+    <td class="ln ln-left ${leftLnClick}>${lhsNum}</td>
+    <td class="ln ln-right ${rightLnClick}>${rhsNum}</td>
     <td class="code-cell single-code-cell">${contentHtml}</td>
   </tr>${extraRows}`;
 }
@@ -1691,9 +1848,9 @@ function renderDiffRowHtml(fi, f, r, pos, anchoredByPos, seenExtras) {
   const extraRows = collectRowExtrasHtml(f, r, pos, anchoredByPos, seenExtras, 4);
   const rowClick = `onclick="handleDiffRowCtrlClick(event, ${fi}, ${r.left_num ?? 'null'}, ${r.right_num ?? 'null'}, ${Boolean(r.in_diff_hunk)}, ${esc(JSON.stringify(rowKey))})"`;
   return `<tr id="${esc(domId)}" class="${rowCls}" ${rowClick}>
-    <td class="ln ${leftLnClick}>${lhsNum}</td>
+    <td class="ln ln-left ${leftLnClick}>${lhsNum}</td>
     <td class="${lhsCellCls}">${lhsHtml}</td>
-    <td class="ln ${rightLnClick}>${rhsNum}</td>
+    <td class="ln ln-right ${rightLnClick}>${rhsNum}</td>
     <td class="${rhsCellCls}">${rhsHtml}</td>
   </tr>${extraRows}`;
 }
@@ -1792,6 +1949,15 @@ function renderActivePrFiles() {
   const container = document.getElementById("filesDiffContainer");
   if (!container || !activePrData) return;
   threadRegistry = [];
+  if (pendingPrDeepLink) {
+    if (pendingPrDeepLink.file && collapsedFiles[pendingPrDeepLink.file]) {
+      delete collapsedFiles[pendingPrDeepLink.file];
+    }
+    if (pendingPrDeepLink.file && selectedFileFilter && selectedFileFilter !== pendingPrDeepLink.file) {
+      selectedFileFilter = "";
+      renderFileSidebar();
+    }
+  }
   const files = getDisplayedFiles();
   const allPrFiles = activePrData.files || [];
   const allThreads = activePrData.review_threads || [];
@@ -1939,6 +2105,26 @@ function renderActivePrFiles() {
   if (openComposer) {
     const cb = document.getElementById("compBody");
     if (cb) cb.focus();
+  }
+  if (pendingPrDeepLink) {
+    const tgt = pendingPrDeepLink;
+    const match = _findMatchingDiffRowForTarget(tgt);
+    if (match) {
+      pendingPrDeepLink = null;
+      selectDiffRow(match.rowKey, { scroll: false, focusFile: true });
+      const rowEl = document.getElementById(match.domId);
+      if (rowEl && typeof rowEl.scrollIntoView === "function") rowEl.scrollIntoView({ block: "center" });
+    } else if (!tgt.triedFullFile && tgt.file && tgt.line != null) {
+      const fi = files.findIndex(f => f.filename === tgt.file);
+      if (fi >= 0 && !files[fi].is_full_file && !files[fi].is_binary) {
+        tgt.triedFullFile = true;
+        Promise.resolve().then(() => loadFullFile(fi));
+      } else {
+        pendingPrDeepLink = null;
+      }
+    } else {
+      pendingPrDeepLink = null;
+    }
   }
   if (typeof refreshDiffFindIfOpen === "function") refreshDiffFindIfOpen();
 }
@@ -2219,6 +2405,23 @@ async function openPrInBrowserIdx(idx) {
   return openUrlInMainBrowser(p.url, `${p.repo}#${p.number}`);
 }
 
+async function copyActivePrUrl() {
+  const s = activePrData?.summary;
+  const url = s?.url || _getActivePrGithubBaseUrl();
+  if (!url) return showError("No active PR URL to copy.");
+  const ok = await copyTextToClipboard(url);
+  const numLabel = s?.number ?? activePrKey?.number;
+  setStatus(ok ? `Copied ${numLabel ? `#${numLabel} ` : ""}URL` : "Copy failed — check clipboard permissions", 2500);
+}
+
+async function copyPrUrlIdx(idx) {
+  const p = filteredPrs[idx];
+  const url = p?.url || (p?.owner && p?.repo && p?.number ? `https://github.com/${p.owner}/${p.repo}/pull/${p.number}` : "");
+  if (!url) return showError("No PR URL to copy.");
+  const ok = await copyTextToClipboard(url);
+  setStatus(ok ? `Copied ${p.repo}#${p.number} URL` : "Copy failed — check clipboard permissions", 2500);
+}
+
 function syncPrSummaryListAfterUpdate(detail) {
   const s = detail?.summary;
   if (!s) return;
@@ -2323,7 +2526,7 @@ document.addEventListener("keydown", (ev) => {
     return;
   }
 
-  // Alt+Shift+M Merge PR, Alt+Shift+C Close/Reopen PR, Alt+Shift+Up/Down Sandhi jump; Alt+O/C/M/L/0 filters; Alt+B Open in Browser; Alt+1/2/3 review actions
+  // Alt+Shift+M Merge PR, Alt+Shift+C Close/Reopen PR, Alt+Shift+Up/Down Sandhi jump; Alt+W Word/Char diff; Alt+O/C/M/L/0 filters; Alt+B Browser; Alt+1/2/3 review actions
   if (ev.altKey && !ev.ctrlKey && !ev.metaKey) {
     const ak = (ev.key || "").toLowerCase();
     const ac = ev.code || "";
@@ -2343,6 +2546,11 @@ document.addEventListener("keydown", (ev) => {
         toggleActivePrState();
         return;
       }
+      return;
+    }
+    if (ak === "w" || ac === "KeyW") {
+      ev.preventDefault();
+      toggleWordGraphemeDiffMode(() => changeDiffMode());
       return;
     }
     if (ak === "b" || ac === "KeyB") {
