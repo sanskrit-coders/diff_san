@@ -1552,7 +1552,7 @@ def test_static_pr_export_and_github_rest_adapter(tmp_path: Path):
     "global.location = { protocol: 'https:', search: '', href: 'https://sanskrit-coders.github.io/diff_san/pull_requests/' };\n"
     "global.history = { replaceState(){} };\n"
     "global.getSelection = () => ({ toString(){ return ''; } });\n"
-    "global.navigator = { clipboard: { writeText: async (txt) => { clipboardWrites.push(String(txt)); } } };\n"
+    "Object.defineProperty(global, 'navigator', { value: { clipboard: { writeText: async (txt) => { clipboardWrites.push(String(txt)); } } }, configurable: true });\n"
     "const ghCalls = [];\n"
     "global.fetch = async (url) => {\n"
     "  ghCalls.push(url);\n"
