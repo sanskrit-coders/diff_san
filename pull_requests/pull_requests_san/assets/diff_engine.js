@@ -311,6 +311,8 @@
         const [tag, lp, rp] = chunks[idx];
         if (
           tag === "equal" &&
+          !lp.includes("\n") &&
+          !rp.includes("\n") &&
           !lp.trim() &&
           !rp.trim() &&
           cleaned.length &&
@@ -927,6 +929,525 @@
     };
   }
 
+  const _DEV_ACCENT_STRIP_RE = /[\u0951-\u0954\u1CD0-\u1CFF\uA8E0-\uA8FF\u200B-\u200D\uFEFF]/g;
+  const _DEV_WORD_RE = /^[\u0900-\u094F\u0958-\u0963\u0971-\u097F]+$/;
+  const _DEV_INDEP_VOWELS = new Set(["अ", "आ", "इ", "ई", "उ", "ऊ", "ऋ", "ॠ", "ए", "ऐ", "ओ", "औ"]);
+  const _DEV_VOICED_CONS = new Set([
+    "ग", "घ", "ङ", "ज", "झ", "ञ", "ड", "ढ", "ण", "द", "ध", "न", "ब", "भ", "म", "य", "र", "ल", "व", "ह",
+  ]);
+  const _DEV_VOWEL_TO_MATRA = {
+    "आ": "ा", "इ": "ि", "ई": "ी", "उ": "ु", "ऊ": "ू",
+    "ऋ": "ृ", "ॠ": "ॄ", "ए": "े", "ऐ": "ै", "ओ": "ो", "औ": "ौ",
+  };
+  const _DEV_VOWEL_MERGER = {
+    "|अ": "ा", "|आ": "ा", "ा|अ": "ा", "ा|आ": "ा",
+    "|इ": "े", "|ई": "े", "ा|इ": "े", "ा|ई": "े",
+    "|उ": "ो", "|ऊ": "ो", "ा|उ": "ो", "ा|ऊ": "ो",
+    "|ऋ": "र्", "ा|ऋ": "र्",
+    "|ए": "ै", "|ऐ": "ै", "ा|ए": "ै", "ा|ऐ": "ै",
+    "|ओ": "ौ", "|औ": "ौ", "ा|ओ": "ौ", "ा|औ": "ौ",
+    "ि|इ": "ी", "ि|ई": "ी", "ी|इ": "ी", "ी|ई": "ी",
+    "ु|उ": "ू", "ु|ऊ": "ू", "ू|उ": "ू", "ू|ऊ": "ू",
+    "ृ|ऋ": "ॄ", "ृ|ॠ": "ॄ",
+  };
+  const _DEV_YAN = { "ि": "्य्", "ी": "्य्", "ु": "्व्", "ू": "्व्", "ृ": "्र्" };
+  const _DEV_LONG_MATRA = { "ि": "ी", "ु": "ू" };
+  const _DEV_R_FINAL_WORDS = new Set(["पुनः", "अन्तः", "प्रातः", "स्वः", "बहिः", "अहः"]);
+  const _DEV_PRONOUN_SU_LOPA = new Set(["सः", "एषः", "स्यः"]);
+
+  function _cleanDevaForSandhi(text) {
+    return String(text || "").replace(_DEV_ACCENT_STRIP_RE, "");
+  }
+
+  function _canonDevaNasal(word) {
+    return String(word || "")
+      .replace(/([ङञणनम])\u094d(?=[कखगघङचछजझञटठडढणतथदधनपफबभमयरलवशषसह])/g, "ं")
+      .replace(/ँ/g, "ं");
+  }
+
+  function _stripCommonNonDevaEdges(a, b) {
+    let s1 = String(a || "");
+    let s2 = String(b || "");
+    const isDevaChar = ch => ch >= "\u0900" && ch <= "\u0963" || (ch >= "\u0971" && ch <= "\u097F");
+    while (s1.length && s2.length && s1[0] === s2[0] && !isDevaChar(s1[0])) {
+      s1 = s1.slice(1);
+      s2 = s2.slice(1);
+    }
+    while (s1.length && s2.length && s1[s1.length - 1] === s2[s2.length - 1] && !isDevaChar(s1[s1.length - 1])) {
+      s1 = s1.slice(0, -1);
+      s2 = s2.slice(0, -1);
+    }
+    return [s1, s2];
+  }
+
+  function _parseDevaWordList(text) {
+    const cleaned = _cleanDevaForSandhi(text).trim();
+    if (!cleaned) return [];
+    const parts = cleaned.split(/\s+/).filter(Boolean);
+    if (!parts.length) return [];
+    for (const w of parts) {
+      if (!_DEV_WORD_RE.test(w)) return [];
+    }
+    return parts;
+  }
+
+  function _joinConsHalantWithVowel(leftHalant, rightWord) {
+    if (!leftHalant.endsWith("\u094d") || !rightWord) return null;
+    const base = leftHalant.slice(0, -1);
+    const r0 = rightWord[0];
+    const rRest = rightWord.slice(1);
+    if (r0 === "अ") return base + rRest;
+    const m = _DEV_VOWEL_TO_MATRA[r0];
+    return m ? (base + m + rRest) : null;
+  }
+
+  function _fuseDevaPair(l, r) {
+    const outs = new Set();
+    if (!l || !r) return outs;
+    const r0 = r[0];
+    const rRest = r.slice(1);
+    const rIsVowel = _DEV_INDEP_VOWELS.has(r0);
+    const rIsVoiced = _DEV_VOICED_CONS.has(r0);
+    const lLast = l[l.length - 1];
+
+    // Direct fusion with avagraha or simple consonant-ending + consonant
+    if (r0 === "ऽ" && (lLast === "े" || lLast === "ो")) {
+      outs.add(l + r);
+      outs.add(l + " " + r);
+    }
+
+    // Independent vowel preverb "आ" + vowel
+    if (l === "आ" && rIsVowel) {
+      if (r0 === "अ" || r0 === "आ") outs.add("आ" + rRest);
+      else if (r0 === "इ" || r0 === "ई") outs.add("ए" + rRest);
+      else if (r0 === "उ" || r0 === "ऊ") outs.add("ओ" + rRest);
+      else if (r0 === "ए" || r0 === "ऐ") outs.add("ऐ" + rRest);
+      else if (r0 === "ओ" || r0 === "औ") outs.add("औ" + rRest);
+    }
+
+    // 1. Vowel endings (matra \u093e-\u094c or inherent अ) + independent vowel
+    if (!l.endsWith("\u094d") && !l.endsWith("ः") && !l.endsWith("ं") && rIsVowel) {
+      let stem = null;
+      let matra = null;
+      if (lLast >= "\u093e" && lLast <= "\u094c") {
+        stem = l.slice(0, -1);
+        matra = lLast;
+      } else if (lLast >= "\u0915" && lLast <= "\u0939") {
+        stem = l;
+        matra = "";
+      }
+      if (matra !== null) {
+        const merged = _DEV_VOWEL_MERGER[`${matra}|${r0}`];
+        if (merged) outs.add(stem + merged + rRest);
+        if (_DEV_YAN[matra]) {
+          const yJoined = _joinConsHalantWithVowel(stem + _DEV_YAN[matra], r);
+          if (yJoined) outs.add(yJoined);
+        }
+        if (matra === "े") {
+          const aj = _joinConsHalantWithVowel(stem + "य्", r);
+          if (aj) outs.add(aj);
+          outs.add(stem + " " + r);
+        } else if (matra === "ै") {
+          const aj = _joinConsHalantWithVowel(stem + "ाय्", r);
+          if (aj) outs.add(aj);
+          outs.add(stem + "ा " + r);
+        } else if (matra === "ो") {
+          const aj = _joinConsHalantWithVowel(stem + "व्", r);
+          if (aj) outs.add(aj);
+          outs.add(stem + " " + r);
+        } else if (matra === "औ".slice(0) || matra === "ौ") {
+          const aj = _joinConsHalantWithVowel(stem + "ाव्", r);
+          if (aj) outs.add(aj);
+          outs.add(stem + "ा " + r);
+        }
+        if ((matra === "े" || matra === "ो") && r0 === "अ") {
+          outs.add(l + "ऽ" + rRest);
+        }
+      }
+    }
+
+    // 2. Halant consonant + independent vowel
+    if (l.endsWith("\u094d") && l.length >= 2 && rIsVowel) {
+      const c = l[l.length - 2];
+      const stem2 = l.slice(0, -2);
+      const j0 = _joinConsHalantWithVowel(l, r);
+      if (j0) outs.add(j0);
+      const voicedStop = { "त": "द", "क": "ग", "ट": "ड", "प": "ब" }[c];
+      if (voicedStop) {
+        const jv = _joinConsHalantWithVowel(stem2 + voicedStop + "\u094d", r);
+        if (jv) {
+          outs.add(jv);
+          outs.add(stem2 + voicedStop + "\u094d " + r);
+        }
+      }
+      if (c === "न" || c === "ङ" || c === "ण") {
+        const jg = _joinConsHalantWithVowel(l + c + "\u094d", r);
+        if (jg) outs.add(jg);
+      }
+    }
+
+    // 3. Visarga (ः) sandhi
+    if (l.endsWith("ः") && l.length >= 2) {
+      const base = l.slice(0, -1);
+      const vp = base[base.length - 1];
+      if (_DEV_PRONOUN_SU_LOPA.has(l) && r0 !== "अ") {
+        outs.add(base + " " + r);
+        outs.add(base + r);
+      }
+      if (r0 === "च" || r0 === "छ") { outs.add(base + "श्" + r); outs.add(base + "श् " + r); }
+      else if (r0 === "ट" || r0 === "ठ") { outs.add(base + "ष्" + r); outs.add(base + "ष् " + r); }
+      else if (r0 === "त" || r0 === "थ") { outs.add(base + "स्" + r); outs.add(base + "स् " + r); }
+      else if (r0 === "श" || r0 === "ष" || r0 === "स") {
+        outs.add(base + r0 + "\u094d" + r);
+        outs.add(base + "स्" + r);
+      }
+      if (_DEV_R_FINAL_WORDS.has(l)) {
+        if (rIsVowel) {
+          const jr = _joinConsHalantWithVowel(base + "र्", r);
+          if (jr) outs.add(jr);
+        } else if (rIsVoiced && r0 !== "र") {
+          outs.add(base + "र्" + r);
+          outs.add(base + "र् " + r);
+        } else if (r0 === "र" && _DEV_LONG_MATRA[vp]) {
+          outs.add(base.slice(0, -1) + _DEV_LONG_MATRA[vp] + " " + r);
+        }
+      }
+      if (vp >= "\u0915" && vp <= "\u0939") {
+        if (r0 === "अ") {
+          outs.add(base + "ोऽ" + rRest);
+          outs.add(base + "ो " + r);
+          outs.add(base + " " + r);
+        } else if (rIsVowel) {
+          outs.add(base + " " + r);
+        } else if (rIsVoiced) {
+          outs.add(base + "ो " + r);
+          outs.add(base + "ो" + r);
+        }
+      } else if (vp === "ा") {
+        if (rIsVowel || rIsVoiced) {
+          outs.add(base + " " + r);
+          if (rIsVowel) {
+            const jvr = _joinConsHalantWithVowel(base + "र्", r);
+            if (jvr) outs.add(jvr);
+          }
+        }
+      } else {
+        if (rIsVowel) {
+          const jr = _joinConsHalantWithVowel(base + "र्", r);
+          if (jr) outs.add(jr);
+        } else if (r0 === "र" && _DEV_LONG_MATRA[vp]) {
+          outs.add(base.slice(0, -1) + _DEV_LONG_MATRA[vp] + " " + r);
+        } else if (rIsVoiced) {
+          outs.add(base + "र्" + r);
+          outs.add(base + "र् " + r);
+        }
+      }
+    }
+
+    // 4. Final त् / द् assimilation before consonants
+    if (l.endsWith("त्") || l.endsWith("द्")) {
+      const tStem = l.slice(0, -2);
+      if (r0 === "च" || r0 === "छ") outs.add(tStem + "च्" + r);
+      else if (r0 === "ज" || r0 === "झ") outs.add(tStem + "ज्" + r);
+      else if (r0 === "ट" || r0 === "ठ") outs.add(tStem + "ट्" + r);
+      else if (r0 === "ड" || r0 === "ढ") outs.add(tStem + "ड्" + r);
+      else if (r0 === "ल") outs.add(tStem + "ल्" + r);
+      else if (r0 === "न" || r0 === "म" || r0 === "ण" || r0 === "ङ" || r0 === "ञ") outs.add(tStem + "न्" + r);
+      else if (r0 === "ह") outs.add(tStem + "द्ध" + rRest);
+      else if (r0 === "श") outs.add(tStem + "च्छ" + rRest);
+      else if (rIsVoiced) { outs.add(tStem + "द्" + r); outs.add(tStem + "द् " + r); }
+    }
+
+    // 5. Final म् / ं sandhi
+    if (l.endsWith("म्") || l.endsWith("ं")) {
+      const mStem = l.endsWith("म्") ? l.slice(0, -2) : l.slice(0, -1);
+      if (!rIsVowel) {
+        outs.add(mStem + "ं " + r);
+        outs.add(mStem + "ं" + r);
+        outs.add(mStem + "म् " + r);
+        outs.add(mStem + "म्" + r);
+      } else if (l.endsWith("म्")) {
+        const jm = _joinConsHalantWithVowel(l, r);
+        if (jm) outs.add(jm);
+      }
+    }
+
+    // 6. Final न् before voiceless / palatal / lateral
+    if (l.endsWith("न्")) {
+      const nStem = l.slice(0, -2);
+      if (r0 === "च" || r0 === "छ") outs.add(nStem + "ंश्" + r);
+      else if (r0 === "ट" || r0 === "ठ") outs.add(nStem + "ंष्" + r);
+      else if (r0 === "त" || r0 === "थ") outs.add(nStem + "ंस्" + r);
+      else if (r0 === "ल") outs.add(nStem + "ंल्" + r);
+      else if (r0 === "ज" || r0 === "झ") outs.add(nStem + "ञ्" + r);
+      else if (r0 === "श") { outs.add(nStem + "ञ्छ" + rRest); outs.add(nStem + "ञ्" + r); }
+    }
+
+    // 7. Final क्/ग् or प्/ब् before voiced/nasal
+    if (l.endsWith("क्") || l.endsWith("ग्")) {
+      const kStem = l.slice(0, -2);
+      if (rIsVoiced) { outs.add(kStem + "ग्" + r); outs.add(kStem + "ग् " + r); }
+      if (r0 === "न" || r0 === "म") outs.add(kStem + "ङ्" + r);
+      if (r0 === "ह") outs.add(kStem + "ग्घ" + rRest);
+    }
+    if (l.endsWith("प्") || l.endsWith("ब्")) {
+      const pStem = l.slice(0, -2);
+      if (rIsVoiced) { outs.add(pStem + "ब्" + r); outs.add(pStem + "ब् " + r); }
+      if (r0 === "न" || r0 === "म") outs.add(pStem + "म्" + r);
+    }
+
+    return outs;
+  }
+
+  function _expandSandhiSequence(words) {
+    if (!words.length || words.length > 6) return new Set();
+    let states = [[]];
+    for (const w of words) {
+      const nextStates = [];
+      const seen = new Set();
+      const addState = arr => {
+        if (nextStates.length >= 64) return;
+        const key = arr.join(" ");
+        if (!seen.has(key)) {
+          seen.add(key);
+          nextStates.push(arr);
+        }
+      };
+      for (const st of states) {
+        addState([...st, w]);
+        if (st.length) {
+          const prev = st[st.length - 1];
+          const fusedSet = _fuseDevaPair(prev, w);
+          for (const fused of fusedSet) {
+            const fWords = fused.split(/\s+/).filter(Boolean);
+            addState([...st.slice(0, -1), ...fWords]);
+          }
+        }
+      }
+      states = nextStates;
+    }
+    return new Set(states.map(st => _canonDevaNasal(st.join(" "))));
+  }
+
+  function isInterwordSandhiPair(lhsText, rhsText, prevEqWord = "", nextEqWord = "") {
+    const [rawL, rawR] = _stripCommonNonDevaEdges(_cleanDevaForSandhi(lhsText).trim(), _cleanDevaForSandhi(rhsText).trim());
+    const cleanL = rawL.trim();
+    const cleanR = rawR.trim();
+    if (!cleanL || !cleanR || _canonDevaNasal(cleanL) === _canonDevaNasal(cleanR)) return false;
+    const wA = _parseDevaWordList(cleanL);
+    const wB = _parseDevaWordList(cleanR);
+    if (!wA.length || !wB.length) return false;
+    if (wA.length === 1 && wB.length === 1 && _canonDevaNasal(wA[0]) === _canonDevaNasal(wB[0])) return false;
+
+    const tryWindow = (aList, bList) => {
+      if (!aList.length || !bList.length) return false;
+      if (aList.length === 1 && bList.length === 1) {
+        return _canonDevaNasal(aList[0]) === _canonDevaNasal(bList[0]);
+      }
+      const fA = _expandSandhiSequence(aList);
+      const fB = _expandSandhiSequence(bList);
+      for (const s of fA) {
+        if (fB.has(s)) return true;
+      }
+      return false;
+    };
+
+    if ((wA.length > 1 || wB.length > 1 || _canonDevaNasal(wA[0]).includes(" ") !== _canonDevaNasal(wB[0]).includes(" ")) && tryWindow(wA, wB)) {
+      return true;
+    }
+    if (wA.length >= 2 || wB.length >= 2) {
+      if (tryWindow(wA, wB)) return true;
+    }
+    const prevClean = prevEqWord ? _parseDevaWordList(prevEqWord) : [];
+    const nextClean = nextEqWord ? _parseDevaWordList(nextEqWord) : [];
+    const pW = prevClean.length ? prevClean[prevClean.length - 1] : "";
+    const nW = nextClean.length ? nextClean[0] : "";
+    if (nW && tryWindow([...wA, nW], [...wB, nW])) return true;
+    if (pW && tryWindow([pW, ...wA], [pW, ...wB])) return true;
+    if (pW && nW && tryWindow([pW, ...wA, nW], [pW, ...wB, nW])) return true;
+    return false;
+  }
+
+  function _trailingWordFromEq(text) {
+    const s = _cleanDevaForSandhi(text);
+    const m = s.match(/([\u0900-\u094F\u0958-\u0963\u0971-\u097F]+)\s*$/);
+    if (!m) return { prefixWord: "", touched: false };
+    return { prefixWord: m[1], touched: !/\s$/.test(s) };
+  }
+
+  function _leadingWordFromEq(text) {
+    const s = _cleanDevaForSandhi(text);
+    const m = s.match(/^\s*([\u0900-\u094F\u0958-\u0963\u0971-\u097F]+)/);
+    if (!m) return { suffixWord: "", touched: false };
+    return { suffixWord: m[1], touched: !/^\s/.test(s) };
+  }
+
+  function findSandhiMarkedIndices(segments, sandhiContext = null) {
+    const marked = new Set();
+    if (!Array.isArray(segments) || !segments.length) return marked;
+
+    if (sandhiContext && sandhiContext.otherSegments && sandhiContext.leftText != null && sandhiContext.rightText != null) {
+      if (isInterwordSandhiPair(sandhiContext.leftText, sandhiContext.rightText)) {
+        for (let i = 0; i < segments.length; i++) {
+          if (segments[i].op === "del" || segments[i].op === "ins") marked.add(i);
+        }
+        return marked;
+      }
+      const streamSegs = computeStreamDiff(sandhiContext.leftText, sandhiContext.rightText, { mode: "word" });
+      const streamMarks = findSandhiMarkedIndices(streamSegs, null);
+      if (streamMarks.size) {
+        const wantOp = segments.some(s => s.op === "del") ? "del" : "ins";
+        const sandhiPieces = [];
+        for (const idx of streamMarks) {
+          if (streamSegs[idx] && streamSegs[idx].op === wantOp) {
+            const t = (streamSegs[idx].text || "").trim();
+            if (t) sandhiPieces.push(t);
+          }
+        }
+        for (let i = 0; i < segments.length; i++) {
+          if (segments[i].op !== wantOp) continue;
+          const t = (segments[i].text || "").trim();
+          if (t && sandhiPieces.some(p => p === t || p.includes(t) || t.includes(p))) marked.add(i);
+        }
+      }
+      return marked;
+    }
+
+    let i = 0;
+    const n = segments.length;
+    while (i < n) {
+      const seg = segments[i];
+      if (seg.op !== "del" && seg.op !== "ins") {
+        i += 1;
+        continue;
+      }
+      const runStart = i;
+      let lhsMid = "";
+      let rhsMid = "";
+      while (i < n && (segments[i].op === "del" || segments[i].op === "ins")) {
+        if (segments[i].op === "del") lhsMid += segments[i].text || "";
+        else rhsMid += segments[i].text || "";
+        i += 1;
+      }
+      const runEnd = i;
+      const prevSeg = runStart > 0 && segments[runStart - 1].op === "eq" ? segments[runStart - 1] : null;
+      const nextSeg = runEnd < n && segments[runEnd].op === "eq" ? segments[runEnd] : null;
+      const prevInfo = prevSeg ? _trailingWordFromEq(prevSeg.text) : { prefixWord: "", touched: false };
+      const nextInfo = nextSeg ? _leadingWordFromEq(nextSeg.text) : { suffixWord: "", touched: false };
+
+      let testL = lhsMid;
+      let testR = rhsMid;
+      let pCtx = "";
+      let nCtx = "";
+      if (prevInfo.touched && prevInfo.prefixWord) {
+        testL = prevInfo.prefixWord + testL;
+        testR = prevInfo.prefixWord + testR;
+      } else if (prevInfo.prefixWord) {
+        pCtx = prevInfo.prefixWord;
+      }
+      if (nextInfo.touched && nextInfo.suffixWord) {
+        testL = testL + nextInfo.suffixWord;
+        testR = testR + nextInfo.suffixWord;
+      } else if (nextInfo.suffixWord) {
+        nCtx = nextInfo.suffixWord;
+      }
+
+      if (isInterwordSandhiPair(testL, testR, pCtx, nCtx)) {
+        for (let k = runStart; k < runEnd; k++) marked.add(k);
+      }
+    }
+    return marked;
+  }
+
+  function splitMixedSandhiPair(delText, insText) {
+    const lWords = tokenizeForDiff(delText, "word").filter(t => t.trim());
+    const rWords = tokenizeForDiff(insText, "word").filter(t => t.trim());
+    const m = lWords.length;
+    const n = rWords.length;
+    if ((m <= 1 && n <= 1) || m > 16 || n > 16) return null;
+
+    // Find a sandhi-equivalent sub-alignment separating sandhi groups from non-sandhi edits.
+    const hits = [];
+    for (let li = 0; li < m; li++) {
+      for (let lj = li + 1; lj <= Math.min(m, li + 5); lj++) {
+        const lStr = lWords.slice(li, lj).join(" ");
+        for (let ri = 0; ri < n; ri++) {
+          for (let rj = ri + 1; rj <= Math.min(n, ri + 5); rj++) {
+            if (lj - li === m && rj - ri === n) continue;
+            if (lj - li === 1 && rj - ri === 1 && lWords[li] === rWords[ri]) {
+              hits.push({ li, lj, ri, rj, kind: "eq", score: 1 });
+              continue;
+            }
+            const rStr = rWords.slice(ri, rj).join(" ");
+            if (isInterwordSandhiPair(lStr, rStr)) {
+              hits.push({ li, lj, ri, rj, kind: "sandhi", score: (lj - li) + (rj - ri) });
+            }
+          }
+        }
+      }
+    }
+    if (!hits.some(h => h.kind === "sandhi")) return null;
+    hits.sort((a, b) => (a.li - b.li) || (a.ri - b.ri) || (b.score - a.score));
+
+    // Simple highest-scoring non-overlapping monotonic subset over small m,n <= 16
+    const bestFrom = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(null));
+    function solve(i, j) {
+      if (i >= m && j >= n) return { score: 0, chosen: [] };
+      if (bestFrom[i][j]) return bestFrom[i][j];
+      let best = { score: 0, chosen: [] };
+      if (i < m) {
+        const sub = solve(i + 1, j);
+        if (sub.score > best.score) best = sub;
+      }
+      if (j < n) {
+        const sub = solve(i, j + 1);
+        if (sub.score > best.score) best = sub;
+      }
+      for (const h of hits) {
+        if (h.li === i && h.ri === j) {
+          const sub = solve(h.lj, h.rj);
+          const sc = h.score + sub.score;
+          if (sc > best.score) best = { score: sc, chosen: [h, ...sub.chosen] };
+        }
+      }
+      bestFrom[i][j] = best;
+      return best;
+    }
+    const sol = solve(0, 0);
+    if (!sol.chosen.some(c => c.kind === "sandhi")) return null;
+
+    const out = [];
+    let ci = 0;
+    let cj = 0;
+    const emitGap = (li1, li2, ri1, ri2) => {
+      if (li1 > 0 || ri1 > 0) out.push({ op: "eq", text: " " });
+      if (li1 < li2) out.push({ op: "del", text: lWords.slice(li1, li2).join(" ") });
+      if (ri1 < ri2) out.push({ op: "ins", text: rWords.slice(ri1, ri2).join(" ") });
+    };
+    for (const c of sol.chosen) {
+      if (ci < c.li || cj < c.ri) emitGap(ci, c.li, cj, c.ri);
+      if (out.length) out.push({ op: "eq", text: " " });
+      if (c.kind === "eq") {
+        out.push({ op: "eq", text: rWords.slice(c.ri, c.rj).join(" ") });
+      } else {
+        out.push({ op: "del", text: lWords.slice(c.li, c.lj).join(" ") });
+        out.push({ op: "ins", text: rWords.slice(c.ri, c.rj).join(" ") });
+      }
+      ci = c.lj;
+      cj = c.rj;
+    }
+    if (ci < m || cj < n) {
+      if (out.length) out.push({ op: "eq", text: " " });
+      if (ci < m) out.push({ op: "del", text: lWords.slice(ci, m).join(" ") });
+      if (cj < n) out.push({ op: "ins", text: rWords.slice(cj, n).join(" ") });
+    }
+    const merged = _mergeSegments(out);
+    if (merged.length <= 2) return null;
+    const marks = findSandhiMarkedIndices(merged, null);
+    if (!marks.size) return null;
+    return merged;
+  }
+
   const api = {
     VALID_DIFF_MODES,
     VALID_NORMALIZATIONS,
@@ -938,6 +1459,9 @@
     computeStreamDiff,
     buildInlineFlowRows,
     buildFullFileHunk,
+    isInterwordSandhiPair,
+    findSandhiMarkedIndices,
+    splitMixedSandhiPair,
   };
 
   if (typeof module !== "undefined" && module.exports) {

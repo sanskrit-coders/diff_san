@@ -976,7 +976,9 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
   assert 'id="singlePaneChk" type="checkbox" checked' in html_src
   assert '<option value="word" selected>Word (space-separated)</option>' in html_src
   assert 'id="normalizeSelect"' in html_src and 'id="ignorePunctChk"' in html_src
+  assert 'id="sandhiHighlightBtn"' in html_src and 'onToggleSandhiHighlight()' in html_src
   assert ".ch-ws" not in html_src
+  assert "add-comment-btn" not in html_src and 'col class="col-act"' not in html_src and 'class="diff-gap-btn"' not in html_src
 
   m = re.search(r"<script>\n(.*?)\n</script>", html_src, re.S)
   assert m is not None
@@ -1408,15 +1410,47 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
     "  handleDiffRowCtrlClick({ ctrlKey: true, altKey: false, metaKey: false, shiftKey: false, target: { closest(){ return null; } }, preventDefault(){}, stopPropagation(){} }, 0, 1, 2, true);\n"
     "  if (!openComposer || openComposer.side !== 'RIGHT' || openComposer.line !== 2) throw new Error('Ctrl+Click did not open RIGHT composer');\n"
     "  openComposer = null;\n"
-    "  // Partial PR hunk renders gap bar above old_start>1 & expands 20 lines on click while keeping earlier lines collapsed\n"
+    "  // Partial PR hunk renders full-row clickable gap bar (no extra buttons) & expands cleanly\n"
     "  samplePr.files[0].hunks[0].old_start = 32; samplePr.files[0].hunks[0].new_start = 32; samplePr.files[0].hunks[0].old_count = 6; samplePr.files[0].hunks[0].new_count = 6;\n"
     "  renderActivePrFiles();\n"
-    "  if (!elems['filesDiffContainer'].innerHTML.includes('expandPrHunkGap(0, \\'above\\'')) throw new Error('Missing gap expander above partial PR hunk');\n"
-    "  await expandPrHunkGap(0, 'above', 0, 'bottom', 20);\n"
-    "  const expandedHtml = elems['filesDiffContainer'].innerHTML;\n"
-    "  if (!expandedHtml.includes('ctx line 12') || expandedHtml.includes('ctx line 1<') || !expandedHtml.includes('diff-gap-row')) {\n"
-    "    throw new Error('Expanding 20 lines above PR hunk did not reveal lines 12..31 cleanly while collapsing 1..11: ' + expandedHtml);\n"
+    "  const gapBarHtml = elems['filesDiffContainer'].innerHTML;\n"
+    "  if (!gapBarHtml.includes('diff-gap-row') || !gapBarHtml.includes('expandPrHunkGap(0, \\'above\\'') || gapBarHtml.includes('diff-gap-btn') || gapBarHtml.includes('act-cell')) {\n"
+    "    throw new Error('Gap bar extra buttons or act-cell present: ' + gapBarHtml);\n"
     "  }\n"
+    "  await expandPrHunkGap(0, 'above', 0, 'all', 0);\n"
+    "  const expandedHtml = elems['filesDiffContainer'].innerHTML;\n"
+    "  if (!expandedHtml.includes('ctx line 12') || !expandedHtml.includes('ctx line 1') || expandedHtml.includes('expandPrHunkGap(0, \\'above\\'')) {\n"
+    "    throw new Error('Expanding gap bar above PR hunk did not reveal lines cleanly: ' + expandedHtml);\n"
+    "  }\n"
+    "  // Line navigation (ArrowDown/ArrowUp select lines, Alt+ArrowDown/Alt+ArrowUp jump diff lines, Ctrl+Enter comments on selected line)\n"
+    "  selectedDiffRowKey = null; openComposer = null; prPartialFullMode = {}; prExpandedHunkWindows = {};\n"
+    "  const savedHunk0 = samplePr.files[0].hunks[0];\n"
+    "  samplePr.files[0].is_full_file = false;\n"
+    "  samplePr.files[0].hunks[0] = Object.assign({}, savedHunk0, { old_start: 1, new_start: 1, rows: savedHunk0.rows.filter(r => r.left_num <= 2 || r.kind !== 'context') });\n"
+    "  // Jump to modify row with Alt+ArrowDown, verify ArrowDown/ArrowUp & Alt+ArrowUp, then Ctrl+Enter on selected line\n"
+    "  renderActivePrFiles();\n"
+    "  listeners['keydown']({ key: 'ArrowDown', altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
+    "  if (!selectedDiffRowKey) throw new Error('ArrowDown did not select first line');\n"
+    "  listeners['keydown']({ key: 'ArrowDown', altKey: true, ctrlKey: false, metaKey: false, shiftKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
+    "  const modKey = selectedDiffRowKey;\n"
+    "  const modMeta = renderedDiffRows.find(r => r.rowKey === modKey);\n"
+    "  if (!modMeta || modMeta.kind === 'context') throw new Error('Alt+ArrowDown did not land on a diff line: ' + JSON.stringify(modMeta));\n"
+    "  listeners['keydown']({ key: 'ArrowDown', altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
+    "  if (selectedDiffRowKey === modKey) throw new Error('ArrowDown did not advance past diff line');\n"
+    "  listeners['keydown']({ key: 'ArrowUp', altKey: true, ctrlKey: false, metaKey: false, shiftKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
+    "  if (selectedDiffRowKey !== modKey) throw new Error('Alt+ArrowUp did not jump back to prev diff line');\n"
+    "  listeners['keydown']({ key: 'Enter', altKey: false, ctrlKey: true, metaKey: false, shiftKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
+    "  if (!openComposer || openComposer.line !== (modMeta.rightNum ?? modMeta.leftNum)) {\n"
+    "    throw new Error('Ctrl+Enter did not open inline comment composer on selected line: ' + JSON.stringify(openComposer));\n"
+    "  }\n"
+    "  openComposer = null;\n"
+    "  // Interword sandhi highlight toggle highlights sandhi edits with ch-sandhi without altering lexical edits\n"
+    "  setSandhiHighlightEnabled(true, false);\n"
+    "  const sandhiRendered = renderDiffSegments([{ op: 'del', text: 'अस्ति इति' }, { op: 'ins', text: 'अस्तीति' }, { op: 'eq', text: ' ' }, { op: 'del', text: 'पा०' }, { op: 'ins', text: 'पा॰' }], 'word');\n"
+    "  if (!sandhiRendered.includes('ch-sandhi') || !sandhiRendered.includes('पा<span class=\"ch-sub\">०</span>') || sandhiRendered.split('ch-sandhi').length !== 3) {\n"
+    "    throw new Error('Sandhi highlight check failed: ' + sandhiRendered);\n"
+    "  }\n"
+    "  setSandhiHighlightEnabled(false, false);\n"
     "})().catch(err => { console.error(err); process.exit(1); });\n"
   )
   js_file = tmp_path / "test_github_gui.js"

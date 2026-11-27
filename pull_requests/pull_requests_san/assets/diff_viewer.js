@@ -1,4 +1,6 @@
 const DIFF_COLOR_STORAGE_KEY = "diff_san_theme_colors_v1";
+const DIFF_SANDHI_STORAGE_KEY = "diff_san_highlight_sandhi_v1";
+let sandhiHighlightEnabled = false;
 
 const DIFF_COLOR_FIELDS = [
   { id: "colorRedChar", cssVar: "--red-char", label: "Deleted word / token", group: "Deleted (Old)", defaultVal: "#ffeded" },
@@ -13,6 +15,10 @@ const DIFF_COLOR_FIELDS = [
   { id: "colorInsRow", cssVar: "--ins-row", label: "Added row tint", group: "Added (New)", defaultVal: "#fefce8" },
   { id: "colorInsBorder", cssVar: "--ins-border", label: "Added underline", group: "Added (New)", defaultVal: "#ca8a04" },
   { id: "colorInsText", cssVar: "--ins-text", label: "Added text", group: "Added (New)", defaultVal: "#713f12" },
+  { id: "colorSandhiChar", cssVar: "--sandhi-char", label: "Sandhi span highlight", group: "Interword Sandhi", defaultVal: "#ede9fe" },
+  { id: "colorSandhiCharSub", cssVar: "--sandhi-char-sub", label: "Sandhi intra-word char", group: "Interword Sandhi", defaultVal: "#ddd6fe" },
+  { id: "colorSandhiBorder", cssVar: "--sandhi-border", label: "Sandhi underline", group: "Interword Sandhi", defaultVal: "#7c3aed" },
+  { id: "colorSandhiText", cssVar: "--sandhi-text", label: "Sandhi text", group: "Interword Sandhi", defaultVal: "#4c1d95" },
 ];
 
 function esc(s) {
@@ -129,9 +135,26 @@ function resetDiffColors() {
   setStatus("Diff colors reset to defaults", 2000);
 }
 
+function isSandhiHighlightEnabled() {
+  return !!sandhiHighlightEnabled;
+}
+
+function syncSandhiButtonUi() {
+  const btn = document.getElementById("sandhiHighlightBtn");
+  if (btn && btn.classList) btn.classList.toggle("active", !!sandhiHighlightEnabled);
+}
+
+function setSandhiHighlightEnabled(nextVal, persist = true) {
+  sandhiHighlightEnabled = !!nextVal;
+  syncSandhiButtonUi();
+  if (persist) {
+    try { localStorage.setItem(DIFF_SANDHI_STORAGE_KEY, sandhiHighlightEnabled ? "true" : "false"); } catch (_) {}
+  }
+}
+
 function renderSettingsPaneHtml() {
   const cur = getCurrentDiffColorMap();
-  const groups = ["Deleted (Old)", "Added (New)"];
+  const groups = ["Deleted (Old)", "Added (New)", "Interword Sandhi"];
   const groupsHtml = groups.map(grp => {
     const rows = DIFF_COLOR_FIELDS.filter(f => f.group === grp).map(f => {
       const val = (cur[f.cssVar] || f.defaultVal).toLowerCase();
@@ -167,6 +190,10 @@ function renderSettingsPaneHtml() {
       <div class="settings-preview-line ins-sample">
         <span class="ch-ins ch-has-sub">पा<span class="ch-sub">॰</span></span>
         <span class="ch-ins">नवीनम्</span> (added line / token preview)
+      </div>
+      <div class="settings-preview-line sandhi-sample">
+        <span class="ch-del ch-has-sub ch-sandhi">अस्<span class="ch-sub">ति इ</span>ति</span>
+        <span class="ch-ins ch-has-sub ch-sandhi">अस्<span class="ch-sub">ती</span>ति</span> (interword sandhi preview)
       </div>
     </div>
     ${groupsHtml}
@@ -206,6 +233,13 @@ function initDiffSettingsPane() {
   const pane = document.getElementById("settingsPane");
   if (pane) pane.innerHTML = renderSettingsPaneHtml();
   applyAllDiffColors(saved, false);
+  try {
+    const savedSandhi = localStorage.getItem(DIFF_SANDHI_STORAGE_KEY);
+    if (savedSandhi === "true" || savedSandhi === "false") {
+      sandhiHighlightEnabled = savedSandhi === "true";
+    }
+  } catch (_) {}
+  syncSandhiButtonUi();
 }
 
 function codepointTitle(txt) {
@@ -239,8 +273,9 @@ function renderVisibleTextWithInvisibles(text, tip) {
   return inner;
 }
 
-function renderChangedText(txt, op, subSegments = null) {
-  const cls = op === "del" ? "ch-del" : "ch-ins";
+function renderChangedText(txt, op, subSegments = null, extraCls = "", customTitle = null) {
+  const baseCls = op === "del" ? "ch-del" : "ch-ins";
+  const cls = extraCls ? `${baseCls} ${extraCls}` : baseCls;
   const raw = String(txt || "");
   let lead = "";
   let core = raw;
@@ -251,7 +286,8 @@ function renderChangedText(txt, op, subSegments = null) {
     core = m[2];
     trail = m[3];
   }
-  const tip = esc(codepointTitle(core));
+  const tipRaw = customTitle ? `${customTitle} | ${codepointTitle(core)}` : codepointTitle(core);
+  const tip = esc(tipRaw);
   const fmtWs = s => esc(s.replace(/\t/g, "  "));
 
   if (Array.isArray(subSegments) && subSegments.length && core) {
@@ -336,7 +372,14 @@ function computeClientWordSubPair(delText, insText) {
   };
 }
 
-function renderDiffSegments(segments, diffMode = null) {
+function _getDiffSanEngine() {
+  if (typeof DiffSanEngine !== "undefined" && DiffSanEngine) return DiffSanEngine;
+  if (typeof window !== "undefined" && window.DiffSanEngine) return window.DiffSanEngine;
+  if (typeof globalThis !== "undefined" && globalThis.DiffSanEngine) return globalThis.DiffSanEngine;
+  return null;
+}
+
+function renderDiffSegments(segments, diffMode = null, sandhiContext = null) {
   if (!segments || !segments.length) return "";
   const activeMode = diffMode !== null ? diffMode : (typeof getDiffMode === "function" ? getDiffMode() : "word");
   const fallbackSubs = {};
@@ -356,12 +399,43 @@ function renderDiffSegments(segments, diffMode = null) {
       }
     }
   }
-  const renderSubParts = parts => parts.map(p => (
-    p.op === "eq" ? esc(p.text) : renderChangedText(p.text, p.op)
+  let sandhiMarks = null;
+  const eng = _getDiffSanEngine();
+  if (sandhiHighlightEnabled && eng && typeof eng.findSandhiMarkedIndices === "function") {
+    sandhiMarks = eng.findSandhiMarkedIndices(segments, sandhiContext);
+  }
+  const renderSubParts = (parts, isSandhi) => parts.map(p => (
+    p.op === "eq"
+      ? esc(p.text)
+      : renderChangedText(
+          p.text,
+          p.op,
+          null,
+          isSandhi ? "ch-sandhi" : "",
+          isSandhi ? "Interword sandhi change" : null
+        )
   )).join("");
   let out = "";
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
+    if (
+      sandhiHighlightEnabled &&
+      !sandhiContext &&
+      eng &&
+      typeof eng.splitMixedSandhiPair === "function" &&
+      seg.op === "del" &&
+      i + 1 < segments.length &&
+      segments[i + 1].op === "ins" &&
+      !(sandhiMarks && (sandhiMarks.has(i) || sandhiMarks.has(i + 1))) &&
+      (/\s/.test(seg.text || "") || /\s/.test(segments[i + 1].text || ""))
+    ) {
+      const splitSegs = eng.splitMixedSandhiPair(seg.text, segments[i + 1].text);
+      if (splitSegs) {
+        out += renderDiffSegments(splitSegs, activeMode, null);
+        i += 1;
+        continue;
+      }
+    }
     if (
       activeMode === "word" &&
       seg.op === "del" &&
@@ -379,12 +453,13 @@ function renderDiffSegments(segments, diffMode = null) {
         }
       }
       if (dSub && iSub) {
+        const pairIsSandhi = !!(sandhiMarks && (sandhiMarks.has(i) || sandhiMarks.has(i + 1)));
         const pureDel = iSub.every(p => p.op === "eq") &&
           dSub.some(p => p.op === "del") &&
           dSub.some(p => p.op === "eq" && String(p.text || "").trim()) &&
           dSub.filter(p => p.op === "eq").map(p => p.text).join("") === String(nxt.text || "");
         if (pureDel) {
-          out += renderSubParts(dSub);
+          out += renderSubParts(dSub, pairIsSandhi);
           i += 1;
           continue;
         }
@@ -393,7 +468,7 @@ function renderDiffSegments(segments, diffMode = null) {
           iSub.some(p => p.op === "eq" && String(p.text || "").trim()) &&
           iSub.filter(p => p.op === "eq").map(p => p.text).join("") === String(seg.text || "");
         if (pureIns) {
-          out += renderSubParts(iSub);
+          out += renderSubParts(iSub, pairIsSandhi);
           i += 1;
           continue;
         }
@@ -406,7 +481,14 @@ function renderDiffSegments(segments, diffMode = null) {
     } else if (seg.op === "ins_nl") {
       out += `<span class="nl-badge nl-ins" title="Inserted line break">↵</span>`;
     } else {
-      out += renderChangedText(seg.text, seg.op, seg.sub_segments || fallbackSubs[i]);
+      const isS = !!(sandhiMarks && sandhiMarks.has(i));
+      out += renderChangedText(
+        seg.text,
+        seg.op,
+        seg.sub_segments || fallbackSubs[i],
+        isS ? "ch-sandhi" : "",
+        isS ? "Interword sandhi change" : null
+      );
     }
   }
   return out;
@@ -536,23 +618,14 @@ function buildGapAwareRenderItems(rows, {
 }
 
 function renderGapRowHtml(gap, colspan, fnName = "expandGapRow") {
-  const btns = [];
   const encodedKey = esc(JSON.stringify(gap.gapKey));
-  if (gap.hiddenCount > 20 && gap.canTop) {
-    btns.push(`<button class="diff-gap-btn" type="button" onclick="event.stopPropagation(); ${fnName}(${encodedKey}, 'top', 20)">↓ Expand 20 below</button>`);
-  }
-  btns.push(`<button class="diff-gap-btn" type="button" onclick="event.stopPropagation(); ${fnName}(${encodedKey}, 'all', 0)">↕ Expand all ${gap.hiddenCount}</button>`);
-  if (gap.hiddenCount > 20 && gap.canBottom) {
-    btns.push(`<button class="diff-gap-btn" type="button" onclick="event.stopPropagation(); ${fnName}(${encodedKey}, 'bottom', 20)">↑ Expand 20 above</button>`);
-  }
   const rangeTxt = (gap.firstRight != null && gap.lastRight != null)
     ? ` (lines ${gap.firstRight}–${gap.lastRight})`
     : ((gap.firstLeft != null && gap.lastLeft != null) ? ` (LHS ${gap.firstLeft}–${gap.lastLeft})` : "");
-  return `<tr class="diff-gap-row">
+  return `<tr class="diff-gap-row" title="Click to expand collapsed lines" onclick="${fnName}(${encodedKey}, 'all', 0)">
     <td colspan="${colspan}">
       <div class="diff-gap-bar">
         <span>⋯ ${gap.hiddenCount} collapsed context line${gap.hiddenCount === 1 ? '' : 's'}${esc(rangeTxt)}</span>
-        <span class="diff-gap-actions">${btns.join("")}</span>
       </div>
     </td>
   </tr>`;

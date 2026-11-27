@@ -139,6 +139,7 @@
     <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;">
       <input id="ignorePunctChk" type="checkbox" onchange="changeDiffOptions()" /> Ignore punct
     </label>
+    <button id="sandhiHighlightBtn" class="small" type="button" title="Highlight interword sandhi changes (e.g. अस्ति इति ↔ अस्तीति) with a special color" onclick="onToggleSandhiHighlight()">Sandhi diff</button>
     <label title="Matches VS Code (25) / IntelliJ IDEA (28)">Editor font (px): <input id="fontPxInput" type="number" min="14" max="42" value="26" style="width:74px;" onchange="applyEditorFont(this.value, 'local_diff_san_font_px')" /></label>
     <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;" title="Single pane inline word flow (Alt+S)">
       <input id="singlePaneChk" type="checkbox" checked onchange="toggleSinglePane(this.checked)" /> Single pane <span class="kbd-hint">Alt+S</span>
@@ -194,7 +195,7 @@
     <div id="diffContainer">
       <div class="card">Loading diff...</div>
     </div>
-    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Alt+S Single/2-Pane • Ctrl+R Refresh • j/k/↑/↓ Navigate files • Esc Close Settings</div>
+    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: ↑/↓ Select line • Alt+↑/↓ Prev/Next diff line • Alt+S Single/2-Pane • Ctrl+R Refresh • j/k Navigate files • Esc Close Settings</div>
     <footer id="aboutFooter" class="about-footer">
       <div>
         <strong>diff_san</strong> (<a href="https://github.com/sanskrit-coders/diff_san" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) —
@@ -219,6 +220,67 @@ let staticLeftName = "left.md";
 let staticRightName = "right.md";
 let staticInputsCollapsed = false;
 let staticDiffTimer = null;
+let renderedLocalRows = [];
+let selectedLocalRowKey = null;
+
+function onToggleSandhiHighlight() {
+  setSandhiHighlightEnabled(!isSandhiHighlightEnabled(), true);
+  renderWorkspace();
+}
+
+function selectLocalRow(rowKey, { scroll = true } = {}) {
+  const prevKey = selectedLocalRowKey;
+  if (prevKey && prevKey !== rowKey) {
+    const prevMeta = renderedLocalRows.find(x => x.rowKey === prevKey);
+    if (prevMeta) {
+      const prevEl = document.getElementById(prevMeta.domId);
+      if (prevEl && prevEl.classList) prevEl.classList.remove("diff-row-selected");
+    }
+  }
+  selectedLocalRowKey = rowKey || null;
+  const meta = rowKey ? renderedLocalRows.find(x => x.rowKey === rowKey) : null;
+  if (meta) {
+    const el = document.getElementById(meta.domId);
+    if (el && el.classList) el.classList.add("diff-row-selected");
+    if (scroll && el && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ block: "nearest" });
+    }
+  }
+  return meta || null;
+}
+
+function moveLocalRowSelection(step, diffOnly = false) {
+  if (!renderedLocalRows.length) return null;
+  const curIdx = selectedLocalRowKey
+    ? renderedLocalRows.findIndex(r => r.rowKey === selectedLocalRowKey)
+    : -1;
+  const isMatch = r => !diffOnly || (r.kind && r.kind !== "context");
+  if (curIdx < 0) {
+    const startIdx = step >= 0
+      ? renderedLocalRows.findIndex(isMatch)
+      : (() => {
+          for (let k = renderedLocalRows.length - 1; k >= 0; k--) {
+            if (isMatch(renderedLocalRows[k])) return k;
+          }
+          return -1;
+        })();
+    return startIdx >= 0 ? selectLocalRow(renderedLocalRows[startIdx].rowKey) : null;
+  }
+  for (let i = curIdx + step; i >= 0 && i < renderedLocalRows.length; i += step) {
+    if (isMatch(renderedLocalRows[i])) {
+      return selectLocalRow(renderedLocalRows[i].rowKey);
+    }
+  }
+  return null;
+}
+
+function handleLocalRowClick(ev, rowKey) {
+  const tgt = ev?.target;
+  if (tgt && typeof tgt.closest === "function") {
+    if (tgt.closest("button, a, input, textarea, select")) return;
+  }
+  selectLocalRow(rowKey, { scroll: false });
+}
 
 function isClientTextMode() {
   if (IS_STATIC_HOST) return true;
@@ -474,7 +536,7 @@ function renderLocalLineCell(num, diskPath) {
   const numTxt = num != null ? num : "";
   if (num != null && diskPath && !IS_STATIC_HOST) {
     const jsPath = esc(JSON.stringify(diskPath));
-    return `<td class="ln clickable" title="Open in IntelliJ IDEA at line ${num}" onclick="openPathInIdea(${jsPath}, ${num})">${numTxt}</td>`;
+    return `<td class="ln clickable" title="Open in IntelliJ IDEA at line ${num}" onclick="event.stopPropagation(); openPathInIdea(${jsPath}, ${num})">${numTxt}</td>`;
   }
   return `<td class="ln">${numTxt}</td>`;
 }
@@ -484,7 +546,15 @@ function expandGapRow(gapKey, dir, count) {
   renderWorkspace();
 }
 
+function _registerLocalRowMeta(itemId, hi, ri, r) {
+  const rowKey = `${itemId}:${hi}:${ri}`;
+  const domId = `localRow_${hi}_${ri}`;
+  renderedLocalRows.push({ rowKey, domId, kind: r.kind || "modify" });
+  return { rowKey, domId, selCls: selectedLocalRowKey === rowKey ? " diff-row-selected" : "" };
+}
+
 function renderDiffItemHtml(item) {
+  renderedLocalRows = [];
   if (!item) {
     return `<div class="card">
       <div><strong>No changed files found</strong> against <span class="mono">${esc(workspaceData?.spec?.rev || 'HEAD')}</span>.</div>
@@ -519,8 +589,9 @@ function renderDiffItemHtml(item) {
         const rowsHtml = renderItems.map(it => {
           if (it.type === "gap") return renderGapRowHtml(it, colspan, "expandGapRow");
           const r = it.r;
-          const rowCls = `diff-row single-row-${esc(r.kind || 'modify')}`;
-          return `<tr class="${rowCls}">
+          const { rowKey, domId, selCls } = _registerLocalRowMeta(item.id, hi, it.ri, r);
+          const rowCls = `diff-row single-row-${esc(r.kind || 'modify')}${selCls}`;
+          return `<tr id="${esc(domId)}" class="${rowCls}" onclick="handleLocalRowClick(event, ${esc(JSON.stringify(rowKey))})">
             ${renderLocalLineCell(r.left_num, item.left_path)}
             ${renderLocalLineCell(r.right_num, item.right_path)}
             <td class="code-cell single-code-cell">${renderDiffSegments(r.segments)}</td>
@@ -535,12 +606,13 @@ function renderDiffItemHtml(item) {
       const rowsHtml = renderItems.map(it => {
         if (it.type === "gap") return renderGapRowHtml(it, colspan, "expandGapRow");
         const r = it.r;
-        const rowCls = `diff-row diff-row-${esc(r.kind || 'modify')}`;
-        const lhsHtml = r.left_text == null ? "" : renderDiffSegments(r.lhs_segments);
-        const rhsHtml = r.right_text == null ? "" : renderDiffSegments(r.rhs_segments);
+        const { rowKey, domId, selCls } = _registerLocalRowMeta(item.id, hi, it.ri, r);
+        const rowCls = `diff-row diff-row-${esc(r.kind || 'modify')}${selCls}`;
+        const lhsHtml = r.left_text == null ? "" : renderDiffSegments(r.lhs_segments, null, { leftText: r.left_text, rightText: r.right_text, otherSegments: r.rhs_segments });
+        const rhsHtml = r.right_text == null ? "" : renderDiffSegments(r.rhs_segments, null, { leftText: r.left_text, rightText: r.right_text, otherSegments: r.lhs_segments });
         const lhsCls = r.left_text == null ? "code-cell lhs-cell diff-empty" : "code-cell lhs-cell";
         const rhsCls = r.right_text == null ? "code-cell rhs-cell diff-empty" : "code-cell rhs-cell";
-        return `<tr class="${rowCls}">
+        return `<tr id="${esc(domId)}" class="${rowCls}" onclick="handleLocalRowClick(event, ${esc(JSON.stringify(rowKey))})">
           ${renderLocalLineCell(r.left_num, item.left_path)}
           <td class="${lhsCls}">${lhsHtml}</td>
           ${renderLocalLineCell(r.right_num, item.right_path)}
@@ -744,6 +816,11 @@ document.addEventListener("keydown", (ev) => {
       toggleSinglePane(!isSinglePaneMode());
       return;
     }
+    if ((ev.key === "ArrowDown" || ev.key === "ArrowUp") && tag !== "SELECT") {
+      ev.preventDefault();
+      moveLocalRowSelection(ev.key === "ArrowDown" ? 1 : -1, true);
+      return;
+    }
   }
   if (ev.key === "Escape" && isSettingsPaneOpen()) {
     ev.preventDefault();
@@ -751,14 +828,21 @@ document.addEventListener("keydown", (ev) => {
     return;
   }
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+  if ((ev.key === "ArrowDown" || ev.key === "ArrowUp") && !ev.altKey && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey) {
+    if (renderedLocalRows.length) {
+      ev.preventDefault();
+      moveLocalRowSelection(ev.key === "ArrowDown" ? 1 : -1, false);
+    }
+    return;
+  }
   const items = workspaceData?.items || [];
   if (items.length <= 1) return;
   const curIdx = Math.max(0, items.findIndex(it => it.id === selectedItemId));
-  if (ev.key === "j" || ev.key === "ArrowDown") {
+  if (ev.key === "j") {
     ev.preventDefault();
     const nxt = items[Math.min(items.length - 1, curIdx + 1)];
     if (nxt) selectItem(nxt.id);
-  } else if (ev.key === "k" || ev.key === "ArrowUp") {
+  } else if (ev.key === "k") {
     ev.preventDefault();
     const prev = items[Math.max(0, curIdx - 1)];
     if (prev) selectItem(prev.id);

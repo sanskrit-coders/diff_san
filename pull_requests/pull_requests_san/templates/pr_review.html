@@ -86,23 +86,6 @@
   .radio-group label.sel-request_changes { background: var(--red-soft); color: var(--red); font-weight: 700; }
   .radio-group label.sel-comment { background: var(--blue-soft); color: var(--blue); font-weight: 700; }
   .radio-group label.sel-issue_comment { background: #ede9df; color: var(--text); font-weight: 600; }
-  .add-comment-btn {
-    border: 1px solid transparent;
-    background: transparent;
-    color: var(--muted);
-    border-radius: 4px;
-    padding: 1px 4px;
-    font-size: 16px;
-    cursor: pointer;
-    opacity: 0.5;
-  }
-  tr.diff-row:hover .add-comment-btn,
-  .add-comment-btn:focus {
-    opacity: 1;
-    border-color: var(--border);
-    background: var(--surface);
-    color: var(--accent);
-  }
 
   tr.thread-row td {
     background: #fcfaf5;
@@ -282,6 +265,7 @@
     <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;" title="Ignore Unicode punctuation differences when comparing words/lines">
       <input id="ignorePunctChk" type="checkbox" onchange="changeDiffMode()" /> Ignore punct
     </label>
+    <button id="sandhiHighlightBtn" class="small" type="button" title="Highlight interword sandhi changes (e.g. अस्ति इति ↔ अस्तीति) with a special color" onclick="onToggleSandhiHighlight()">Sandhi diff</button>
     <label title="Matches VS Code (25) / IntelliJ IDEA (28)">Editor font (px): <input id="fontPxInput" type="number" min="14" max="42" value="26" style="width:74px;" onchange="applyEditorFont(this.value)" /></label>
     <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;" title="Single pane inline word flow without line matching (Alt+S)">
       <input id="singlePaneChk" type="checkbox" checked onchange="toggleSinglePane(this.checked)" /> Single pane <span class="kbd-hint">Alt+S</span>
@@ -325,11 +309,12 @@
     <div id="prContainer">
       <div class="card">Loading pull requests...</div>
     </div>
-    <div style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Ctrl+Click Insert comment • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+Enter Submit • Ctrl+R Refresh • j/k/↑/↓ navigate files • ←/→ Collapse/Expand • [/] Prev/Next PR • Esc Close composer/settings</div>
+    <div style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: ↑/↓ Select line • Alt+↑/↓ Prev/Next diff line • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • ←/→ Collapse/Expand • [/] Prev/Next PR • Esc Close composer/settings</div>
   </main>
 </div>
 
 <script>
+// {{SHARED_DIFF_ENGINE_JS}}
 // {{SHARED_DIFF_JS}}
 let allPrs = [];
 let filteredPrs = [];
@@ -353,6 +338,13 @@ let activeChangelistData = null;
 let changelistReqSeq = 0;
 let prPartialFullMode = {};
 let prExpandedHunkWindows = {};
+let renderedDiffRows = [];
+let selectedDiffRowKey = null;
+
+function onToggleSandhiHighlight() {
+  setSandhiHighlightEnabled(!isSandhiHighlightEnabled(), true);
+  renderActivePr();
+}
 
 function getDisplayedFiles() {
   if (selectedChangelistSha && activeChangelistData) {
@@ -753,6 +745,8 @@ async function openPr(owner, repo, number, forceRefresh = false, { preserveUi = 
     activeChangelistData = null;
     prPartialFullMode = {};
     prExpandedHunkWindows = {};
+    renderedDiffRows = [];
+    selectedDiffRowKey = null;
     clearExpandedGaps();
   } else if (!preserveUi) {
     selectedFileFilter = "";
@@ -1000,8 +994,8 @@ function renderConflictHunkRowsHtml(hunk) {
     return `<div style="padding:6px 10px; font-size:16px; color:var(--muted);">No line-level conflict markers extracted.</div>`;
   }
   const rowsHtml = rows.map(r => {
-    const lhsHtml = r.left_text == null ? "" : renderDiffSegments(r.lhs_segments);
-    const rhsHtml = r.right_text == null ? "" : renderDiffSegments(r.rhs_segments);
+    const lhsHtml = r.left_text == null ? "" : renderDiffSegments(r.lhs_segments, null, { leftText: r.left_text, rightText: r.right_text, otherSegments: r.rhs_segments });
+    const rhsHtml = r.right_text == null ? "" : renderDiffSegments(r.rhs_segments, null, { leftText: r.left_text, rightText: r.right_text, otherSegments: r.lhs_segments });
     const lhsCellCls = r.left_text == null ? "code-cell lhs-cell diff-empty" : "code-cell lhs-cell";
     const rhsCellCls = r.right_text == null ? "code-cell rhs-cell diff-empty" : "code-cell rhs-cell";
     return `<tr class="diff-row diff-row-${esc(r.kind || 'modify')}">
@@ -1484,12 +1478,79 @@ function collectRowExtrasHtml(f, r, pos, anchoredByPos, seenExtras, colspan) {
     </td></tr>`;
 }
 
-function handleDiffRowCtrlClick(ev, fi, leftNum, rightNum, inDiffHunk) {
-  if (!ev || !ev.ctrlKey || ev.altKey || ev.metaKey || ev.shiftKey) return;
+function selectDiffRow(rowKey, { scroll = true, focusFile = true } = {}) {
+  const prevKey = selectedDiffRowKey;
+  if (prevKey && prevKey !== rowKey) {
+    const prevMeta = renderedDiffRows.find(x => x.rowKey === prevKey);
+    if (prevMeta) {
+      const prevEl = document.getElementById(prevMeta.domId);
+      if (prevEl && prevEl.classList) prevEl.classList.remove("diff-row-selected");
+    }
+  }
+  selectedDiffRowKey = rowKey || null;
+  const meta = rowKey ? renderedDiffRows.find(x => x.rowKey === rowKey) : null;
+  if (meta) {
+    if (focusFile && meta.fi !== focusedFileIdx) {
+      setFocusedFile(meta.fi);
+    }
+    const el = document.getElementById(meta.domId);
+    if (el && el.classList) el.classList.add("diff-row-selected");
+    if (scroll && el && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ block: "nearest" });
+    }
+  }
+  return meta || null;
+}
+
+function moveDiffRowSelection(step, diffOnly = false) {
+  if (!renderedDiffRows.length) return null;
+  const curIdx = selectedDiffRowKey
+    ? renderedDiffRows.findIndex(r => r.rowKey === selectedDiffRowKey)
+    : -1;
+  const isMatch = r => !diffOnly || (r.kind && r.kind !== "context");
+  if (curIdx < 0) {
+    let startIdx = -1;
+    if (step >= 0) {
+      startIdx = focusedFileIdx >= 0
+        ? renderedDiffRows.findIndex(r => r.fi === focusedFileIdx && isMatch(r))
+        : -1;
+      if (startIdx < 0) startIdx = renderedDiffRows.findIndex(isMatch);
+    } else {
+      for (let k = renderedDiffRows.length - 1; k >= 0; k--) {
+        if (isMatch(renderedDiffRows[k])) { startIdx = k; break; }
+      }
+    }
+    return startIdx >= 0 ? selectDiffRow(renderedDiffRows[startIdx].rowKey) : null;
+  }
+  for (let i = curIdx + step; i >= 0 && i < renderedDiffRows.length; i += step) {
+    if (isMatch(renderedDiffRows[i])) {
+      return selectDiffRow(renderedDiffRows[i].rowKey);
+    }
+  }
+  return null;
+}
+
+function commentOnSelectedDiffRow() {
+  const meta = selectedDiffRowKey ? renderedDiffRows.find(r => r.rowKey === selectedDiffRowKey) : null;
+  if (!meta) return false;
+  const side = meta.rightNum != null ? "RIGHT" : "LEFT";
+  const targetLine = side === "RIGHT" ? meta.rightNum : meta.leftNum;
+  if (!meta.inDiffHunk || targetLine == null) {
+    setStatus("Selected line is outside diff hunk — inline PR comments must be on lines inside the PR hunk.", 3000);
+    return true;
+  }
+  startInlineComposer(meta.fi, targetLine, side, meta.leftNum, meta.rightNum);
+  return true;
+}
+
+function handleDiffRowCtrlClick(ev, fi, leftNum, rightNum, inDiffHunk, rowKey = null) {
+  if (!ev) return;
   const tgt = ev.target;
   if (tgt && typeof tgt.closest === "function") {
     if (tgt.closest("button, a, input, textarea, select, summary, .thread-box, .inline-composer")) return;
   }
+  if (rowKey) selectDiffRow(rowKey, { scroll: false, focusFile: true });
+  if (!ev.ctrlKey || ev.altKey || ev.metaKey || ev.shiftKey) return;
   let preferLeft = false;
   if (tgt && typeof tgt.closest === "function") {
     if (tgt.closest(".lhs-cell, .ch-del, .nl-del")) preferLeft = true;
@@ -1512,45 +1573,59 @@ function rowControlsForLine(fi, r) {
   const rhsNum = r.right_num != null ? r.right_num : "";
   const canLeft = r.in_diff_hunk && r.left_num != null;
   const canRight = r.in_diff_hunk && r.right_num != null;
-  const defaultSide = r.right_num != null ? "RIGHT" : "LEFT";
-  const defaultLine = r.right_num != null ? r.right_num : r.left_num;
-  const leftLnClick = canLeft ? `clickable" title="Comment on LEFT line ${r.left_num} (or Ctrl+Click row)" onclick="startInlineComposer(${fi}, ${r.left_num}, 'LEFT', ${r.left_num}, ${r.right_num ?? 'null'})"` : '"';
-  const rightLnClick = canRight ? `clickable" title="Comment on RIGHT line ${r.right_num} (or Ctrl+Click row)" onclick="startInlineComposer(${fi}, ${r.right_num}, 'RIGHT', ${r.left_num ?? 'null'}, ${r.right_num})"` : '"';
-  const actBtn = (r.in_diff_hunk && defaultLine != null)
-    ? `<button class="add-comment-btn" title="Add inline review comment at L${defaultLine} (${defaultSide}) — or Ctrl+Click row" onclick="startInlineComposer(${fi}, ${defaultLine}, '${defaultSide}', ${r.left_num ?? 'null'}, ${r.right_num ?? 'null'})">+💬</button>`
-    : "";
-  return { lhsNum, rhsNum, leftLnClick, rightLnClick, actBtn };
+  const leftLnClick = canLeft ? `clickable" title="Comment on LEFT line ${r.left_num} (or Ctrl+Click row)" onclick="event.stopPropagation(); startInlineComposer(${fi}, ${r.left_num}, 'LEFT', ${r.left_num}, ${r.right_num ?? 'null'})"` : '"';
+  const rightLnClick = canRight ? `clickable" title="Comment on RIGHT line ${r.right_num} (or Ctrl+Click row)" onclick="event.stopPropagation(); startInlineComposer(${fi}, ${r.right_num}, 'RIGHT', ${r.left_num ?? 'null'}, ${r.right_num})"` : '"';
+  return { lhsNum, rhsNum, leftLnClick, rightLnClick };
+}
+
+function _registerVisibleRowMeta(fi, f, r, pos) {
+  const rowKey = `${f.filename}:${pos}`;
+  const domId = `diffRow_${fi}_${pos.replace(/:/g, "_")}`;
+  if (!collapsedFiles[f.filename]) {
+    renderedDiffRows.push({
+      rowKey,
+      domId,
+      fi,
+      filename: f.filename,
+      pos,
+      kind: r.kind || "modify",
+      leftNum: r.left_num ?? null,
+      rightNum: r.right_num ?? null,
+      inDiffHunk: Boolean(r.in_diff_hunk),
+    });
+  }
+  return { rowKey, domId, selCls: selectedDiffRowKey === rowKey ? " diff-row-selected" : "" };
 }
 
 function renderSinglePaneRowHtml(fi, f, r, pos, anchoredByPos, seenExtras) {
-  const rowCls = `diff-row single-row-${esc(r.kind || 'modify')}`;
-  const { lhsNum, rhsNum, leftLnClick, rightLnClick, actBtn } = rowControlsForLine(fi, r);
+  const { rowKey, domId, selCls } = _registerVisibleRowMeta(fi, f, r, pos);
+  const rowCls = `diff-row single-row-${esc(r.kind || 'modify')}${selCls}`;
+  const { lhsNum, rhsNum, leftLnClick, rightLnClick } = rowControlsForLine(fi, r);
   const contentHtml = renderDiffSegments(r.segments);
-  const extraRows = collectRowExtrasHtml(f, r, pos, anchoredByPos, seenExtras, 4);
-  const rowClick = `onclick="handleDiffRowCtrlClick(event, ${fi}, ${r.left_num ?? 'null'}, ${r.right_num ?? 'null'}, ${Boolean(r.in_diff_hunk)})"`;
-  return `<tr class="${rowCls}" ${rowClick}>
+  const extraRows = collectRowExtrasHtml(f, r, pos, anchoredByPos, seenExtras, 3);
+  const rowClick = `onclick="handleDiffRowCtrlClick(event, ${fi}, ${r.left_num ?? 'null'}, ${r.right_num ?? 'null'}, ${Boolean(r.in_diff_hunk)}, ${esc(JSON.stringify(rowKey))})"`;
+  return `<tr id="${esc(domId)}" class="${rowCls}" ${rowClick}>
     <td class="ln ${leftLnClick}>${lhsNum}</td>
     <td class="ln ${rightLnClick}>${rhsNum}</td>
     <td class="code-cell single-code-cell">${contentHtml}</td>
-    <td class="act-cell">${actBtn}</td>
   </tr>${extraRows}`;
 }
 
 function renderDiffRowHtml(fi, f, r, pos, anchoredByPos, seenExtras) {
-  const rowCls = `diff-row diff-row-${esc(r.kind || 'modify')}`;
-  const { lhsNum, rhsNum, leftLnClick, rightLnClick, actBtn } = rowControlsForLine(fi, r);
-  const lhsHtml = r.left_text == null ? "" : renderDiffSegments(r.lhs_segments);
-  const rhsHtml = r.right_text == null ? "" : renderDiffSegments(r.rhs_segments);
+  const { rowKey, domId, selCls } = _registerVisibleRowMeta(fi, f, r, pos);
+  const rowCls = `diff-row diff-row-${esc(r.kind || 'modify')}${selCls}`;
+  const { lhsNum, rhsNum, leftLnClick, rightLnClick } = rowControlsForLine(fi, r);
+  const lhsHtml = r.left_text == null ? "" : renderDiffSegments(r.lhs_segments, null, { leftText: r.left_text, rightText: r.right_text, otherSegments: r.rhs_segments });
+  const rhsHtml = r.right_text == null ? "" : renderDiffSegments(r.rhs_segments, null, { leftText: r.left_text, rightText: r.right_text, otherSegments: r.lhs_segments });
   const lhsCellCls = r.left_text == null ? "code-cell lhs-cell diff-empty" : "code-cell lhs-cell";
   const rhsCellCls = r.right_text == null ? "code-cell rhs-cell diff-empty" : "code-cell rhs-cell";
-  const extraRows = collectRowExtrasHtml(f, r, pos, anchoredByPos, seenExtras, 5);
-  const rowClick = `onclick="handleDiffRowCtrlClick(event, ${fi}, ${r.left_num ?? 'null'}, ${r.right_num ?? 'null'}, ${Boolean(r.in_diff_hunk)})"`;
-  return `<tr class="${rowCls}" ${rowClick}>
+  const extraRows = collectRowExtrasHtml(f, r, pos, anchoredByPos, seenExtras, 4);
+  const rowClick = `onclick="handleDiffRowCtrlClick(event, ${fi}, ${r.left_num ?? 'null'}, ${r.right_num ?? 'null'}, ${Boolean(r.in_diff_hunk)}, ${esc(JSON.stringify(rowKey))})"`;
+  return `<tr id="${esc(domId)}" class="${rowCls}" ${rowClick}>
     <td class="ln ${leftLnClick}>${lhsNum}</td>
     <td class="${lhsCellCls}">${lhsHtml}</td>
     <td class="ln ${rightLnClick}>${rhsNum}</td>
     <td class="${rhsCellCls}">${rhsHtml}</td>
-    <td class="act-cell">${actBtn}</td>
   </tr>${extraRows}`;
 }
 
@@ -1588,23 +1663,15 @@ function _isRowPinnedInPrFile(f, r, pos, anchoredByPos) {
 }
 
 function renderPrHunkGapBarHtml(fi, where, hi, hiddenCount, colspan, canTop, canBottom) {
-  const btns = [];
-  if (canTop && (hiddenCount == null || hiddenCount > 20)) {
-    btns.push(`<button class="diff-gap-btn" type="button" onclick="event.stopPropagation(); expandPrHunkGap(${fi}, '${where}', ${hi}, 'top', 20)">↓ Expand 20 below</button>`);
-  }
-  if (hiddenCount != null) {
-    btns.push(`<button class="diff-gap-btn" type="button" onclick="event.stopPropagation(); expandPrHunkGap(${fi}, '${where}', ${hi}, 'all', 0)">↕ Expand all ${hiddenCount}</button>`);
-  } else {
-    btns.push(`<button class="diff-gap-btn" type="button" onclick="event.stopPropagation(); loadFullFile(${fi})">↕ Load Full File</button>`);
-  }
-  if (canBottom && (hiddenCount == null || hiddenCount > 20)) {
-    btns.push(`<button class="diff-gap-btn" type="button" onclick="event.stopPropagation(); expandPrHunkGap(${fi}, '${where}', ${hi}, 'bottom', 20)">↑ Expand 20 above</button>`);
-  }
   const label = hiddenCount != null
     ? `⋯ ${hiddenCount} collapsed line${hiddenCount === 1 ? '' : 's'}`
     : "⋯ Additional lines below";
-  return `<table class="diff-table"><tbody><tr class="diff-gap-row"><td colspan="${colspan}">
-    <div class="diff-gap-bar"><span>${label}</span><span class="diff-gap-actions">${btns.join("")}</span></div>
+  const clickFn = hiddenCount != null
+    ? `expandPrHunkGap(${fi}, '${where}', ${hi}, 'all', 0)`
+    : `loadFullFile(${fi})`;
+  const tip = hiddenCount != null ? "Click to expand collapsed lines" : "Click to load full file";
+  return `<table class="diff-table"><tbody><tr class="diff-gap-row" title="${tip}" onclick="${clickFn}"><td colspan="${colspan}">
+    <div class="diff-gap-bar"><span>${label}</span></div>
   </td></tr></tbody></table>`;
 }
 
@@ -1690,6 +1757,7 @@ function renderActivePrFiles() {
       </div>`
     : "";
 
+  renderedDiffRows = [];
   container.innerHTML = visibleFiles.map(({ f, fi }) => {
     const fileThreads = allThreads.filter(t => t.path === f.filename);
     const { anchoredByPos, unanchored: unanchoredThreads } = anchorFileThreads(fileThreads, f.hunks, singlePane);
@@ -1729,7 +1797,7 @@ function renderActivePrFiles() {
         const h = hunks[hi];
         const useInline = singlePane && Array.isArray(h.inline_rows) && h.inline_rows.length;
         const baseRows = useInline ? h.inline_rows : (h.rows || []);
-        const colspan = useInline ? 4 : 5;
+        const colspan = useInline ? 3 : 4;
 
         if (!f.is_full_file && !changedOnly) {
           if (hi === 0 && ((h.old_start || 1) > 1 || (h.new_start || 1) > 1)) {
@@ -1765,13 +1833,13 @@ function renderActivePrFiles() {
         }).join("");
 
         const colgroupHtml = useInline
-          ? `<colgroup><col class="col-num" /><col class="col-num" /><col class="col-single-code" /><col class="col-act" /></colgroup>`
-          : `<colgroup><col class="col-num" /><col class="col-code" /><col class="col-num" /><col class="col-code" /><col class="col-act" /></colgroup>`;
+          ? `<colgroup><col class="col-num" /><col class="col-num" /><col class="col-single-code" /></colgroup>`
+          : `<colgroup><col class="col-num" /><col class="col-code" /><col class="col-num" /><col class="col-code" /></colgroup>`;
         const tblCls = useInline ? `diff-table diff-table-single ${wrapClass}` : `diff-table ${wrapClass}`;
         hunksParts.push(`<div class="hunk-bar">${esc(h.header)}</div><table class="${tblCls}">${colgroupHtml}<tbody>${bodyRowsHtml}</tbody></table>`);
       }
       if (!f.is_full_file && !changedOnly && hunks.length) {
-        hunksParts.push(renderPrHunkGapBarHtml(fi, "below", hunks.length - 1, null, singlePane ? 4 : 5, true, false));
+        hunksParts.push(renderPrHunkGapBarHtml(fi, "below", hunks.length - 1, null, singlePane ? 3 : 4, true, false));
       }
       bodyHtml += hunksParts.join("");
     }
@@ -2228,14 +2296,26 @@ document.addEventListener("keydown", (ev) => {
       focusFeedbackInput();
       return;
     }
+    if ((ev.key === "ArrowDown" || ev.key === "ArrowUp") && !ev.shiftKey && tag !== "SELECT") {
+      ev.preventDefault();
+      moveDiffRowSelection(ev.key === "ArrowDown" ? 1 : -1, true);
+      return;
+    }
   }
 
-  // Ctrl+Enter submits inline composer if open, else active PR review/comment
+  // Ctrl+Enter submits inline composer if open; submits PR review if in review box or no line selected; else opens inline comment composer on selected line
   if (ev.key === "Enter" && ev.ctrlKey && !ev.altKey && !ev.metaKey) {
     if (id !== "ownerInput") {
       ev.preventDefault();
-      if (openComposer) postInlineComposer();
-      else submitSelectedReviewAction();
+      if (openComposer) {
+        postInlineComposer();
+      } else if (id === "prReviewBody" || (target && typeof target.closest === "function" && target.closest(".review-box"))) {
+        submitSelectedReviewAction();
+      } else if (selectedDiffRowKey && renderedDiffRows.some(r => r.rowKey === selectedDiffRowKey)) {
+        commentOnSelectedDiffRow();
+      } else {
+        submitSelectedReviewAction();
+      }
       return;
     }
   }
@@ -2260,8 +2340,17 @@ document.addEventListener("keydown", (ev) => {
     if (tag !== "INPUT" || target.type !== "radio") return;
   }
 
-  // j/k/ArrowDown/ArrowUp navigate file cards; ArrowLeft/ArrowRight collapse/expand focused file card
-  if (ev.key === "j" || ev.key === "ArrowDown") {
+  // ArrowUp / ArrowDown select previous / next line
+  if ((ev.key === "ArrowDown" || ev.key === "ArrowUp") && !ev.altKey && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey) {
+    if (renderedDiffRows.length) {
+      ev.preventDefault();
+      moveDiffRowSelection(ev.key === "ArrowDown" ? 1 : -1, false);
+    }
+    return;
+  }
+
+  // j/k navigate file cards; ArrowLeft/ArrowRight collapse/expand focused file card
+  if (ev.key === "j") {
     if (visibleFileIndices.length) {
       ev.preventDefault();
       const pos = visibleFileIndices.indexOf(focusedFileIdx);
@@ -2271,7 +2360,7 @@ document.addEventListener("keydown", (ev) => {
     }
     return;
   }
-  if (ev.key === "k" || ev.key === "ArrowUp") {
+  if (ev.key === "k") {
     if (visibleFileIndices.length) {
       ev.preventDefault();
       const pos = visibleFileIndices.indexOf(focusedFileIdx);

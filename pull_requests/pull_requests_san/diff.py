@@ -130,6 +130,8 @@ def _diff_raw_tokens(
       tag, lp, rp = chunks[idx]
       if (
         tag == "equal"
+        and "\n" not in lp
+        and "\n" not in rp
         and not lp.strip()
         and not rp.strip()
         and cleaned
