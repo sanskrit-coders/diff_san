@@ -19,6 +19,20 @@ pip install pull_requests_san
 pull_requests_san --owner vishvAsa --state open
 ```
 
+#### Screenshots
+
+**Single-pane word-flow diff (`Word` mode, default) with Devanagari typography & inline threads:**
+
+![Single-pane word-flow diff](pull_requests/docs/screenshots/single_pane_word.png)
+
+**Multi-repo PR dashboard, mergeability check, review composer & action shortcuts:**
+
+![PR review overview](pull_requests/docs/screenshots/pr_review_overview.png)
+
+**2-pane LHS/RHS Vedic grapheme (`\X`) diff with 3-way merge conflict inspection:**
+
+![2-pane Vedic grapheme and 3-way conflict diff](pull_requests/docs/screenshots/two_pane_grapheme_conflict.png)
+
 ## Acknowledgements
 
 - [`bhashika-org-in/wordiff`](https://github.com/bhashika-org-in/wordiff) for Unicode normalization, punctuation-ignoring comparison keys, and whole-block inline diffing ideas.
