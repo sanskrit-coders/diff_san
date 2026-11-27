@@ -823,6 +823,11 @@
   }
   .thread-box.resolved { border-left-color: var(--green); opacity: 0.9; background: #fbfdfb; }
   .thread-box.pending-draft { border-color: #f3d18a; border-left-color: var(--amber); background: #fffdf5; }
+  .diff-comment-cur {
+    outline: 2.5px solid #2563eb;
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.18);
+  }
   details.thread-box.resolved > summary {
     list-style: none;
     display: flex;
@@ -1058,7 +1063,7 @@
     <div id="prContainer">
       <div class="card">Loading pull requests...</div>
     </div>
-    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • Tab / Shift+Tab Step diffs • Ctrl+Space Checked until here • Click diff box Copy OLD/NEW • Right-click Copy diff / PR line link • Ctrl+F Find (supports ँ) • Ctrl+G / Ctrl+Shift+G Next/Prev find • Alt+W Word/Char diff • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Shift+Enter Multiline reply • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • ←/→ Collapse/Expand • [/] Prev/Next PR • Esc Close bar/composer/settings</div>
+    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • Tab / Shift+Tab Step diffs • Ctrl+Space Checked until here • Click diff box Copy OLD/NEW • Right-click Copy diff / PR line link • Ctrl+F Find (supports ँ) • Ctrl+G / Ctrl+Shift+G Next/Prev find • Ctrl+D / Ctrl+Shift+D Next/Prev comment • Alt+W Word/Char diff • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Shift+Enter Multiline reply • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • ←/→ Collapse/Expand • [/] Prev/Next PR • Esc Close bar/composer/settings</div>
     <footer id="aboutFooter" class="about-footer">
       <div>
         <strong>diff_san — Pull Requests</strong> (<a href="https://github.com/sanskrit-coders/diff_san" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) —
@@ -6647,6 +6652,7 @@ function renderActivePr() {
   const container = document.getElementById("prContainer");
   if (!activePrData) {
     renderHeaderPrActions(null, null, null);
+    clearActivePrCommentHighlight();
     if (typeof clearActiveDiffFocus === "function") clearActiveDiffFocus();
     if (typeof syncDiffFocusAndCheckedUi === "function") {
       syncDiffFocusAndCheckedUi([], "", { storageKey: PR_CHECKED_UNTIL_STORAGE_KEY });
@@ -7133,6 +7139,115 @@ function moveDiffRowSelection(step, diffOnly = false) {
     }
   }
   return null;
+}
+
+let _activePrCommentEl = null;
+
+function clearActivePrCommentHighlight() {
+  if (_activePrCommentEl && _activePrCommentEl.classList) {
+    _activePrCommentEl.classList.remove("diff-comment-cur");
+  }
+  _activePrCommentEl = null;
+  if (typeof document !== "undefined" && typeof document.querySelectorAll === "function") {
+    document.querySelectorAll(".diff-comment-cur").forEach(el => {
+      if (el.classList) el.classList.remove("diff-comment-cur");
+    });
+  }
+}
+
+function getNavigablePrComments() {
+  const out = [];
+  const root = typeof document !== "undefined" && typeof document.getElementById === "function"
+    ? document.getElementById("prContainer")
+    : null;
+  if (!root || typeof root.querySelectorAll !== "function") return out;
+  for (const el of root.querySelectorAll(".thread-box, .thread-comment")) {
+    if (!el) continue;
+    const isThreadBox = Boolean(el.classList && el.classList.contains("thread-box"));
+    if (!isThreadBox && typeof el.closest === "function" && el.closest(".thread-box")) {
+      continue;
+    }
+    if (typeof el.closest === "function") {
+      if (el.closest(".file-card.collapsed .file-card-body")) continue;
+      if (!isThreadBox) {
+        const det = el.closest("details");
+        if (det && !det.open) continue;
+      }
+    }
+    out.push(el);
+  }
+  return out;
+}
+
+function cyclePrComments(step = 1) {
+  const items = getNavigablePrComments();
+  if (!items.length) {
+    clearActivePrCommentHighlight();
+    setStatus("No comments in current view.", 2000);
+    return null;
+  }
+  const dir = step >= 0 ? 1 : -1;
+  let curIdx = _activePrCommentEl ? items.indexOf(_activePrCommentEl) : -1;
+  let nextIdx = -1;
+  if (curIdx >= 0) {
+    nextIdx = ((curIdx + dir) % items.length + items.length) % items.length;
+  } else {
+    const selMeta = selectedDiffRowKey ? renderedDiffRows.find(r => r.rowKey === selectedDiffRowKey) : null;
+    const selEl = (selMeta && typeof document !== "undefined" && typeof document.getElementById === "function")
+      ? document.getElementById(selMeta.domId)
+      : null;
+    if (selEl && typeof selEl.compareDocumentPosition === "function") {
+      if (dir > 0) {
+        const idx = items.findIndex(it => (selEl.compareDocumentPosition(it) & 4) || (typeof selEl.contains === "function" && selEl.contains(it)));
+        nextIdx = idx >= 0 ? idx : 0;
+      } else {
+        for (let k = items.length - 1; k >= 0; k--) {
+          if (selEl.compareDocumentPosition(items[k]) & 2) { nextIdx = k; break; }
+        }
+        if (nextIdx < 0) nextIdx = items.length - 1;
+      }
+    } else {
+      const pane = typeof document !== "undefined" && typeof document.getElementById === "function"
+        ? document.getElementById("mainPane")
+        : null;
+      const paneRect = pane && typeof pane.getBoundingClientRect === "function" ? pane.getBoundingClientRect() : null;
+      if (paneRect && paneRect.height > 0) {
+        if (dir > 0) {
+          nextIdx = items.findIndex(it => typeof it.getBoundingClientRect === "function" && it.getBoundingClientRect().bottom > paneRect.top + 2);
+        } else {
+          for (let k = items.length - 1; k >= 0; k--) {
+            if (typeof items[k].getBoundingClientRect === "function" && items[k].getBoundingClientRect().top < paneRect.bottom - 2) {
+              nextIdx = k;
+              break;
+            }
+          }
+        }
+      }
+      if (nextIdx < 0) nextIdx = dir > 0 ? 0 : items.length - 1;
+    }
+  }
+  const chosen = items[nextIdx];
+  clearActivePrCommentHighlight();
+  _activePrCommentEl = chosen;
+  if (chosen.classList) chosen.classList.add("diff-comment-cur");
+
+  const threadRow = typeof chosen.closest === "function" ? chosen.closest("tr.thread-row") : null;
+  let prevRowEl = threadRow ? threadRow.previousElementSibling : null;
+  while (prevRowEl && prevRowEl.classList && prevRowEl.classList.contains("thread-row")) {
+    prevRowEl = prevRowEl.previousElementSibling;
+  }
+  if (prevRowEl && prevRowEl.id) {
+    const rowMeta = renderedDiffRows.find(r => r.domId === prevRowEl.id);
+    if (rowMeta) selectDiffRow(rowMeta.rowKey, { scroll: false, focusFile: true, preserveDiffFocus: true });
+  }
+  if (typeof chosen.scrollIntoView === "function") {
+    chosen.scrollIntoView({ block: "center" });
+  }
+  const isRes = Boolean(chosen.classList && chosen.classList.contains("resolved"));
+  const isPend = Boolean(chosen.classList && chosen.classList.contains("pending-draft"));
+  const kindLabel = isPend ? "Pending comment" : (isRes ? `Comment (Resolved${chosen.open ? "" : " — collapsed"})` : "Comment");
+  setStatus(`${kindLabel} ${nextIdx + 1} / ${items.length}`, 2200);
+  return chosen;
 }
 
 function commentOnSelectedDiffRow() {
@@ -8100,6 +8215,13 @@ document.addEventListener("keydown", (ev) => {
   if ((ev.key === "r" || ev.key === "R") && ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey) {
     ev.preventDefault();
     refreshAll();
+    return;
+  }
+
+  // Ctrl+D / Ctrl+Shift+D cycles through PR comments without auto-expanding resolved threads
+  if ((ev.key === "d" || ev.key === "D") && ev.ctrlKey && !ev.altKey && !ev.metaKey) {
+    ev.preventDefault();
+    cyclePrComments(ev.shiftKey ? -1 : 1);
     return;
   }
 
