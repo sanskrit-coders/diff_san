@@ -1013,6 +1013,12 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     vertical-align: middle;
   }
   .gd-link { font-family: var(--dev); font-size: calc(var(--dev-font-size) - 6px); color: var(--blue); }
+  .sutra-link {
+    color: var(--blue);
+    text-decoration: none;
+    border-bottom: 1px dotted rgba(27, 79, 114, 0.45);
+  }
+  .sutra-link:hover { text-decoration: underline; color: var(--accent); }
 
   .controls-bar {
     display: flex;
@@ -1563,14 +1569,14 @@ function formatTextSegment(text) {
     } else {
       const inner = tok.slice(3, -3);
       if (inner.includes("!!")) {
-        out += `<span class="inline-feedback-tag">${esc(tok)}</span>`;
+        out += `<span class="inline-feedback-tag">${linkPaniniSutrasInText(esc(tok))}</span>`;
       } else {
-        out += `<span class="inline-note">${esc(inner)}</span>`;
+        out += `<span class="inline-note">${linkPaniniSutrasInText(esc(inner))}</span>`;
       }
     }
     last = m.index + tok.length;
   }
-  out += esc(text.slice(last)).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  out += linkPaniniSutras(esc(text.slice(last)).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>"));
   return out;
 }
 
@@ -1601,6 +1607,49 @@ function renderFullVP(vpText, ranges, decision) {
   return out;
 }
 
+function _devaDigitsToAscii(s) {
+  return String(s || "").replace(/[०-९]/g, ch => String(ch.charCodeAt(0) - 0x0966));
+}
+
+function paniniSutraUrl(a, p, n) {
+  return `https://ashtadhyayi.com/sutraani/${_devaDigitsToAscii(a)}/${_devaDigitsToAscii(p)}/${_devaDigitsToAscii(n)}`;
+}
+
+function _makeSutraAnchor(labelHtml, a, p, n) {
+  const asc = `${_devaDigitsToAscii(a)}.${_devaDigitsToAscii(p)}.${_devaDigitsToAscii(n)}`;
+  const url = paniniSutraUrl(a, p, n);
+  return `<a class="sutra-link" href="${url}" target="_blank" rel="noopener noreferrer" title="Open ${asc} on ashtadhyayi.com" onclick="event.stopPropagation()">${labelHtml}</a>`;
+}
+
+function linkPaniniSutrasInText(escapedText) {
+  const sutraChainRe = /(पा(?:[॰०]|\.?\s*सू\.?)\s*)([1-8१-८])\.([1-4१-४])\.([0-9०-९]+)((?:[–\-]([0-9०-९]+)(?=[\s,);]|$))?)((?:\s*[,/;–\-+]\s*[1-8१-८]\.[1-4१-४]\.[0-9०-९]+(?:[–\-][0-9०-९]+(?=[\s,);]|$))?)*)/g;
+  return escapedText.replace(sutraChainRe, (_, prefix, a, p, n, rangeFull, rangeEnd, tail) => {
+    let out = _makeSutraAnchor(`${prefix}${a}.${p}.${n}`, a, p, n);
+    if (rangeFull && rangeEnd) {
+      const sep = rangeFull[0];
+      out += `${sep}${_makeSutraAnchor(rangeEnd, a, p, rangeEnd)}`;
+    }
+    if (tail) {
+      out += tail.replace(/([1-8१-८])\.([1-4१-४])\.([0-9०-९]+)([–\-]([0-9०-९]+)(?=[\s,);]|$))?/g,
+        (__, sa, sp, sn, sRangeFull, sRangeEnd) => {
+          let seg = _makeSutraAnchor(`${sa}.${sp}.${sn}`, sa, sp, sn);
+          if (sRangeFull && sRangeEnd) {
+            seg += `${sRangeFull[0]}${_makeSutraAnchor(sRangeEnd, sa, sp, sRangeEnd)}`;
+          }
+          return seg;
+        }
+      );
+    }
+    return out;
+  });
+}
+
+function linkPaniniSutras(htmlChunk) {
+  return htmlChunk.split(/(<[^>]+>)/g).map(part =>
+    (part && part[0] === "<") ? part : linkPaniniSutrasInText(part)
+  ).join("");
+}
+
 function formatPadapathaLineHtml(line) {
   let html = esc(line);
   html = html.replace(/\*\*([^*]+)\*\*/g, '<span class="pp-arrow-word">$1</span>');
@@ -1610,7 +1659,7 @@ function formatPadapathaLineHtml(line) {
       ? `<span class="inline-feedback-tag">${tok}</span>`
       : `<span class="inline-note">${tok.slice(3, -3)}</span>`
   );
-  return html;
+  return linkPaniniSutras(html);
 }
 
 function renderOneCardHtml(it, idx, pageOffset) {

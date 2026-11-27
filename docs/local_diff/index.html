@@ -3824,7 +3824,49 @@ function _clearFindHighlights() {
   }
 }
 
-function _applyDiffFindUi(scrollToActive = true) {
+let _diffNavRows = [];
+let _diffSelectRowFn = null;
+
+function _findEnclosingDiffFocusTargetIdx(activeHit, rowEl) {
+  if (!activeHit || !rowEl) return -1;
+  const targets = getRowDiffFocusTargets(rowEl);
+  if (!targets.length) return -1;
+  const r = activeHit.range;
+  const candidates = [];
+  if (r && r.startContainer) {
+    candidates.push(r.startContainer.nodeType === 3 ? r.startContainer.parentElement : r.startContainer);
+  }
+  if (r && r.endContainer) {
+    candidates.push(r.endContainer.nodeType === 3 ? r.endContainer.parentElement : r.endContainer);
+  }
+  for (const el of candidates) {
+    if (!el) continue;
+    for (let ti = 0; ti < targets.length; ti++) {
+      const t = targets[ti];
+      if (t === el || (typeof t.contains === "function" && t.contains(el))) return ti;
+    }
+  }
+  return -1;
+}
+
+function _selectDiffFindMatchTarget(activeHit) {
+  if (!activeHit) return;
+  const rowEl = activeHit.rowEl;
+  if (!rowEl || !rowEl.id || !Array.isArray(_diffNavRows) || !_diffNavRows.length) return;
+  const rowMeta = _diffNavRows.find(r => r.domId === rowEl.id);
+  if (!rowMeta) return;
+  const ti = _findEnclosingDiffFocusTargetIdx(activeHit, rowEl);
+  if (typeof _diffSelectRowFn === "function") {
+    _diffSelectRowFn(rowMeta.rowKey, { scroll: false, preserveDiffFocus: true });
+  }
+  clearActiveDiffFocus();
+  if (ti >= 0) {
+    _activeDiffFocus = { rowKey: rowMeta.rowKey, domId: rowMeta.domId, tokenIdx: ti };
+    _applyDiffFocusDom();
+  }
+}
+
+function _applyDiffFindUi(scrollToActive = true, selectTarget = false) {
   _clearFindHighlights();
   const countEl = typeof document !== "undefined" ? document.getElementById("diffFindCount") : null;
   if (!_diffFindMatches.length) {
@@ -3839,6 +3881,9 @@ function _applyDiffFindUi(scrollToActive = true) {
   }
   if (activeHit.rowEl && activeHit.rowEl.classList) {
     activeHit.rowEl.classList.add("diff-row-find-cur");
+  }
+  if (selectTarget) {
+    _selectDiffFindMatchTarget(activeHit);
   }
   if (countEl) countEl.textContent = `${_diffFindIdx + 1} / ${_diffFindMatches.length}`;
   if (scrollToActive) {
@@ -3904,12 +3949,13 @@ function runDiffFind(queryStr = null, { preserveIndex = false, scrollToActive = 
 
 function stepDiffFind(delta = 1) {
   if (!_diffFindMatches.length) {
-    runDiffFind(null, { preserveIndex: false, scrollToActive: true });
+    const found = runDiffFind(null, { preserveIndex: false, scrollToActive: true });
+    if (found > 0) _selectDiffFindMatchTarget(_diffFindMatches[_diffFindIdx]);
     return;
   }
   const n = _diffFindMatches.length;
   _diffFindIdx = ((_diffFindIdx + delta) % n + n) % n;
-  _applyDiffFindUi(true);
+  _applyDiffFindUi(true, true);
 }
 
 function isDiffFindBarOpen() {
@@ -3935,6 +3981,8 @@ function openDiffFindBar(initialText = null) {
 }
 
 function closeDiffFindBar() {
+  const inp = typeof document !== "undefined" ? document.getElementById("diffFindInput") : null;
+  if (inp && typeof inp.blur === "function") inp.blur();
   const bar = typeof document !== "undefined" ? document.getElementById("diffFindBar") : null;
   if (bar) bar.style.display = "none";
   _diffFindMatches = [];
@@ -4262,6 +4310,8 @@ function setCheckedUntilHere(rows, currentRowKey, scopeKey, { storageKey, select
 }
 
 function syncDiffFocusAndCheckedUi(rows, scopeKey, { storageKey, selectRowFn = null } = {}) {
+  _diffNavRows = Array.isArray(rows) ? rows : [];
+  if (typeof selectRowFn === "function") _diffSelectRowFn = selectRowFn;
   if (_lastCheckedRowEl && _lastCheckedRowEl.classList) _lastCheckedRowEl.classList.remove("diff-checked-until");
   if (_lastCheckedTokEl && _lastCheckedTokEl.classList) _lastCheckedTokEl.classList.remove("diff-checked-token");
   _lastCheckedRowEl = null;
@@ -4318,9 +4368,16 @@ function handleSharedDiffKeydown(ev, navCtx = null) {
   }
   if ((ev.key === "g" || ev.key === "G") && ev.ctrlKey && !ev.altKey && !ev.metaKey) {
     if (typeof ev.preventDefault === "function") ev.preventDefault();
+    if (navCtx && typeof navCtx.selectRow === "function") {
+      _diffSelectRowFn = navCtx.selectRow;
+      if (typeof navCtx.getRows === "function") _diffNavRows = navCtx.getRows() || [];
+    }
     const delta = ev.shiftKey ? -1 : 1;
     if (!isDiffFindBarOpen()) {
       openDiffFindBar();
+      if (_diffFindMatches.length) {
+        _selectDiffFindMatchTarget(_diffFindMatches[_diffFindIdx]);
+      }
       return true;
     }
     stepDiffFind(delta);
