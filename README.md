@@ -33,23 +33,33 @@ pull_requests_san --owner vishvAsa --state open
 
 ![2-pane Vedic grapheme and 3-way conflict diff](pull_requests/docs/screenshots/two_pane_grapheme_conflict.png)
 
-## Acknowledgements
+### [`vishvAsa/pada_svara/`](vishvAsa/pada_svara/README.md) (`pada_svara`)
 
-- [`bhashika-org-in/wordiff`](https://github.com/bhashika-org-in/wordiff) for Unicode normalization, punctuation-ignoring comparison keys, and whole-block inline diffing ideas.
+Review UI and corpus scanner for Sanskrit Vedic accent fix suggestions (`[[OLD|NEW]]`) alongside aligned `विश्वास-प्रस्तुतिः`, `मूलम्`, and `पद-पाठः` context across `vishvAsa` repositories:
 
----
-
-## Vedic Accent Suggestion Reviewer (`vishvAsa/pada_svara`)
-
-Review UI and corpus scanner for Sanskrit Vedic accent fix suggestions (`[[OLD|NEW]]`) alongside aligned `विश्वास-प्रस्तुतिः`, `मूलम्`, and `पद-पाठः` context across `vishvAsa` repositories.
-
-- **Package documentation:** [vishvAsa/pada_svara/README.md](vishvAsa/pada_svara/README.md)
+- **Aligned three-layer context** — displays active/inactive `[[OLD|NEW]]` suggestions in `विश्वास-प्रस्तुतिः`, collapsible `मूलम्`, and `पद-पाठः` provenance bullets (`±n` configurable lines).
+- **Dedicated `With !!` feedback queue** — keeps `Pending` focused by separating `+++(...!!)+++` flagged items, with inline feedback editing, undo (`Ctrl+Z`), and rescan (`Ctrl+R`).
+- **Typography, lookup & VCS integration** — uses `Adishila SanVedic`, GoldenDict prātipadika lookup chips, IntelliJ IDEA `--line` links, `js_include` prefill sync, and scoped `git diff` / `git commit --only`.
 
 ```bash
 pip install -e ./vishvAsa/pada_svara
 pada_svara --dir /path/to/vedAH_yajuH/content/maitrAyaNIyam/saMhitA/sarva-prastutiH
 ```
 
+#### Screenshots
+
+**Pending review workspace with collapsed large-font preview & GoldenDict pills:**
+
 ![Pada Svara Review Overview](vishvAsa/pada_svara/docs/screenshots/pending_review_overview.png)
+
+**`With !!` feedback filter & inline `पद-पाठः` comments:**
+
 ![With !! Feedback Filter](vishvAsa/pada_svara/docs/screenshots/feedback_and_filter.png)
+
+**Scoped Git diff modal after accepting suggestions:**
+
 ![Scoped Git Diff Modal](vishvAsa/pada_svara/docs/screenshots/file_diff_modal.png)
+
+## Acknowledgements
+
+- [`bhashika-org-in/wordiff`](https://github.com/bhashika-org-in/wordiff) for Unicode normalization, punctuation-ignoring comparison keys, and whole-block inline diffing ideas.
