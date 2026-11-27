@@ -192,8 +192,7 @@ function renderSettingsPaneHtml() {
         <span class="ch-ins">नवीनम्</span> (added line / token preview)
       </div>
       <div class="settings-preview-line sandhi-sample">
-        <span class="ch-del ch-has-sub ch-sandhi">अस्<span class="ch-sub">ति इ</span>ति</span>
-        <span class="ch-ins ch-has-sub ch-sandhi">अस्<span class="ch-sub">ती</span>ति</span> (interword sandhi preview)
+        <span class="ch-pair ch-sandhi"><span class="ch-del ch-has-sub ch-sandhi">अस्<span class="ch-sub">ति इ</span>ति</span><span class="ch-ins ch-has-sub ch-sandhi">अस्<span class="ch-sub">ती</span>ति</span></span> (interword sandhi preview)
       </div>
     </div>
     ${groupsHtml}
@@ -379,6 +378,63 @@ function _getDiffSanEngine() {
   return null;
 }
 
+function _wrapOldNewPairHtml(innerHtml, isSandhi) {
+  if (!innerHtml) return "";
+  const mLead = innerHtml.match(/^([ \t]*)([\s\S]*)$/);
+  const leadWs = (mLead && mLead[2]) ? mLead[1] : "";
+  const afterLead = (mLead && mLead[2]) ? mLead[2] : innerHtml;
+  const mTrail = afterLead.match(/^([\s\S]*?)([ \t]*)$/);
+  const coreHtml = (mTrail && mTrail[1]) ? mTrail[1] : afterLead;
+  const trailWs = (mTrail && mTrail[1]) ? mTrail[2] : "";
+  const cls = isSandhi ? "ch-pair ch-sandhi" : "ch-pair";
+  return `${leadWs}<span class="${cls}">${coreHtml}</span>${trailWs}`;
+}
+
+function findFirstVisibleRowMeta(rows, paneEl = null) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  const pane = paneEl || document.getElementById("mainPane");
+  if (!pane || typeof pane.getBoundingClientRect !== "function") {
+    return rows[0] || null;
+  }
+  const paneRect = pane.getBoundingClientRect();
+  if (!paneRect || paneRect.height <= 0) {
+    return rows[0] || null;
+  }
+  const paneTop = paneRect.top;
+  const paneBottom = paneRect.bottom;
+  let partialFallback = null;
+  for (const r of rows) {
+    const el = document.getElementById(r.domId);
+    if (!el || typeof el.getBoundingClientRect !== "function") continue;
+    const rect = el.getBoundingClientRect();
+    if (!rect || (rect.width === 0 && rect.height === 0)) continue;
+    if (rect.bottom <= paneTop) continue;
+    if (rect.top >= paneBottom) break;
+    if (!partialFallback) partialFallback = r;
+    const visiblePx = Math.min(rect.bottom, paneBottom) - Math.max(rect.top, paneTop);
+    const minReadable = Math.min(20, Math.max(4, rect.height * 0.5));
+    if (rect.top >= paneTop - 2 || visiblePx >= minReadable) {
+      return r;
+    }
+  }
+  return partialFallback || null;
+}
+
+function pageScrollDiffPane(direction, rows, selectRowFn, paneEl = null) {
+  const pane = paneEl || document.getElementById("mainPane");
+  if (!pane) return null;
+  const viewH = pane.clientHeight || (typeof window !== "undefined" ? window.innerHeight : 0) || 600;
+  const step = Math.max(60, Math.round(viewH * 0.875));
+  const maxScroll = Math.max(0, (pane.scrollHeight || 0) - viewH);
+  const nextTop = Math.max(0, Math.min(maxScroll, (pane.scrollTop || 0) + direction * step));
+  pane.scrollTop = nextTop;
+  const firstMeta = findFirstVisibleRowMeta(rows, pane);
+  if (firstMeta && typeof selectRowFn === "function") {
+    selectRowFn(firstMeta.rowKey);
+  }
+  return firstMeta;
+}
+
 function renderDiffSegments(segments, diffMode = null, sandhiContext = null) {
   if (!segments || !segments.length) return "";
   const activeMode = diffMode !== null ? diffMode : (typeof getDiffMode === "function" ? getDiffMode() : "word");
@@ -415,81 +471,103 @@ function renderDiffSegments(segments, diffMode = null, sandhiContext = null) {
           isSandhi ? "Interword sandhi change" : null
         )
   )).join("");
+  const renderOneSegment = (idx) => {
+    const s = segments[idx];
+    if (s.op === "eq") return esc(s.text);
+    if (s.op === "del_nl") return `<span class="nl-badge nl-del" title="Removed line break">↵</span>`;
+    if (s.op === "ins_nl") return `<span class="nl-badge nl-ins" title="Inserted line break">↵</span>`;
+    const isS = !!(sandhiMarks && sandhiMarks.has(idx));
+    return renderChangedText(
+      s.text,
+      s.op,
+      s.sub_segments || fallbackSubs[idx],
+      isS ? "ch-sandhi" : "",
+      isS ? "Interword sandhi change" : null
+    );
+  };
   let out = "";
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
-    if (
-      sandhiHighlightEnabled &&
-      !sandhiContext &&
-      eng &&
-      typeof eng.splitMixedSandhiPair === "function" &&
-      seg.op === "del" &&
-      i + 1 < segments.length &&
-      segments[i + 1].op === "ins" &&
-      !(sandhiMarks && (sandhiMarks.has(i) || sandhiMarks.has(i + 1))) &&
-      (/\s/.test(seg.text || "") || /\s/.test(segments[i + 1].text || ""))
-    ) {
-      const splitSegs = eng.splitMixedSandhiPair(seg.text, segments[i + 1].text);
-      if (splitSegs) {
-        out += renderDiffSegments(splitSegs, activeMode, null);
-        i += 1;
+    if (seg.op === "del" && !sandhiContext) {
+      let k = i;
+      let sawIns = false;
+      let lastContentIdx = i;
+      while (k < segments.length) {
+        const op = segments[k].op;
+        if (op === "eq") break;
+        if (op === "del") {
+          if (sawIns) break;
+          lastContentIdx = k;
+        } else if (op === "ins") {
+          sawIns = true;
+          lastContentIdx = k;
+        } else if (op !== "del_nl" && op !== "ins_nl") {
+          break;
+        }
+        k += 1;
+      }
+      if (sawIns) {
+        if (
+          lastContentIdx === i + 1 &&
+          segments[i + 1].op === "ins" &&
+          sandhiHighlightEnabled &&
+          eng &&
+          typeof eng.splitMixedSandhiPair === "function" &&
+          !(sandhiMarks && (sandhiMarks.has(i) || sandhiMarks.has(i + 1))) &&
+          (/\s/.test(seg.text || "") || /\s/.test(segments[i + 1].text || ""))
+        ) {
+          const splitSegs = eng.splitMixedSandhiPair(seg.text, segments[i + 1].text);
+          if (splitSegs) {
+            out += renderDiffSegments(splitSegs, activeMode, null);
+            i = lastContentIdx;
+            continue;
+          }
+        }
+        if (lastContentIdx === i + 1 && segments[i + 1].op === "ins" && activeMode === "word") {
+          const nxt = segments[i + 1];
+          let dSub = seg.sub_segments || fallbackSubs[i];
+          let iSub = nxt.sub_segments || fallbackSubs[i + 1];
+          if (!dSub || !iSub) {
+            const pair = computeClientWordSubPair(seg.text, nxt.text);
+            if (pair) {
+              dSub = pair.l;
+              iSub = pair.r;
+            }
+          }
+          if (dSub && iSub) {
+            const pairIsSandhi = !!(sandhiMarks && (sandhiMarks.has(i) || sandhiMarks.has(i + 1)));
+            const pureDel = iSub.every(p => p.op === "eq") &&
+              dSub.some(p => p.op === "del") &&
+              dSub.some(p => p.op === "eq" && String(p.text || "").trim()) &&
+              dSub.filter(p => p.op === "eq").map(p => p.text).join("") === String(nxt.text || "");
+            if (pureDel) {
+              out += renderSubParts(dSub, pairIsSandhi);
+              i = lastContentIdx;
+              continue;
+            }
+            const pureIns = dSub.every(p => p.op === "eq") &&
+              iSub.some(p => p.op === "ins") &&
+              iSub.some(p => p.op === "eq" && String(p.text || "").trim()) &&
+              iSub.filter(p => p.op === "eq").map(p => p.text).join("") === String(seg.text || "");
+            if (pureIns) {
+              out += renderSubParts(iSub, pairIsSandhi);
+              i = lastContentIdx;
+              continue;
+            }
+          }
+        }
+        let pairHtml = "";
+        let pairIsSandhi = false;
+        for (let p = i; p <= lastContentIdx; p++) {
+          if (sandhiMarks && sandhiMarks.has(p)) pairIsSandhi = true;
+          pairHtml += renderOneSegment(p);
+        }
+        out += _wrapOldNewPairHtml(pairHtml, pairIsSandhi);
+        i = lastContentIdx;
         continue;
       }
     }
-    if (
-      activeMode === "word" &&
-      seg.op === "del" &&
-      i + 1 < segments.length &&
-      segments[i + 1].op === "ins"
-    ) {
-      const nxt = segments[i + 1];
-      let dSub = seg.sub_segments || fallbackSubs[i];
-      let iSub = nxt.sub_segments || fallbackSubs[i + 1];
-      if (!dSub || !iSub) {
-        const pair = computeClientWordSubPair(seg.text, nxt.text);
-        if (pair) {
-          dSub = pair.l;
-          iSub = pair.r;
-        }
-      }
-      if (dSub && iSub) {
-        const pairIsSandhi = !!(sandhiMarks && (sandhiMarks.has(i) || sandhiMarks.has(i + 1)));
-        const pureDel = iSub.every(p => p.op === "eq") &&
-          dSub.some(p => p.op === "del") &&
-          dSub.some(p => p.op === "eq" && String(p.text || "").trim()) &&
-          dSub.filter(p => p.op === "eq").map(p => p.text).join("") === String(nxt.text || "");
-        if (pureDel) {
-          out += renderSubParts(dSub, pairIsSandhi);
-          i += 1;
-          continue;
-        }
-        const pureIns = dSub.every(p => p.op === "eq") &&
-          iSub.some(p => p.op === "ins") &&
-          iSub.some(p => p.op === "eq" && String(p.text || "").trim()) &&
-          iSub.filter(p => p.op === "eq").map(p => p.text).join("") === String(seg.text || "");
-        if (pureIns) {
-          out += renderSubParts(iSub, pairIsSandhi);
-          i += 1;
-          continue;
-        }
-      }
-    }
-    if (seg.op === "eq") {
-      out += esc(seg.text);
-    } else if (seg.op === "del_nl") {
-      out += `<span class="nl-badge nl-del" title="Removed line break">↵</span>`;
-    } else if (seg.op === "ins_nl") {
-      out += `<span class="nl-badge nl-ins" title="Inserted line break">↵</span>`;
-    } else {
-      const isS = !!(sandhiMarks && sandhiMarks.has(i));
-      out += renderChangedText(
-        seg.text,
-        seg.op,
-        seg.sub_segments || fallbackSubs[i],
-        isS ? "ch-sandhi" : "",
-        isS ? "Interword sandhi change" : null
-      );
-    }
+    out += renderOneSegment(i);
   }
   return out;
 }

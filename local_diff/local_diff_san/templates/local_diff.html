@@ -195,7 +195,7 @@
     <div id="diffContainer">
       <div class="card">Loading diff...</div>
     </div>
-    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: ↑/↓ Select line • Alt+↑/↓ Prev/Next diff line • Alt+S Single/2-Pane • Ctrl+R Refresh • j/k Navigate files • Esc Close Settings</div>
+    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: ↑/↓ Select line • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Alt+S Single/2-Pane • Ctrl+R Refresh • j/k Navigate files • Esc Close Settings</div>
     <footer id="aboutFooter" class="about-footer">
       <div>
         <strong>diff_san</strong> (<a href="https://github.com/sanskrit-coders/diff_san" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) —
@@ -826,6 +826,20 @@ document.addEventListener("keydown", (ev) => {
     ev.preventDefault();
     closeSettingsPane();
     return;
+  }
+  const isTextControl = tag === "TEXTAREA" || tag === "SELECT"
+    || (tag === "INPUT" && target.type !== "checkbox" && target.type !== "radio" && target.type !== "button")
+    || !!target?.isContentEditable;
+  if ((ev.key === "PageDown" || ev.key === "PageUp") && !ev.altKey && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey && !isTextControl) {
+    if (renderedLocalRows.length) {
+      ev.preventDefault();
+      pageScrollDiffPane(
+        ev.key === "PageDown" ? 1 : -1,
+        renderedLocalRows,
+        rowKey => selectLocalRow(rowKey, { scroll: false })
+      );
+      return;
+    }
   }
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
   if ((ev.key === "ArrowDown" || ev.key === "ArrowUp") && !ev.altKey && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey) {
