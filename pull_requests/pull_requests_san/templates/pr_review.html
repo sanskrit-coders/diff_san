@@ -18,7 +18,7 @@
     --green-soft: #eafaf1;
     --ins-row: #fefce8;
     --ins-char: #fef3c7;
-    --ins-word-base: #fef9c3;
+    --ins-word-base: #fffdf5;
     --ins-char-sub: #fde047;
     --ins-border: #ca8a04;
     --ins-text: #713f12;
@@ -26,7 +26,7 @@
     --red-soft: #fdeeee;
     --red-row: #fff5f5;
     --red-char: #ffd6d6;
-    --del-word-base: #fff0f0;
+    --del-word-base: #fff9f9;
     --del-char-sub: #fca5a5;
     --amber: #9c5700;
     --amber-soft: #fff8e1;
@@ -426,25 +426,29 @@
   }
   .ch-del.ch-has-sub {
     background: var(--del-word-base);
-    border-bottom: 1px dashed #dc2626;
+    border: 1px dashed #e5b2b2;
+    border-bottom: 1.5px dashed #dc2626;
+    margin: 0 3px;
   }
   .ch-ins.ch-has-sub {
     background: var(--ins-word-base);
-    border-bottom: 1px dashed var(--ins-border);
+    border: 1px dashed #e6cc80;
+    border-bottom: 1.5px dashed var(--ins-border);
+    margin: 0 3px;
   }
   .ch-del .ch-sub {
     background: var(--del-char-sub);
     color: #7f1d1d;
-    border-bottom: 2px solid #dc2626;
-    border-radius: 2px;
-    padding: 0 1px;
+    border-bottom: 2.5px solid #dc2626;
+    border-radius: 3px;
+    padding: 0 2px;
   }
   .ch-ins .ch-sub {
     background: var(--ins-char-sub);
     color: #713f12;
-    border-bottom: 2px solid #b45309;
-    border-radius: 2px;
-    padding: 0 1px;
+    border-bottom: 2.5px solid #b45309;
+    border-radius: 3px;
+    padding: 0 2px;
   }
   .nl-badge {
     display: inline-block;
@@ -897,10 +901,79 @@ function renderChangedText(txt, op, subSegments = null) {
   return `${fmtWs(lead)}<span class="${cls}" title="${tip}">${inner}</span>${fmtWs(trail)}`;
 }
 
+function graphemeUnitsClient(str) {
+  if (typeof Intl !== "undefined" && Intl.Segmenter) {
+    const seg = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+    return Array.from(seg.segment(str), s => s.segment);
+  }
+  return Array.from(str);
+}
+
+function computeClientWordSubPair(delText, insText) {
+  const mL = String(delText || "").match(/^([ \t]*)([\s\S]*?)([ \t]*)$/);
+  const mR = String(insText || "").match(/^([ \t]*)([\s\S]*?)([ \t]*)$/);
+  const lLead = mL ? mL[1] : "", lCore = mL ? mL[2] : "", lTrail = mL ? mL[3] : "";
+  const rLead = mR ? mR[1] : "", rCore = mR ? mR[2] : "", rTrail = mR ? mR[3] : "";
+  if (!lCore || !rCore) return null;
+  const a = graphemeUnitsClient(lCore), b = graphemeUnitsClient(rCore);
+  if (a.length * b.length > 40000) return null;
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Int32Array(n + 1));
+  for (let i = m - 1; i >= 0; i--) {
+    for (let j = n - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? 1 + dp[i + 1][j + 1] : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const lSub = [], rSub = [];
+  let i = 0, j = 0, hasNonWsEq = false;
+  const pushOp = (arr, op, t) => {
+    if (!t) return;
+    if (arr.length && arr[arr.length - 1].op === op) arr[arr.length - 1].text += t;
+    else arr.push({ op, text: t });
+  };
+  while (i < m && j < n) {
+    if (a[i] === b[j]) {
+      if (a[i].trim()) hasNonWsEq = true;
+      pushOp(lSub, "eq", a[i]);
+      pushOp(rSub, "eq", b[j]);
+      i++; j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      pushOp(lSub, "del", a[i++]);
+    } else {
+      pushOp(rSub, "ins", b[j++]);
+    }
+  }
+  while (i < m) pushOp(lSub, "del", a[i++]);
+  while (j < n) pushOp(rSub, "ins", b[j++]);
+  if (!hasNonWsEq) return null;
+  return {
+    l: [...(lLead ? [{ op: "eq", text: lLead }] : []), ...lSub, ...(lTrail ? [{ op: "eq", text: lTrail }] : [])],
+    r: [...(rLead ? [{ op: "eq", text: rLead }] : []), ...rSub, ...(rTrail ? [{ op: "eq", text: rTrail }] : [])],
+  };
+}
+
 function renderDiffSegments(segments) {
   if (!segments || !segments.length) return "";
+  const fallbackSubs = {};
+  if (getDiffMode() === "word") {
+    for (let i = 0; i < segments.length; i++) {
+      const s = segments[i];
+      if (s.op === "del" && !s.sub_segments) {
+        let j = i + 1;
+        while (j < segments.length && (segments[j].op === "del_nl" || segments[j].op === "ins_nl")) j++;
+        if (j < segments.length && segments[j].op === "ins" && !segments[j].sub_segments) {
+          const pair = computeClientWordSubPair(s.text, segments[j].text);
+          if (pair) {
+            fallbackSubs[i] = pair.l;
+            fallbackSubs[j] = pair.r;
+          }
+        }
+      }
+    }
+  }
   let out = "";
-  for (const seg of segments) {
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
     if (seg.op === "eq") {
       out += esc(seg.text);
     } else if (seg.op === "del_nl") {
@@ -908,7 +981,7 @@ function renderDiffSegments(segments) {
     } else if (seg.op === "ins_nl") {
       out += `<span class="nl-badge nl-ins" title="Inserted line break">↵</span>`;
     } else {
-      out += renderChangedText(seg.text, seg.op, seg.sub_segments);
+      out += renderChangedText(seg.text, seg.op, seg.sub_segments || fallbackSubs[i]);
     }
   }
   return out;

@@ -555,6 +555,41 @@ def _split_outer_ws(text: str) -> tuple[str, str, str]:
   return m.group(1), m.group(2), m.group(3)
 
 
+def _annotate_pair_sub_segments(
+  del_seg: dict[str, Any],
+  ins_seg: dict[str, Any],
+  *,
+  normalize: str,
+  ignore_punct: bool,
+) -> bool:
+  l_lead, l_core, l_trail = _split_outer_ws(del_seg.get("text") or "")
+  r_lead, r_core, r_trail = _split_outer_ws(ins_seg.get("text") or "")
+  if not l_core or not r_core:
+    return False
+  l_sub, r_sub = compute_char_diff(
+    l_core,
+    r_core,
+    mode="grapheme",
+    normalize=normalize,
+    ignore_punct=ignore_punct,
+  )
+  if not any(s.get("op") == "eq" and (s.get("text") or "").strip() for s in l_sub):
+    return False
+  full_l = (
+    ([{"op": "eq", "text": l_lead}] if l_lead else [])
+    + l_sub
+    + ([{"op": "eq", "text": l_trail}] if l_trail else [])
+  )
+  full_r = (
+    ([{"op": "eq", "text": r_lead}] if r_lead else [])
+    + r_sub
+    + ([{"op": "eq", "text": r_trail}] if r_trail else [])
+  )
+  del_seg["sub_segments"] = _merge_segments(full_l)
+  ins_seg["sub_segments"] = _merge_segments(full_r)
+  return True
+
+
 def _annotate_word_sub_segments(
   flow_rows: list[dict[str, Any]],
   *,
@@ -562,43 +597,51 @@ def _annotate_word_sub_segments(
   ignore_punct: bool = False,
 ) -> None:
   """Attach intra-word grapheme ``sub_segments`` to paired del/ins spans in word diff mode."""
+  flat: list[dict[str, Any] | None] = []
   for fr in flow_rows:
-    segs = fr.get("segments") or []
-    i = 0
-    while i < len(segs):
-      if segs[i].get("op") != "del":
-        i += 1
+    if fr.get("kind") == "context":
+      flat.append(None)
+      continue
+    for seg in fr.get("segments") or []:
+      if seg.get("op") in ("del_nl", "ins_nl"):
         continue
-      j = i + 1
-      while j < len(segs) and segs[j].get("op") in ("del_nl", "ins_nl"):
-        j += 1
-      if j >= len(segs) or segs[j].get("op") != "ins":
-        i += 1
-        continue
-      l_lead, l_core, l_trail = _split_outer_ws(segs[i].get("text") or "")
-      r_lead, r_core, r_trail = _split_outer_ws(segs[j].get("text") or "")
-      if l_core and r_core:
-        l_sub, r_sub = compute_char_diff(
-          l_core,
-          r_core,
-          mode="grapheme",
-          normalize=normalize,
-          ignore_punct=ignore_punct,
-        )
-        if any(s.get("op") == "eq" and (s.get("text") or "").strip() for s in l_sub):
-          full_l = (
-            ([{"op": "eq", "text": l_lead}] if l_lead else [])
-            + l_sub
-            + ([{"op": "eq", "text": l_trail}] if l_trail else [])
-          )
-          full_r = (
-            ([{"op": "eq", "text": r_lead}] if r_lead else [])
-            + r_sub
-            + ([{"op": "eq", "text": r_trail}] if r_trail else [])
-          )
-          segs[i]["sub_segments"] = _merge_segments(full_l)
-          segs[j]["sub_segments"] = _merge_segments(full_r)
-      i = j + 1
+      flat.append(seg)
+
+  i = 0
+  n = len(flat)
+  while i < n:
+    s = flat[i]
+    if s is None or s.get("op") != "del":
+      i += 1
+      continue
+    d_start = i
+    while i < n and flat[i] is not None and flat[i].get("op") == "del":
+      i += 1
+    d_run = [flat[k] for k in range(d_start, i) if flat[k] is not None]
+    a_start = i
+    while i < n and flat[i] is not None and flat[i].get("op") == "ins":
+      i += 1
+    a_run = [flat[k] for k in range(a_start, i) if flat[k] is not None]
+    if not d_run or not a_run:
+      continue
+    if len(d_run) == len(a_run):
+      for ds, iseg in zip(d_run, a_run):
+        _annotate_pair_sub_segments(ds, iseg, normalize=normalize, ignore_punct=ignore_punct)
+    else:
+      used_ins: set[int] = set()
+      for ds in d_run:
+        best_idx = -1
+        best_sim = 0.25
+        for idx, iseg in enumerate(a_run):
+          if idx in used_ins:
+            continue
+          sim = _line_similarity(ds.get("text") or "", iseg.get("text") or "")
+          if sim >= best_sim:
+            best_sim = sim
+            best_idx = idx
+        if best_idx >= 0:
+          used_ins.add(best_idx)
+          _annotate_pair_sub_segments(ds, a_run[best_idx], normalize=normalize, ignore_punct=ignore_punct)
 
 
 def build_inline_flow_rows(

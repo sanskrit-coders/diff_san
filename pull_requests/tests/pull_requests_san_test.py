@@ -615,6 +615,14 @@ def test_parse_patch_hunks_aligns_multiedits_and_edge_cases():
   )
   reflow_h = parse_patch_hunks(reflow_patch, char_diff_mode="word")[0]
   assert any(any(s["op"] == "del" and "delta" in s["text"] for s in r["segments"]) for r in reflow_h.inline_rows)
+
+  # Cross-row newline boundary still pairs del/ins words (e.g. पा० -> पा॰) for sub_segments
+  cross_patch = "@@ -1,2 +1,1 @@\n-पा०\n-ख\n+पा॰ ख\n"
+  cross_h = parse_patch_hunks(cross_patch, char_diff_mode="word")[0]
+  del_pa = next(s for r in cross_h.inline_rows for s in r["segments"] if s["op"] == "del")
+  ins_pa = next(s for r in cross_h.inline_rows for s in r["segments"] if s["op"] == "ins")
+  assert {"op": "del", "text": "०"} in del_pa["sub_segments"]
+  assert {"op": "ins", "text": "॰"} in ins_pa["sub_segments"]
   assert any(any(s["op"] == "ins" and "newword" in s["text"] for s in r["segments"]) for r in reflow_h.inline_rows)
   assert any(r["segments"] and any(s["op"] == "eq" and "zeta" in s["text"] for s in r["segments"]) for r in reflow_h.inline_rows)
 
@@ -1305,6 +1313,11 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
     "  }\n"
     "  if (!thHtml.includes('Threads Outside Diff Hunks')) {\n"
     "    throw new Error('Genuinely distant thread should stay in Threads Outside Diff Hunks: ' + thHtml);\n"
+    "  }\n"
+    "  // Even without server sub_segments, word diff JS renders intra-word char highlights (पा० -> पा॰ highlights ० and ॰)\n"
+    "  const paHtml = renderDiffSegments([{ op: 'del', text: 'पा०' }, { op: 'ins', text: 'पा॰' }]);\n"
+    "  if (!paHtml.includes('<span class=\"ch-sub\">०</span>') || !paHtml.includes('<span class=\"ch-sub\">॰</span>')) {\n"
+    "    throw new Error('Missing intra-word ० / ॰ sub-highlights: ' + paHtml);\n"
     "  }\n"
     "  // Changelist dropdown renders default 'All changelists' + commits with date/time, and switches files cleanly\n"
     "  samplePr.commits = [\n"
