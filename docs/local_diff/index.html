@@ -541,13 +541,35 @@
     gap: 8px;
     padding: 10px 12px;
   }
-  .file-title-link {
+  .file-header-main {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex: 1 1 260px;
+    min-width: 0;
+    flex-wrap: nowrap;
+  }
+  .file-title-link, .file-title-text {
     font-weight: 700;
-    font-size: 18px;
+    font-size: 15.5px;
+    min-width: 0;
+    flex: 0 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .file-title-link {
     color: var(--blue);
     text-decoration: none;
   }
   .file-title-link:hover { text-decoration: underline; }
+  .file-header-badges {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
   .file-idea-link {
     font-size: 15px;
     font-weight: 600;
@@ -5031,7 +5053,7 @@ function renderDiffItemHtml(item) {
   const primaryPath = item.right_path || item.left_path;
   const titleHtml = (primaryPath && !IS_STATIC_HOST)
     ? `<a id="fileTitleVscodeLink" class="mono file-title-link" href="#" title="Open ${esc(primaryPath)} in VS Code" onclick="event.preventDefault(); openPathInVscode(${esc(JSON.stringify(primaryPath))}, null)">${esc(item.title)}</a>`
-    : `<span class="mono" style="font-weight:700; font-size:18px;">${esc(item.title)}</span>`;
+    : `<span class="mono file-title-text" title="${esc(item.title)}">${esc(item.title)}</span>`;
   const ideaTitleHtml = (primaryPath && !IS_STATIC_HOST)
     ? `<a id="fileTitleIdeaLink" class="mono file-idea-link" href="#" title="Open ${esc(primaryPath)} in IntelliJ IDEA" onclick="event.preventDefault(); openPathInIdea(${esc(JSON.stringify(primaryPath))}, null)">[I]</a>`
     : "";
@@ -5046,12 +5068,14 @@ function renderDiffItemHtml(item) {
 
   return `<div class="file-card focused">
     <div class="file-card-header">
-      <div class="row" style="gap:8px;">
+      <div class="file-header-main">
         ${titleHtml}
-        ${ideaTitleHtml}
-        <span class="pill ${statusPillClass(item.status)}">${esc(item.status)}</span>
-        <span style="color:var(--green); font-weight:600; font-size:16px;">+${item.additions}</span>
-        <span style="color:var(--red); font-weight:600; font-size:16px;">-${item.deletions}</span>
+        <span class="file-header-badges">
+          ${ideaTitleHtml}
+          <span class="pill ${statusPillClass(item.status)}" style="padding:1px 7px; font-size:13.5px;">${esc(item.status)}</span>
+          <span style="color:var(--green); font-weight:600; font-size:15px;">+${item.additions}</span>
+          <span style="color:var(--red); font-weight:600; font-size:15px;">-${item.deletions}</span>
+        </span>
       </div>
     </div>
     <div style="padding:7px 12px; background:var(--surface-2); border-bottom:1px solid var(--border);" class="label-pair">

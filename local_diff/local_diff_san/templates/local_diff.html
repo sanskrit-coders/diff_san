@@ -663,7 +663,7 @@ function renderDiffItemHtml(item) {
   const primaryPath = item.right_path || item.left_path;
   const titleHtml = (primaryPath && !IS_STATIC_HOST)
     ? `<a id="fileTitleVscodeLink" class="mono file-title-link" href="#" title="Open ${esc(primaryPath)} in VS Code" onclick="event.preventDefault(); openPathInVscode(${esc(JSON.stringify(primaryPath))}, null)">${esc(item.title)}</a>`
-    : `<span class="mono" style="font-weight:700; font-size:18px;">${esc(item.title)}</span>`;
+    : `<span class="mono file-title-text" title="${esc(item.title)}">${esc(item.title)}</span>`;
   const ideaTitleHtml = (primaryPath && !IS_STATIC_HOST)
     ? `<a id="fileTitleIdeaLink" class="mono file-idea-link" href="#" title="Open ${esc(primaryPath)} in IntelliJ IDEA" onclick="event.preventDefault(); openPathInIdea(${esc(JSON.stringify(primaryPath))}, null)">[I]</a>`
     : "";
@@ -678,12 +678,14 @@ function renderDiffItemHtml(item) {
 
   return `<div class="file-card focused">
     <div class="file-card-header">
-      <div class="row" style="gap:8px;">
+      <div class="file-header-main">
         ${titleHtml}
-        ${ideaTitleHtml}
-        <span class="pill ${statusPillClass(item.status)}">${esc(item.status)}</span>
-        <span style="color:var(--green); font-weight:600; font-size:16px;">+${item.additions}</span>
-        <span style="color:var(--red); font-weight:600; font-size:16px;">-${item.deletions}</span>
+        <span class="file-header-badges">
+          ${ideaTitleHtml}
+          <span class="pill ${statusPillClass(item.status)}" style="padding:1px 7px; font-size:13.5px;">${esc(item.status)}</span>
+          <span style="color:var(--green); font-weight:600; font-size:15px;">+${item.additions}</span>
+          <span style="color:var(--red); font-weight:600; font-size:15px;">-${item.deletions}</span>
+        </span>
       </div>
     </div>
     <div style="padding:7px 12px; background:var(--surface-2); border-bottom:1px solid var(--border);" class="label-pair">

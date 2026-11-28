@@ -534,13 +534,35 @@
     gap: 8px;
     padding: 10px 12px;
   }
-  .file-title-link {
+  .file-header-main {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex: 1 1 260px;
+    min-width: 0;
+    flex-wrap: nowrap;
+  }
+  .file-title-link, .file-title-text {
     font-weight: 700;
-    font-size: 18px;
+    font-size: 15.5px;
+    min-width: 0;
+    flex: 0 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .file-title-link {
     color: var(--blue);
     text-decoration: none;
   }
   .file-title-link:hover { text-decoration: underline; }
+  .file-header-badges {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
   .file-idea-link {
     font-size: 15px;
     font-weight: 600;

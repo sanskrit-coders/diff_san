@@ -799,6 +799,7 @@ def test_gui_endpoints_diff_comments_refresh_and_local_helpers(tmp_path: Path, m
     assert f'id="{btn_id}"' in r_html.text
   assert "> Wrap\n" in r_html.text and "> Wrap long lines\n" not in r_html.text
   assert "header button {" in r_html.text and "font-size: 12.5px;" in r_html.text
+  assert ".file-header-main {" in r_html.text and ".file-header-badges {" in r_html.text
   assert r_html.text.index("</header>") < r_html.text.index('id="staticTokenRow"')
   assert '<div id="helpPane"' in r_html.text and r_html.text.index('id="helpPane"') < r_html.text.index('id="aboutFooter"')
 
