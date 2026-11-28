@@ -9,6 +9,7 @@ Run from the command line::
 from __future__ import annotations
 
 import argparse
+import ast
 import os
 from pathlib import Path
 import re
@@ -255,6 +256,37 @@ def open_in_goldendict(word: str) -> dict[str, Any]:
   return {"ok": True, "word": query, "command": cmd}
 
 
+_HTML_CACHE: dict[str, Any] = {"mtime_ns": None, "html": None}
+_MODULE_LOAD_MTIME_NS = Path(__file__).stat().st_mtime_ns if os.path.isfile(__file__) else None
+
+
+def _load_rendered_html() -> str:
+  """Return _RENDERED_HTML, hot-reloading from disk if review_gui.py changed since import."""
+  try:
+    mtime_ns = Path(__file__).stat().st_mtime_ns
+  except OSError:
+    return _RENDERED_HTML
+  if _MODULE_LOAD_MTIME_NS is not None and mtime_ns == _MODULE_LOAD_MTIME_NS:
+    return _RENDERED_HTML
+  if _HTML_CACHE["mtime_ns"] == mtime_ns and isinstance(_HTML_CACHE["html"], str):
+    return _HTML_CACHE["html"]
+  try:
+    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+    for node in tree.body:
+      if (
+        isinstance(node, ast.Assign)
+        and any(isinstance(t, ast.Name) and t.id == "_RENDERED_HTML" for t in node.targets)
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+      ):
+        _HTML_CACHE["mtime_ns"] = mtime_ns
+        _HTML_CACHE["html"] = node.value.value
+        return node.value.value
+  except Exception:
+    pass
+  return _RENDERED_HTML
+
+
 def create_app(
   initial_dir: str | None = None,
   *,
@@ -267,7 +299,7 @@ def create_app(
 
   @app.get("/", response_class=HTMLResponse)
   def index() -> HTMLResponse:
-    return HTMLResponse(_RENDERED_HTML)
+    return HTMLResponse(_load_rendered_html())
 
   @app.get("/api/presets")
   def api_presets() -> dict[str, Any]:
@@ -702,6 +734,13 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
   header button { padding: 3px 7px; font-size: 12px; border-radius: 5px; white-space: nowrap; }
   header button.small { padding: 2px 6px; font-size: 11.5px; }
   header .kbd-hint { font-size: 9.5px; padding: 0 3px; }
+  header #scanSpinner {
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  header #scanSpinner:empty { display: none; }
 
   .stat-pill {
     padding: 3px 9px;
@@ -1222,7 +1261,7 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
         <option value="vp_only">Unpaired</option>
       </select>
     </label>
-    <input id="searchInput" type="text" placeholder="Filter..." style="width:125px;" oninput="debouncedSearch()" />
+    <input id="searchInput" type="text" placeholder="Filter..." style="width:100px;" oninput="debouncedSearch()" />
     <button id="undoBtn" class="small" title="Undo last review action (Ctrl+Z)" onclick="undoLastAction()" disabled>↶ Undo</button>
     <button type="button" class="stat-pill filter-pill" id="statTotal" data-status-filter="all" title="Show all matching suggestions (Alt+L / Alt+0)" onclick="setStatusFilter('all')">0 <span class="kbd-hint">Alt+L</span></button>
     <button type="button" class="stat-pill filter-pill pill-pending active" id="statPending" data-status-filter="pending" title="Show only pending suggestions without !! (Alt+U)" onclick="setStatusFilter('pending')">Pend: 0 <span class="kbd-hint">Alt+U</span></button>
@@ -1254,7 +1293,7 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
 
   <main id="mainPane">
     <div class="pager">
-      <div id="pageInfo" style="color:var(--muted); font-size:12px;">Enter a directory above and click Scan Directory.</div>
+      <div id="pageInfo" style="color:var(--muted); font-size:12px;">Enter a directory above and click Scan.</div>
       <div class="row">
         <button class="small" onclick="changePage(-1)">← Prev</button>
         <span id="pageLabel" style="font-size:12px;">1 / 1</span>
@@ -1328,7 +1367,8 @@ function flashStatus(msg) {
   const sp = document.getElementById("scanSpinner");
   if (!sp || !msg) return;
   sp.textContent = msg;
-  setTimeout(() => { if (sp.textContent === msg) sp.textContent = ""; }, 2500);
+  sp.title = msg;
+  setTimeout(() => { if (sp.textContent === msg) { sp.textContent = ""; sp.title = ""; } }, 2500);
 }
 
 function esc(s) {
