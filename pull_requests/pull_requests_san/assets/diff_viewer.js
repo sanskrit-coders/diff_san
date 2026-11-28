@@ -1871,8 +1871,41 @@ function syncDiffFocusAndCheckedUi(rows, scopeKey, { storageKey, selectRowFn = n
   }
 }
 
+let _sidebarPageStepFn = null;
+let _sidebarPageNavBound = false;
+
+function getCtrlPageStepDelta(ev) {
+  if (!ev || !ev.ctrlKey || ev.altKey || ev.metaKey || ev.shiftKey) return 0;
+  if (ev.key === "PageDown" || ev.code === "PageDown") return 1;
+  if (ev.key === "PageUp" || ev.code === "PageUp") return -1;
+  return 0;
+}
+
+function bindSidebarPageNav(stepFn) {
+  _sidebarPageStepFn = typeof stepFn === "function" ? stepFn : null;
+  if (_sidebarPageNavBound || typeof window === "undefined" || typeof window.addEventListener !== "function") return;
+  _sidebarPageNavBound = true;
+  window.addEventListener("keydown", (ev) => {
+    const delta = getCtrlPageStepDelta(ev);
+    if (!delta || typeof _sidebarPageStepFn !== "function") return;
+    ev.__diffSanSidebarPageHandled = true;
+    if (typeof ev.preventDefault === "function") ev.preventDefault();
+    if (typeof ev.stopPropagation === "function") ev.stopPropagation();
+    _sidebarPageStepFn(delta);
+  }, true);
+}
+
 function handleSharedDiffKeydown(ev, navCtx = null) {
   if (!ev) return false;
+  const sidebarDelta = !ev.__diffSanSidebarPageHandled ? getCtrlPageStepDelta(ev) : 0;
+  const sidebarStepFn = navCtx && typeof navCtx.stepSidebar === "function" ? navCtx.stepSidebar : _sidebarPageStepFn;
+  if (sidebarDelta && typeof sidebarStepFn === "function") {
+    ev.__diffSanSidebarPageHandled = true;
+    if (typeof ev.preventDefault === "function") ev.preventDefault();
+    if (typeof ev.stopPropagation === "function") ev.stopPropagation();
+    sidebarStepFn(sidebarDelta);
+    return true;
+  }
   if ((ev.key === "f" || ev.key === "F") && ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey) {
     if (typeof ev.preventDefault === "function") ev.preventDefault();
     openDiffFindBar();

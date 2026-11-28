@@ -1141,7 +1141,7 @@
     <strong style="font-size:19px;">GitHub PR Character-Level Reviewer (diff_san)</strong>
     <button id="closeHelpBtn" class="small" type="button" onclick="closeHelpPane()">✕ Close</button>
   </div>
-  <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • Tab / Shift+Tab Step diffs • Ctrl+Space Checked until here • Click diff box Copy OLD/NEW • Right-click Copy diff / PR line link • Ctrl+F Find (supports ँ) • Ctrl+G / Ctrl+Shift+G Next/Prev find • Ctrl+D / Ctrl+Shift+D Next/Prev comment • Alt+D / Alt+Shift+D Next/Prev unresolved • ←/→ Collapse/Expand resolved comment • Alt+R Reply selected comment • Alt+V Resolve/Unresolve selected comment • Alt+W Word/Char diff • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Shift+Enter Multiline reply • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • [/] Prev/Next PR • ? About/Shortcuts • Esc Close panel/bar/composer</div>
+  <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • Tab / Shift+Tab Step diffs • Ctrl+Space Checked until here • Click diff box Copy OLD/NEW • Right-click Copy diff / PR line link • Ctrl+F Find (supports ँ) • Ctrl+G / Ctrl+Shift+G Next/Prev find • Ctrl+D / Ctrl+Shift+D Next/Prev comment • Alt+D / Alt+Shift+D Next/Prev unresolved • ←/→ Collapse/Expand resolved comment • Alt+R Reply selected comment • Alt+V Resolve/Unresolve selected comment • Alt+W Word/Char diff • PgUp/PgDn Page &amp; select first line • Ctrl+PgUp/PgDn Prev/Next left-pane PR or file • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Shift+Enter Multiline reply • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • [/] Prev/Next PR • ? About/Shortcuts • Esc Close panel/bar/composer</div>
   <footer id="aboutFooter" class="about-footer">
     <div>
       <strong>diff_san — Pull Requests</strong> (<a href="https://github.com/sanskrit-coders/diff_san" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) —
@@ -4671,8 +4671,41 @@ function syncDiffFocusAndCheckedUi(rows, scopeKey, { storageKey, selectRowFn = n
   }
 }
 
+let _sidebarPageStepFn = null;
+let _sidebarPageNavBound = false;
+
+function getCtrlPageStepDelta(ev) {
+  if (!ev || !ev.ctrlKey || ev.altKey || ev.metaKey || ev.shiftKey) return 0;
+  if (ev.key === "PageDown" || ev.code === "PageDown") return 1;
+  if (ev.key === "PageUp" || ev.code === "PageUp") return -1;
+  return 0;
+}
+
+function bindSidebarPageNav(stepFn) {
+  _sidebarPageStepFn = typeof stepFn === "function" ? stepFn : null;
+  if (_sidebarPageNavBound || typeof window === "undefined" || typeof window.addEventListener !== "function") return;
+  _sidebarPageNavBound = true;
+  window.addEventListener("keydown", (ev) => {
+    const delta = getCtrlPageStepDelta(ev);
+    if (!delta || typeof _sidebarPageStepFn !== "function") return;
+    ev.__diffSanSidebarPageHandled = true;
+    if (typeof ev.preventDefault === "function") ev.preventDefault();
+    if (typeof ev.stopPropagation === "function") ev.stopPropagation();
+    _sidebarPageStepFn(delta);
+  }, true);
+}
+
 function handleSharedDiffKeydown(ev, navCtx = null) {
   if (!ev) return false;
+  const sidebarDelta = !ev.__diffSanSidebarPageHandled ? getCtrlPageStepDelta(ev) : 0;
+  const sidebarStepFn = navCtx && typeof navCtx.stepSidebar === "function" ? navCtx.stepSidebar : _sidebarPageStepFn;
+  if (sidebarDelta && typeof sidebarStepFn === "function") {
+    ev.__diffSanSidebarPageHandled = true;
+    if (typeof ev.preventDefault === "function") ev.preventDefault();
+    if (typeof ev.stopPropagation === "function") ev.stopPropagation();
+    sidebarStepFn(sidebarDelta);
+    return true;
+  }
   if ((ev.key === "f" || ev.key === "F") && ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey) {
     if (typeof ev.preventDefault === "function") ev.preventDefault();
     openDiffFindBar();
@@ -5820,6 +5853,7 @@ let filteredPrs = [];
 let activePrKey = null;
 let activePrData = null;
 let selectedFileFilter = "";
+let lastSidebarSection = "prs";
 let collapsedFiles = {};
 let openComposer = null;
 let activeCommentEdit = null;
@@ -6087,6 +6121,7 @@ function toggleSinglePane(checked) {
 
 async function init() {
   initDiffSettingsPane();
+  if (typeof bindSidebarPageNav === "function") bindSidebarPageNav(stepPrSidebarItem);
   pendingPrDeepLink = parsePrDeepLinkTargetFromLocation();
   bindDiffRowContextMenu(
     () => renderedDiffRows,
@@ -6389,9 +6424,12 @@ function renderPrSidebar() {
       </div>
     </div>`;
   }).join("");
+  const actPr = typeof el.querySelector === "function" ? el.querySelector(".pr-item.active") : null;
+  if (actPr && typeof actPr.scrollIntoView === "function") actPr.scrollIntoView({ block: "nearest" });
 }
 
 function openPrIdx(idx) {
+  lastSidebarSection = "prs";
   const p = filteredPrs[idx];
   if (p) openPr(p.owner, p.repo, p.number, false);
 }
@@ -6584,6 +6622,7 @@ async function changeDiffMode() {
 }
 
 function selectFileFilter(filename) {
+  lastSidebarSection = "files";
   selectedFileFilter = selectedFileFilter === filename ? "" : filename;
   renderFileSidebar();
   renderActivePrFiles();
@@ -6616,11 +6655,51 @@ function renderFileSidebar() {
       </div>
     </div>`;
   }).join("");
+  const actFile = typeof el.querySelector === "function" ? el.querySelector(".file-item.active") : null;
+  if (actFile && typeof actFile.scrollIntoView === "function") actFile.scrollIntoView({ block: "nearest" });
 }
 
 function selectFileFilterIdx(fi) {
   const f = getDisplayedFiles()?.[fi];
   if (f) selectFileFilter(f.filename);
+}
+
+function stepPrSidebarItem(delta) {
+  const files = typeof getDisplayedFiles === "function" ? getDisplayedFiles() : [];
+  const useFiles = (lastSidebarSection === "files" || Boolean(selectedFileFilter) || filteredPrs.length <= 1) && files.length > 0;
+  if (useFiles) {
+    const curIdx = selectedFileFilter ? files.findIndex(f => f.filename === selectedFileFilter) : -1;
+    if (curIdx < 0) {
+      if (delta > 0) selectFileFilter(files[0].filename);
+      else setStatus("Showing all files", 1800);
+      return true;
+    }
+    if (delta < 0 && curIdx === 0) {
+      selectFileFilter(files[0].filename);
+      setStatus("Showing all files", 1800);
+      return true;
+    }
+    const nextIdx = Math.max(0, Math.min(files.length - 1, curIdx + delta));
+    if (nextIdx === curIdx) {
+      setStatus(delta > 0 ? `At last file (${files.length} / ${files.length})` : `At first file (1 / ${files.length})`, 1800);
+      return true;
+    }
+    selectFileFilter(files[nextIdx].filename);
+    return true;
+  }
+  if (!filteredPrs.length) return false;
+  const curIdx = activePrKey
+    ? filteredPrs.findIndex(p => p.owner === activePrKey.owner && p.repo === activePrKey.repo && p.number === activePrKey.number)
+    : -1;
+  const nextIdx = delta > 0
+    ? Math.min(filteredPrs.length - 1, curIdx + 1)
+    : (curIdx <= 0 ? 0 : curIdx - 1);
+  if (nextIdx < 0 || nextIdx === curIdx) {
+    setStatus(delta > 0 ? `At last PR (${filteredPrs.length} / ${filteredPrs.length})` : `At first PR (1 / ${filteredPrs.length})`, 1800);
+    return true;
+  }
+  openPrIdx(nextIdx);
+  return true;
 }
 
 function conflictReasonLabel(c) {
@@ -8632,6 +8711,7 @@ document.addEventListener("keydown", (ev) => {
     selectRow: (rowKey, opts) => selectDiffRow(rowKey, { focusFile: true, ...opts }),
     getScopeKey: getActivePrCheckedScopeKey,
     checkedStorageKey: PR_CHECKED_UNTIL_STORAGE_KEY,
+    stepSidebar: stepPrSidebarItem,
   })) return;
   const target = ev.target;
   const id = (target && target.id) || "";

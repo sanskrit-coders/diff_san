@@ -1276,7 +1276,7 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     <strong style="font-size:15px;">Vedic Accent Fix Reviewer (pada_svara)</strong>
     <button id="closeHelpBtn" class="small" type="button" onclick="closeHelpPane()">✕ Close</button>
   </div>
-  <div id="shortcutFooter" style="color:var(--muted); font-size:12px;">Shortcuts: Alt+U Pending • Alt+A Accepted • Alt+R Rejected • Alt+W With !! • Alt+L/0 All • Alt+1 Accept • Alt+2 Reject • Alt+3 Feedback • Enter Submit • Ctrl+Enter Accept+Submit • Ctrl+R Rescan • Ctrl+Z Undo • j/k/↑/↓ navigate • ←/→ Collapse/Expand • ? About/Shortcuts • Esc Close help</div>
+  <div id="shortcutFooter" style="color:var(--muted); font-size:12px;">Shortcuts: Alt+U Pending • Alt+A Accepted • Alt+R Rejected • Alt+W With !! • Alt+L/0 All • Alt+1 Accept • Alt+2 Reject • Alt+3 Feedback • Enter Submit • Ctrl+Enter Accept+Submit • Ctrl+R Rescan • Ctrl+Z Undo • j/k/↑/↓ navigate • ←/→ Collapse/Expand • Ctrl+PgUp/PgDn Prev/Next file • ? About/Shortcuts • Esc Close help</div>
   <div id="aboutFooter" style="color:var(--muted); font-size:12px; border-top:1px solid var(--border); padding-top:8px;">
     <div><strong>pada_svara</strong> (<a href="https://github.com/sanskrit-coders/diff_san/tree/master/vishvAsa/pada_svara" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) — FastAPI review GUI and scanner for Vedic <code>पद-पाठः</code> and <code>विश्वास-प्रस्तुतिः</code> accent fix suggestions with scoped <code>git commit --only</code> support.</div>
   </div>
@@ -1551,6 +1551,9 @@ function renderSummary(sum) {
       </div>
     </div>`;
   }).join("");
+  const fileListEl = document.getElementById("fileList");
+  const actFileEl = fileListEl && typeof fileListEl.querySelector === "function" ? fileListEl.querySelector(".file-item.active") : null;
+  if (actFileEl && typeof actFileEl.scrollIntoView === "function") actFileEl.scrollIntoView({ block: "nearest" });
 
   const indexed = files.map((f, fi) => ({ f, fi }));
   const dirtyFiles = indexed.filter(({ f }) => f.dirty || f.counts.accepted > 0 || (f.counts.rejected || 0) > 0 || (f.counts.with_feedback || 0) > 0);
@@ -1584,6 +1587,32 @@ function selectFileFilter(fp) {
 function selectFileFilterIdx(fi) {
   const f = latestSummary?.files?.[fi];
   if (f) selectFileFilter(f.file_path);
+}
+
+function stepSidebarFile(delta) {
+  const files = latestSummary?.files || [];
+  if (!files.length) return false;
+  const curIdx = selectedFile ? files.findIndex(f => f.file_path === selectedFile) : -1;
+  if (curIdx < 0) {
+    if (delta > 0) {
+      selectFileFilter(files[0].file_path);
+    } else {
+      flashStatus("Showing all files");
+    }
+    return true;
+  }
+  if (delta < 0 && curIdx === 0) {
+    selectFileFilter(files[0].file_path);
+    flashStatus("Showing all files");
+    return true;
+  }
+  const nextIdx = Math.max(0, Math.min(files.length - 1, curIdx + delta));
+  if (nextIdx === curIdx) {
+    flashStatus(delta > 0 ? `At last file (${files.length} / ${files.length})` : `At first file (1 / ${files.length})`);
+    return true;
+  }
+  selectFileFilter(files[nextIdx].file_path);
+  return true;
 }
 
 function toggleFileMarkIdx(fi, checked) {
@@ -2256,7 +2285,33 @@ function closeHelpPane() {
   toggleHelpPane(false);
 }
 
+function getCtrlPageStepDelta(ev) {
+  if (!ev || !ev.ctrlKey || ev.altKey || ev.metaKey || ev.shiftKey) return 0;
+  if (ev.key === "PageDown" || ev.code === "PageDown") return 1;
+  if (ev.key === "PageUp" || ev.code === "PageUp") return -1;
+  return 0;
+}
+
+if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+  window.addEventListener("keydown", (ev) => {
+    const delta = getCtrlPageStepDelta(ev);
+    if (!delta) return;
+    ev.__padaSvaraSidebarPageHandled = true;
+    if (typeof ev.preventDefault === "function") ev.preventDefault();
+    if (typeof ev.stopPropagation === "function") ev.stopPropagation();
+    stepSidebarFile(delta);
+  }, true);
+}
+
 document.addEventListener("keydown", (ev) => {
+  const sidebarDelta = !ev?.__padaSvaraSidebarPageHandled ? getCtrlPageStepDelta(ev) : 0;
+  if (sidebarDelta) {
+    ev.__padaSvaraSidebarPageHandled = true;
+    if (typeof ev.preventDefault === "function") ev.preventDefault();
+    if (typeof ev.stopPropagation === "function") ev.stopPropagation();
+    stepSidebarFile(sidebarDelta);
+    return;
+  }
   const target = ev.target;
   const id = (target && target.id) || "";
   const tag = (target && target.tagName || "").toUpperCase();
