@@ -201,20 +201,104 @@
     align-items: center;
   }
   .pr-item, .file-item {
-    padding: 8px 10px;
+    padding: 7px 9px;
     border-radius: 7px;
     border: 1px solid var(--border);
     background: var(--surface-2);
     cursor: pointer;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 3px;
   }
   .pr-item:hover, .file-item:hover { background: #f2ede2; }
   .pr-item.active, .file-item.active {
     background: var(--accent-soft);
     border-color: var(--accent);
-    box-shadow: inset 3px 0 0 var(--accent);
+    box-shadow: inset 4px 0 0 var(--accent);
+  }
+  .file-tree-dir {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .file-tree-dir > summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    padding: 3px 6px;
+    border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--muted);
+    background: var(--surface-2);
+    border: 1px solid #ebe4d5;
+    word-break: break-all;
+    user-select: none;
+  }
+  .file-tree-dir.file-tree-root > summary {
+    color: var(--blue);
+    background: #f3f7fb;
+    border-color: #d6e4f2;
+  }
+  .file-tree-dir > summary:hover { background: #efeae0; }
+  .file-tree-dir > summary::-webkit-details-marker { display: none; }
+  .file-tree-caret {
+    display: inline-block;
+    font-size: 11px;
+    flex-shrink: 0;
+    transition: transform 0.12s ease;
+  }
+  .file-tree-dir[open] > summary > .file-tree-caret { transform: rotate(90deg); }
+  .file-tree-count {
+    margin-left: auto;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--muted);
+    flex-shrink: 0;
+  }
+  .file-tree-children {
+    margin-left: 7px;
+    padding-left: 7px;
+    border-left: 1.5px solid #e2dac9;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 3px;
+  }
+  u.sc-key {
+    text-decoration: underline dotted currentColor;
+    text-decoration-thickness: 1.2px;
+    text-underline-offset: 2px;
+  }
+  body.mod-alt-down u.sc-key.sc-alt,
+  body.mod-ctrl-down u.sc-key.sc-ctrl {
+    text-decoration: underline solid currentColor;
+    text-decoration-thickness: 2.5px;
+    background: rgba(139, 69, 19, 0.16);
+    border-radius: 2px;
+    font-weight: 800;
+    padding: 0 1px;
+  }
+  button.primary u.sc-key,
+  button.green u.sc-key,
+  button.danger u.sc-key {
+    text-decoration-color: rgba(255, 255, 255, 0.85);
+  }
+  body.mod-alt-down button.primary u.sc-key.sc-alt,
+  body.mod-alt-down button.green u.sc-key.sc-alt,
+  body.mod-alt-down button.danger u.sc-key.sc-alt,
+  body.mod-ctrl-down button.primary u.sc-key.sc-ctrl,
+  body.mod-ctrl-down button.green u.sc-key.sc-ctrl,
+  body.mod-ctrl-down button.danger u.sc-key.sc-ctrl {
+    background: rgba(255, 255, 255, 0.28);
+    text-decoration-color: #ffffff;
+  }
+  body.mod-alt-down:not(.mod-ctrl-down) u.sc-key.sc-ctrl:not(.sc-alt),
+  body.mod-ctrl-down:not(.mod-alt-down) u.sc-key.sc-alt:not(.sc-ctrl) {
+    text-decoration: none;
   }
   .pr-item-meta, .file-item-meta {
     font-size: 15px;
@@ -1067,16 +1151,16 @@
     </span>
     <span id="stateFilterPills" class="row" style="gap:3px;">
       <input type="hidden" id="stateSelect" value="open" />
-      <button type="button" class="pill filter-pill pill-green active" id="stateOpenPill" data-state-filter="open" title="Show Open PRs (Alt+O)" onclick="setStateFilter('open')">Open</button>
-      <button type="button" class="pill filter-pill pill-amber" id="stateClosedPill" data-state-filter="closed" title="Show past 10 Closed PRs (Alt+C)" onclick="setStateFilter('closed')">Closed</button>
-      <button type="button" class="pill filter-pill pill-blue" id="stateMergedPill" data-state-filter="merged" title="Show past 10 Merged PRs (Alt+M)" onclick="setStateFilter('merged')">Merged</button>
-      <button type="button" class="pill filter-pill" id="stateAllPill" data-state-filter="all" title="Show past 10 PRs (Alt+L / Alt+0)" onclick="setStateFilter('all')">All</button>
+      <button type="button" class="pill filter-pill pill-green active" id="stateOpenPill" data-state-filter="open" title="Show Open PRs (Alt+O)" onclick="setStateFilter('open')"><u class="sc-key sc-alt">O</u>pen</button>
+      <button type="button" class="pill filter-pill pill-amber" id="stateClosedPill" data-state-filter="closed" title="Show past 10 Closed PRs (Alt+C)" onclick="setStateFilter('closed')"><u class="sc-key sc-alt">C</u>losed</button>
+      <button type="button" class="pill filter-pill pill-blue" id="stateMergedPill" data-state-filter="merged" title="Show past 10 Merged PRs (Alt+M)" onclick="setStateFilter('merged')"><u class="sc-key sc-alt">M</u>erged</button>
+      <button type="button" class="pill filter-pill" id="stateAllPill" data-state-filter="all" title="Show past 10 PRs (Alt+L / Alt+0)" onclick="setStateFilter('all')">A<u class="sc-key sc-alt">l</u>l</button>
     </span>
     <select id="repoSelect" title="Filter by repo" style="max-width:110px;" onchange="applyPrFilters()">
       <option value="">All repos</option>
     </select>
     <input id="prSearchInput" type="text" placeholder="Filter PRs..." style="width:100px;" oninput="applyPrFilters()" />
-    <button id="refreshAllBtn" class="primary" title="Refresh PRs from GitHub (Ctrl+R)" onclick="refreshAll()">↻ Refresh</button>
+    <button id="refreshAllBtn" class="primary" title="Refresh PRs from GitHub (Ctrl+R)" onclick="refreshAll()">↻ <u class="sc-key sc-ctrl">R</u>efresh</button>
     <button id="reloadBtn" class="small" title="Reload UI (Ctrl+R refreshes from GitHub)" onclick="reloadUi()">↻ Reload</button>
     <span id="authBadge" class="pill">Checking...</span>
     <span id="checkedUntilPill" class="checked-until-pill" style="display:none;"></span>
@@ -1114,7 +1198,7 @@
     </span>
     <label title="Editor font size in px — matches VS Code (25) / IntelliJ IDEA (28)">Font: <input id="fontPxInput" type="number" min="14" max="42" value="26" style="width:48px;" onchange="applyEditorFont(this.value)" /></label>
     <label style="cursor:pointer;" title="Single pane inline word flow without line matching (Alt+S)">
-      <input id="singlePaneChk" type="checkbox" checked onchange="toggleSinglePane(this.checked)" /> 1-pane
+      <input id="singlePaneChk" type="checkbox" checked onchange="toggleSinglePane(this.checked)" /> <u class="sc-key sc-alt">S</u>ingle
     </label>
     <label style="cursor:pointer;" title="Show changed lines only">
       <input id="changedOnlyChk" type="checkbox" onchange="renderActivePrFiles()" /> Changed
@@ -1123,7 +1207,7 @@
       <input id="wrapLinesChk" type="checkbox" checked onchange="renderActivePrFiles()" /> Wrap
     </label>
     <button id="gdSelectionBtn" class="small" title="Look up currently selected text in GoldenDict" onclick="lookupSelectedGoldenDict()">📖 GD</button>
-    <button id="findBtn" class="small" type="button" title="Find text or combining marks like ँ across spans (Ctrl+F)" onclick="openDiffFindBar()">🔍 Find</button>
+    <button id="findBtn" class="small" type="button" title="Find text or combining marks like ँ across spans (Ctrl+F)" onclick="openDiffFindBar()">🔍 <u class="sc-key sc-ctrl">F</u>ind</button>
     <button id="settingsBtn" class="small" type="button" title="Customize deleted and added diff highlight colors" onclick="toggleSettingsPane()">⚙ Settings</button>
     <button id="helpBtn" class="small" type="button" title="About &amp; keyboard shortcuts (?)" onclick="toggleHelpPane()">?</button>
   </div>
@@ -1141,7 +1225,7 @@
     <strong style="font-size:19px;">GitHub PR Character-Level Reviewer (diff_san)</strong>
     <button id="closeHelpBtn" class="small" type="button" onclick="closeHelpPane()">✕ Close</button>
   </div>
-  <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • Tab / Shift+Tab Step diffs • Ctrl+Space Checked until here • Click diff box Copy OLD/NEW • Right-click Copy diff / PR line link • Ctrl+F Find (supports ँ) • Ctrl+G / Ctrl+Shift+G Next/Prev find • Ctrl+D / Ctrl+Shift+D Next/Prev comment • Alt+D / Alt+Shift+D Next/Prev unresolved • ←/→ Collapse/Expand resolved comment • Alt+R Reply selected comment • Alt+V Resolve/Unresolve selected comment • Alt+W Word/Char diff • PgUp/PgDn Page &amp; select first line • Ctrl+PgUp/PgDn Prev/Next left-pane PR or file • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Shift+Enter Multiline reply • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • [/] Prev/Next PR • ? About/Shortcuts • Esc Close panel/bar/composer</div>
+  <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Hold Alt/Ctrl Highlight button shortcut letters • Shift+Click / ↑/↓ Select line • Tab / Shift+Tab Step diffs • Ctrl+Space Checked until here • Click diff box Copy OLD/NEW • Right-click Copy diff / PR line link • Ctrl+F Find (supports ँ) • Ctrl+G / Ctrl+Shift+G Next/Prev find • Ctrl+D / Ctrl+Shift+D Next/Prev comment • Alt+D / Alt+Shift+D Next/Prev unresolved • ←/→ Collapse/Expand resolved comment • Alt+R Reply selected comment • Alt+V Resolve/Unresolve selected comment • Alt+W Word/Char diff • PgUp/PgDn Page &amp; select first line • Shift+PgUp/PgDn Prev/Next file card in main pane • Ctrl+PgUp/PgDn Prev/Next left-pane PR or file • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Shift+Enter Multiline reply • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • [/] Prev/Next PR • ? About/Shortcuts • Esc Close panel/bar/composer</div>
   <footer id="aboutFooter" class="about-footer">
     <div>
       <strong>diff_san — Pull Requests</strong> (<a href="https://github.com/sanskrit-coders/diff_san" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) —
@@ -4672,7 +4756,145 @@ function syncDiffFocusAndCheckedUi(rows, scopeKey, { storageKey, selectRowFn = n
 }
 
 let _sidebarPageStepFn = null;
+let _mainFilePageStepFn = null;
 let _sidebarPageNavBound = false;
+let _modifierHintBound = false;
+const _fileTreeCollapsed = {};
+
+function setFileTreeDirCollapsed(scopeKey, dirKey, isOpen) {
+  const fullKey = `${scopeKey || "default"}:${dirKey}`;
+  if (isOpen) delete _fileTreeCollapsed[fullKey];
+  else _fileTreeCollapsed[fullKey] = true;
+}
+
+function buildFileTreeData(entries) {
+  const parsed = (entries || []).map((e, pos) => {
+    const raw = String(e?.path ?? "");
+    if (!raw || raw.includes(" ↔ ")) {
+      return { ...e, pos, dirs: [], name: raw || "(unnamed)", nonPath: true };
+    }
+    const clean = raw.replace(/\\/g, "/");
+    const slashIdx = clean.lastIndexOf("/");
+    const dirPart = slashIdx >= 0 ? clean.slice(0, slashIdx) : "";
+    const dirs = dirPart ? dirPart.split("/").filter(Boolean) : [];
+    const name = slashIdx >= 0 ? clean.slice(slashIdx + 1) : clean;
+    return { ...e, pos, dirs, name: name || raw, hasLeadingSlash: clean.startsWith("/") };
+  });
+  let lcpDirs = [];
+  const pathItems = parsed.filter(p => !p.nonPath);
+  if (pathItems.length) {
+    lcpDirs = pathItems[0].dirs.slice();
+    for (let i = 1; i < pathItems.length; i++) {
+      const d = pathItems[i].dirs;
+      let k = 0;
+      while (k < lcpDirs.length && k < d.length && lcpDirs[k] === d[k]) k++;
+      lcpDirs = lcpDirs.slice(0, k);
+    }
+  }
+  const allLeadingSlash = pathItems.length > 0 && pathItems.every(p => p.hasLeadingSlash);
+  const rootLabel = lcpDirs.length ? `${allLeadingSlash ? "/" : ""}${lcpDirs.join("/")}/` : "";
+  const rootNode = { key: "__root__", name: rootLabel, children: new Map(), files: [] };
+
+  for (const item of parsed) {
+    let cur = rootNode;
+    const relDirs = item.nonPath ? [] : item.dirs.slice(lcpDirs.length);
+    let prefix = "";
+    for (const seg of relDirs) {
+      prefix = prefix ? `${prefix}/${seg}` : seg;
+      if (!cur.children.has(seg)) {
+        cur.children.set(seg, { key: prefix, name: seg, children: new Map(), files: [] });
+      }
+      cur = cur.children.get(seg);
+    }
+    cur.files.push(item);
+  }
+
+  function compact(node, isRoot) {
+    for (const child of node.children.values()) {
+      compact(child, false);
+    }
+    if (!isRoot) {
+      while (node.files.length === 0 && node.children.size === 1) {
+        const only = Array.from(node.children.values())[0];
+        node.name = `${node.name}/${only.name}`;
+        node.key = only.key;
+        node.files = only.files;
+        node.children = only.children;
+      }
+    }
+  }
+  compact(rootNode, true);
+  return { rootNode, rootLabel };
+}
+
+function renderFileTreeHtml(entries, renderLeafHtml, { scopeKey = "files" } = {}) {
+  if (!entries || !entries.length) return "";
+  const { rootNode, rootLabel } = buildFileTreeData(entries);
+
+  function countNode(node) {
+    let total = node.files.length;
+    let hasActive = node.files.some(f => Boolean(f.isActive));
+    for (const child of node.children.values()) {
+      const sub = countNode(child);
+      total += sub.total;
+      if (sub.hasActive) hasActive = true;
+    }
+    node._total = total;
+    node._hasActive = hasActive;
+    return { total, hasActive };
+  }
+  countNode(rootNode);
+
+  function renderChildren(node) {
+    const subHtml = Array.from(node.children.values()).map(child => renderDir(child, false)).join("");
+    const leafHtml = node.files.map(f => renderLeafHtml(f)).join("");
+    return `${subHtml}${leafHtml}`;
+  }
+
+  function renderDir(node, isRoot) {
+    const collapsed = Boolean(_fileTreeCollapsed[`${scopeKey}:${node.key}`]);
+    const isOpen = node._hasActive || !collapsed;
+    const cls = isRoot ? "file-tree-dir file-tree-root" : "file-tree-dir";
+    const labelTxt = isRoot ? node.name : `${node.name}/`;
+    const toggleJs = `setFileTreeDirCollapsed(${esc(JSON.stringify(scopeKey))}, ${esc(JSON.stringify(node.key))}, this.open)`;
+    return `<details class="${cls}" data-dir-key="${esc(node.key)}" ${isOpen ? "open" : ""} ontoggle="${toggleJs}">
+      <summary title="${esc(labelTxt)}"><span class="file-tree-caret">▸</span><span>📁 ${esc(labelTxt)}</span><span class="file-tree-count">${node._total}</span></summary>
+      <div class="file-tree-children">${renderChildren(node)}</div>
+    </details>`;
+  }
+
+  if (rootLabel) {
+    return renderDir(rootNode, true);
+  }
+  return renderChildren(rootNode);
+}
+
+function _syncModifierClasses(ev) {
+  if (typeof document === "undefined" || !document.body || !document.body.classList) return;
+  const altDown = Boolean(ev && (ev.altKey || (ev.type === "keydown" && ev.key === "Alt")));
+  const ctrlDown = Boolean(ev && (ev.ctrlKey || (ev.type === "keydown" && ev.key === "Control")));
+  document.body.classList.toggle("mod-alt-down", ev?.type === "keyup" && ev?.key === "Alt" ? false : altDown);
+  document.body.classList.toggle("mod-ctrl-down", ev?.type === "keyup" && ev?.key === "Control" ? false : ctrlDown);
+}
+
+function bindModifierHintTracking() {
+  if (_modifierHintBound || typeof window === "undefined" || typeof window.addEventListener !== "function") return;
+  _modifierHintBound = true;
+  window.addEventListener("keydown", _syncModifierClasses, true);
+  window.addEventListener("keyup", _syncModifierClasses, true);
+  window.addEventListener("blur", () => {
+    if (typeof document !== "undefined" && document.body && document.body.classList) {
+      document.body.classList.remove("mod-alt-down", "mod-ctrl-down");
+    }
+  });
+  if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden && document.body && document.body.classList) {
+        document.body.classList.remove("mod-alt-down", "mod-ctrl-down");
+      }
+    });
+  }
+}
 
 function getCtrlPageStepDelta(ev) {
   if (!ev || !ev.ctrlKey || ev.altKey || ev.metaKey || ev.shiftKey) return 0;
@@ -4681,22 +4903,58 @@ function getCtrlPageStepDelta(ev) {
   return 0;
 }
 
-function bindSidebarPageNav(stepFn) {
-  _sidebarPageStepFn = typeof stepFn === "function" ? stepFn : null;
+function getShiftPageStepDelta(ev) {
+  if (!ev || !ev.shiftKey || ev.ctrlKey || ev.altKey || ev.metaKey) return 0;
+  if (ev.key === "PageDown" || ev.code === "PageDown") return 1;
+  if (ev.key === "PageUp" || ev.code === "PageUp") return -1;
+  return 0;
+}
+
+function _isTextEditingTarget(tgt) {
+  const tag = (tgt && tgt.tagName || "").toUpperCase();
+  return tag === "TEXTAREA" || tag === "SELECT"
+    || (tag === "INPUT" && tgt.type !== "checkbox" && tgt.type !== "radio" && tgt.type !== "button")
+    || Boolean(tgt?.isContentEditable);
+}
+
+function _ensurePageNavCaptureListener() {
   if (_sidebarPageNavBound || typeof window === "undefined" || typeof window.addEventListener !== "function") return;
   _sidebarPageNavBound = true;
   window.addEventListener("keydown", (ev) => {
-    const delta = getCtrlPageStepDelta(ev);
-    if (!delta || typeof _sidebarPageStepFn !== "function") return;
-    ev.__diffSanSidebarPageHandled = true;
-    if (typeof ev.preventDefault === "function") ev.preventDefault();
-    if (typeof ev.stopPropagation === "function") ev.stopPropagation();
-    _sidebarPageStepFn(delta);
+    const sideDelta = getCtrlPageStepDelta(ev);
+    if (sideDelta && typeof _sidebarPageStepFn === "function") {
+      ev.__diffSanSidebarPageHandled = true;
+      if (typeof ev.preventDefault === "function") ev.preventDefault();
+      if (typeof ev.stopPropagation === "function") ev.stopPropagation();
+      _sidebarPageStepFn(sideDelta);
+      return;
+    }
+    const mainDelta = getShiftPageStepDelta(ev);
+    if (mainDelta && typeof _mainFilePageStepFn === "function" && !_isTextEditingTarget(ev.target)) {
+      if (_mainFilePageStepFn(mainDelta)) {
+        ev.__diffSanMainFilePageHandled = true;
+        if (typeof ev.preventDefault === "function") ev.preventDefault();
+        if (typeof ev.stopPropagation === "function") ev.stopPropagation();
+      }
+    }
   }, true);
+}
+
+function bindSidebarPageNav(stepFn) {
+  _sidebarPageStepFn = typeof stepFn === "function" ? stepFn : null;
+  _ensurePageNavCaptureListener();
+  bindModifierHintTracking();
+}
+
+function bindMainFilePageNav(stepFn) {
+  _mainFilePageStepFn = typeof stepFn === "function" ? stepFn : null;
+  _ensurePageNavCaptureListener();
+  bindModifierHintTracking();
 }
 
 function handleSharedDiffKeydown(ev, navCtx = null) {
   if (!ev) return false;
+  _syncModifierClasses(ev);
   const sidebarDelta = !ev.__diffSanSidebarPageHandled ? getCtrlPageStepDelta(ev) : 0;
   const sidebarStepFn = navCtx && typeof navCtx.stepSidebar === "function" ? navCtx.stepSidebar : _sidebarPageStepFn;
   if (sidebarDelta && typeof sidebarStepFn === "function") {
@@ -4705,6 +4963,16 @@ function handleSharedDiffKeydown(ev, navCtx = null) {
     if (typeof ev.stopPropagation === "function") ev.stopPropagation();
     sidebarStepFn(sidebarDelta);
     return true;
+  }
+  const mainFileDelta = !ev.__diffSanMainFilePageHandled ? getShiftPageStepDelta(ev) : 0;
+  const mainFileStepFn = navCtx && typeof navCtx.stepMainFile === "function" ? navCtx.stepMainFile : _mainFilePageStepFn;
+  if (mainFileDelta && typeof mainFileStepFn === "function" && !_isTextEditingTarget(ev.target)) {
+    if (mainFileStepFn(mainFileDelta)) {
+      ev.__diffSanMainFilePageHandled = true;
+      if (typeof ev.preventDefault === "function") ev.preventDefault();
+      if (typeof ev.stopPropagation === "function") ev.stopPropagation();
+      return true;
+    }
   }
   if ((ev.key === "f" || ev.key === "F") && ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey) {
     if (typeof ev.preventDefault === "function") ev.preventDefault();
@@ -6122,6 +6390,7 @@ function toggleSinglePane(checked) {
 async function init() {
   initDiffSettingsPane();
   if (typeof bindSidebarPageNav === "function") bindSidebarPageNav(stepPrSidebarItem);
+  if (typeof bindMainFilePageNav === "function") bindMainFilePageNav(delta => stepPrMainFile(delta, { requireMultiple: true }));
   pendingPrDeepLink = parsePrDeepLinkTargetFromLocation();
   bindDiffRowContextMenu(
     () => renderedDiffRows,
@@ -6640,12 +6909,22 @@ function renderFileSidebar() {
     el.innerHTML = `<div style="color:var(--muted); font-size:16px;">No active PR files.</div>`;
     return;
   }
-  el.innerHTML = files.map((f, fi) => {
-    const active = selectedFileFilter === f.filename ? "active" : "";
+  const activeFi = selectedFileFilter
+    ? files.findIndex(f => f.filename === selectedFileFilter)
+    : focusedFileIdx;
+  const entries = files.map((f, fi) => ({
+    path: f.filename,
+    item: f,
+    idx: fi,
+    isActive: fi === activeFi,
+  }));
+  const renderLeaf = (entry) => {
+    const f = entry.item;
+    const fi = entry.idx;
     const tc = threadCounts[f.filename] || 0;
     const isConflict = conflictPaths.has(f.filename);
-    return `<div class="file-item ${active}" onclick="selectFileFilterIdx(${fi})">
-      <div class="mono" style="font-size:15.5px; word-break:break-all; font-weight:600;">${esc(f.filename)}</div>
+    return `<div class="file-item ${entry.isActive ? 'active' : ''}" data-file-idx="${fi}" title="${esc(f.filename)}" onclick="selectFileFilterIdx(${fi})">
+      <div class="mono" style="font-size:15px; word-break:break-all; font-weight:600;">${esc(entry.name)}</div>
       <div class="file-item-meta">
         <span class="pill" style="padding:0 5px;">${esc(f.status)}</span>
         <span style="color:var(--green);">+${f.additions}</span>
@@ -6654,7 +6933,10 @@ function renderFileSidebar() {
         ${tc ? `<span class="pill pill-amber" style="padding:0 5px;">💬 ${tc}</span>` : ""}
       </div>
     </div>`;
-  }).join("");
+  };
+  el.innerHTML = typeof renderFileTreeHtml === "function"
+    ? renderFileTreeHtml(entries, renderLeaf, { scopeKey: "pr_files" })
+    : entries.map(e => renderLeaf({ ...e, name: e.path })).join("");
   const actFile = typeof el.querySelector === "function" ? el.querySelector(".file-item.active") : null;
   if (actFile && typeof actFile.scrollIntoView === "function") actFile.scrollIntoView({ block: "nearest" });
 }
@@ -6884,10 +7166,10 @@ function renderHeaderPrActions(detail, ms, drafts) {
          <option value="squash" ${selectedMergeMethod === 'squash' ? 'selected' : ''}>Squash</option>
          <option value="rebase" ${selectedMergeMethod === 'rebase' ? 'selected' : ''}>Rebase</option>
        </select>
-       <button id="headerMergePrBtn" class="small green" ${ms.canMerge ? "" : "disabled"} title="${esc(ms.canMerge ? 'Merge this pull request on GitHub (Alt+Shift+M)' : ms.disabledReason)}" onclick="mergeActivePr()">⛙ Merge</button>`
+       <button id="headerMergePrBtn" class="small green" ${ms.canMerge ? "" : "disabled"} title="${esc(ms.canMerge ? 'Merge this pull request on GitHub (Alt+Shift+M)' : ms.disabledReason)}" onclick="mergeActivePr()">⛙ <u class="sc-key sc-alt">M</u>erge</button>`
     : "";
   const stateHtml = prStateLower === "open"
-    ? `<button id="headerClosePrBtn" class="small danger" title="Close this pull request on GitHub (Alt+Shift+C)" onclick="setActivePrState('closed')">✕ Close</button>`
+    ? `<button id="headerClosePrBtn" class="small danger" title="Close this pull request on GitHub (Alt+Shift+C)" onclick="setActivePrState('closed')">✕ <u class="sc-key sc-alt">C</u>lose</button>`
     : (prStateLower === "closed" && !ms.cls.includes("merged")
       ? `<button id="headerReopenPrBtn" class="small" title="Reopen this pull request on GitHub (Alt+Shift+C)" onclick="setActivePrState('open')">↺ Reopen</button>`
       : "");
@@ -6897,7 +7179,7 @@ function renderHeaderPrActions(detail, ms, drafts) {
     ${numDrafts ? `<button id="headerSubmitPendingReviewBtn" class="small primary submit-pending-review-btn" onclick="submitPendingReview()">Submit Review (${numDrafts})</button>` : ""}
     ${mergeHtml}
     ${stateHtml}
-    <button class="small" title="Open PR on GitHub in browser (Alt+B)" onclick="openActivePrInBrowser()">🌐 Open</button>
+    <button class="small" title="Open PR on GitHub in browser (Alt+B)" onclick="openActivePrInBrowser()">🌐 <u class="sc-key sc-alt">B</u>rowser</button>
     <button class="small" title="Copy PR URL to clipboard" onclick="copyActivePrUrl()">🔗 Copy</button>
   `;
   bar.style.display = "flex";
@@ -6975,11 +7257,11 @@ function renderActivePr() {
          <option value="squash" ${selectedMergeMethod === 'squash' ? 'selected' : ''}>Squash &amp; merge</option>
          <option value="rebase" ${selectedMergeMethod === 'rebase' ? 'selected' : ''}>Rebase &amp; merge</option>
        </select>
-       <button id="mergePrBtn" class="small green" ${ms.canMerge ? "" : "disabled"} title="${esc(ms.canMerge ? 'Merge this pull request on GitHub (Alt+Shift+M)' : ms.disabledReason)}" onclick="mergeActivePr()">⛙ Merge PR <span class="kbd-hint" style="background:rgba(255,255,255,0.2); color:#fff;">Alt+Shift+M</span></button>`
+       <button id="mergePrBtn" class="small green" ${ms.canMerge ? "" : "disabled"} title="${esc(ms.canMerge ? 'Merge this pull request on GitHub (Alt+Shift+M)' : ms.disabledReason)}" onclick="mergeActivePr()">⛙ <u class="sc-key sc-alt">M</u>erge PR <span class="kbd-hint" style="background:rgba(255,255,255,0.2); color:#fff;">Alt+Shift+M</span></button>`
     : "";
 
   const stateBtnHtml = prStateLower === "open"
-    ? `<button id="closePrBtn" class="small danger" title="Close this pull request on GitHub (Alt+Shift+C)" onclick="setActivePrState('closed')">✕ Close PR <span class="kbd-hint" style="background:rgba(255,255,255,0.2); color:#fff;">Alt+Shift+C</span></button>`
+    ? `<button id="closePrBtn" class="small danger" title="Close this pull request on GitHub (Alt+Shift+C)" onclick="setActivePrState('closed')">✕ <u class="sc-key sc-alt">C</u>lose PR <span class="kbd-hint" style="background:rgba(255,255,255,0.2); color:#fff;">Alt+Shift+C</span></button>`
     : (prStateLower === "closed" && !ms.cls.includes("merged")
       ? `<button id="reopenPrBtn" class="small" title="Reopen this pull request on GitHub (Alt+Shift+C)" onclick="setActivePrState('open')">↺ Reopen PR <span class="kbd-hint">Alt+Shift+C</span></button>`
       : "");
@@ -7003,7 +7285,7 @@ function renderActivePr() {
           <div style="font-size:16px; color:var(--muted);">Author: <strong>@${esc(s.author)}</strong> · Updated: ${esc(shortDate(s.updated_at))} · Commits: ${activePrData.commits_count}</div>
         </div>
         <div class="row">
-          <button id="openPrBrowserBtn" class="small" title="Open PR on GitHub in main browser (Alt+B)" onclick="openActivePrInBrowser()">🌐 Open in Browser <span class="kbd-hint">Alt+B</span></button>
+          <button id="openPrBrowserBtn" class="small" title="Open PR on GitHub in main browser (Alt+B)" onclick="openActivePrInBrowser()">🌐 Open in <u class="sc-key sc-alt">B</u>rowser <span class="kbd-hint">Alt+B</span></button>
           <button id="copyPrUrlBtn" class="small" title="Copy PR URL to clipboard" onclick="copyActivePrUrl()">🔗 Copy PR URL</button>
           ${drafts.length ? `<button id="submitPendingReviewHeaderBtn" class="small primary submit-pending-review-btn" onclick="submitPendingReview()">Submit Pending Review (${drafts.length})</button>` : ""}
           <button class="small" onclick="refreshActivePr()">↻ Refresh PR</button>
@@ -7093,6 +7375,32 @@ function focusFeedbackInput() {
   }
 }
 
+function syncPrActiveFileSidebarHighlight(fi = focusedFileIdx, { scroll = false } = {}) {
+  if (!activePrData?.files) return;
+  const files = activePrData.files;
+  const displayed = getDisplayedFiles();
+  const targetName = selectedFileFilter || displayed?.[fi]?.filename || "";
+  const fileListEl = document.getElementById("fileList");
+  if (!fileListEl || typeof fileListEl.querySelectorAll !== "function") return;
+  let activeEl = null;
+  fileListEl.querySelectorAll(".file-item[data-file-idx]").forEach(el => {
+    const idx = Number(el.getAttribute("data-file-idx"));
+    const isAct = Boolean(targetName) && files[idx]?.filename === targetName;
+    el.classList.toggle("active", isAct);
+    if (isAct) activeEl = el;
+  });
+  if (activeEl) {
+    let cur = activeEl.parentElement;
+    while (cur && cur !== fileListEl) {
+      if (cur.tagName === "DETAILS") cur.open = true;
+      cur = cur.parentElement;
+    }
+    if (scroll && typeof activeEl.scrollIntoView === "function") {
+      activeEl.scrollIntoView({ block: "nearest" });
+    }
+  }
+}
+
 function setFocusedFile(fi) {
   if (fi < 0 || !getDisplayedFiles()?.[fi]) return;
   focusedFileIdx = fi;
@@ -7101,6 +7409,23 @@ function setFocusedFile(fi) {
       el.classList.toggle("focused", el.id === `fileCard_${fi}`);
     });
   }
+  syncPrActiveFileSidebarHighlight(fi, { scroll: !selectedFileFilter });
+}
+
+function stepPrMainFile(delta, { requireMultiple = false, scrollBlock = "nearest" } = {}) {
+  if (!visibleFileIndices.length) return false;
+  if (requireMultiple && visibleFileIndices.length < 2) return false;
+  const pos = visibleFileIndices.indexOf(focusedFileIdx);
+  const nextPos = delta > 0
+    ? (pos < 0 ? 0 : Math.min(visibleFileIndices.length - 1, pos + 1))
+    : (pos <= 0 ? 0 : pos - 1);
+  const nextFi = visibleFileIndices[nextPos];
+  setFocusedFile(nextFi);
+  const cardEl = document.getElementById(`fileCard_${nextFi}`);
+  if (cardEl && typeof cardEl.scrollIntoView === "function") {
+    cardEl.scrollIntoView({ block: scrollBlock });
+  }
+  return true;
 }
 
 function toggleAllFiles(collapse) {
@@ -7135,11 +7460,12 @@ function renderThreadHtml(item) {
     t.is_outdated ? `<span class="pill" style="padding:0 6px;">Outdated (orig L${t.original_line ?? '?'})</span>` : "",
   ].join(" ");
   const canResolve = t.id && !/^\d+$/.test(t.id);
+  const resolveLabel = t.is_resolved ? 'Unresol<u class="sc-key sc-alt">v</u>e' : 'Resol<u class="sc-key sc-alt">v</u>e';
   const resolveBtn = canResolve
-    ? `<button class="small" title="${t.is_resolved ? 'Unresolve' : 'Resolve'} thread (Alt+V)" onclick="toggleResolveThreadIdx(${tk})">${t.is_resolved ? 'Unresolve' : 'Resolve'}</button>`
+    ? `<button class="small" title="${t.is_resolved ? 'Unresolve' : 'Resolve'} thread (Alt+V)" onclick="toggleResolveThreadIdx(${tk})">${resolveLabel}</button>`
     : "";
   const resolveSummaryBtn = canResolve
-    ? `<button class="small" title="${t.is_resolved ? 'Unresolve' : 'Resolve'} thread (Alt+V)" onclick="event.preventDefault(); event.stopPropagation(); toggleResolveThreadIdx(${tk})">${t.is_resolved ? 'Unresolve' : 'Resolve'}</button>`
+    ? `<button class="small" title="${t.is_resolved ? 'Unresolve' : 'Resolve'} thread (Alt+V)" onclick="event.preventDefault(); event.stopPropagation(); toggleResolveThreadIdx(${tk})">${resolveLabel}</button>`
     : "";
   const commentsHtml = (t.comments || []).map(c => `
     <div class="thread-comment">
@@ -7152,7 +7478,7 @@ function renderThreadHtml(item) {
   const replyHtml = rootCommentId
     ? `<div class="row" style="margin-top:4px; align-items:flex-end;">
         <textarea id="replyInput_${tk}" class="reply-input" rows="1" title="Reply to thread (Alt+R selects, Enter sends, Shift+Enter newline)" placeholder="Reply to thread (Alt+R selects, Shift+Enter for newline, Enter to send)..." onfocus="const b=this.closest('.thread-box'); if(b && b!==_activePrCommentEl) selectActivePrCommentEl(b);" oninput="autoResizeReplyBox(this)" onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!event.altKey&&!event.metaKey){event.preventDefault(); event.stopPropagation(); submitReplyIdx(${tk});}"></textarea>
-        <button class="small primary" onclick="submitReplyIdx(${tk})">Reply</button>
+        <button class="small primary" title="Submit reply (Ctrl+Enter)" onclick="submitReplyIdx(${tk})"><u class="sc-key sc-alt">R</u>eply</button>
         ${resolveBtn}
       </div>`
     : (resolveBtn ? `<div class="row" style="justify-content:flex-end; margin-top:4px;">${resolveBtn}</div>` : "");
@@ -8113,6 +8439,7 @@ function renderActivePrFiles() {
     });
   }
   if (typeof refreshDiffFindIfOpen === "function") refreshDiffFindIfOpen();
+  syncPrActiveFileSidebarHighlight(focusedFileIdx, { scroll: false });
   updateCommentNavUi();
 }
 
@@ -8712,6 +9039,7 @@ document.addEventListener("keydown", (ev) => {
     getScopeKey: getActivePrCheckedScopeKey,
     checkedStorageKey: PR_CHECKED_UNTIL_STORAGE_KEY,
     stepSidebar: stepPrSidebarItem,
+    stepMainFile: delta => stepPrMainFile(delta, { requireMultiple: true, scrollBlock: "start" }),
   })) return;
   const target = ev.target;
   const id = (target && target.id) || "";
@@ -8888,22 +9216,14 @@ document.addEventListener("keydown", (ev) => {
 
   // j/k navigate file cards; ArrowLeft/ArrowRight collapse/expand resolved comment thread
   if (ev.key === "j") {
-    if (visibleFileIndices.length) {
+    if (stepPrMainFile(1)) {
       ev.preventDefault();
-      const pos = visibleFileIndices.indexOf(focusedFileIdx);
-      const nxt = visibleFileIndices[Math.min(visibleFileIndices.length - 1, pos + 1)];
-      setFocusedFile(nxt);
-      document.getElementById(`fileCard_${nxt}`)?.scrollIntoView({ block: "nearest" });
     }
     return;
   }
   if (ev.key === "k") {
-    if (visibleFileIndices.length) {
+    if (stepPrMainFile(-1)) {
       ev.preventDefault();
-      const pos = visibleFileIndices.indexOf(focusedFileIdx);
-      const prev = visibleFileIndices[Math.max(0, pos <= 0 ? 0 : pos - 1)];
-      setFocusedFile(prev);
-      document.getElementById(`fileCard_${prev}`)?.scrollIntoView({ block: "nearest" });
     }
     return;
   }

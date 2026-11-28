@@ -765,6 +765,33 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
   }
   button.filter-pill:hover { filter: brightness(0.96); }
   button.filter-pill.active { box-shadow: 0 0 0 2px var(--accent); }
+  u.sc-key {
+    text-decoration: underline dotted currentColor;
+    text-underline-offset: 2px;
+    text-decoration-thickness: 1.2px;
+    border-radius: 2px;
+  }
+  body.mod-alt-down:not(.mod-ctrl-down) u.sc-key.sc-alt,
+  body.mod-ctrl-down:not(.mod-alt-down) u.sc-key.sc-ctrl,
+  body.mod-alt-down.mod-ctrl-down u.sc-key {
+    text-decoration: underline solid currentColor;
+    text-decoration-thickness: 2.5px;
+    background: rgba(139, 69, 19, 0.16);
+    font-weight: 800;
+    padding: 0 1px;
+  }
+  button.primary u.sc-key {
+    text-decoration-color: rgba(255, 255, 255, 0.85);
+  }
+  body.mod-alt-down button.primary u.sc-key.sc-alt,
+  body.mod-ctrl-down button.primary u.sc-key.sc-ctrl {
+    background: rgba(255, 255, 255, 0.28);
+    text-decoration-color: #ffffff;
+  }
+  body.mod-alt-down:not(.mod-ctrl-down) u.sc-key.sc-ctrl:not(.sc-alt),
+  body.mod-ctrl-down:not(.mod-alt-down) u.sc-key.sc-alt:not(.sc-ctrl) {
+    text-decoration: none;
+  }
   .pill-accept { background: var(--green-soft); color: var(--green); border-color: #a9dfbf; }
   .pill-hold { background: var(--amber-soft); color: var(--amber); border-color: #f9e79f; }
   .pill-pending { background: var(--surface-2); color: var(--muted); }
@@ -819,7 +846,59 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     gap: 2px;
   }
   .file-item:hover { background: var(--surface-2); border-color: var(--border); }
-  .file-item.active { background: var(--accent-soft); border-color: #d5b28f; }
+  .file-item.active {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    box-shadow: inset 4px 0 0 var(--accent);
+    font-weight: 700;
+  }
+  .file-tree-dir { margin: 1px 0; }
+  .file-tree-dir > summary {
+    list-style: none;
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    padding: 4px 6px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: monospace;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    word-break: break-all;
+  }
+  .file-tree-dir > summary::-webkit-details-marker { display: none; }
+  .file-tree-dir > summary:hover { background: var(--surface-2); color: var(--fg); }
+  .file-tree-root > summary {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .file-tree-caret {
+    flex-shrink: 0;
+    display: inline-block;
+    width: 11px;
+    font-size: 10px;
+    color: var(--muted);
+    transition: transform 0.1s ease;
+  }
+  .file-tree-dir[open] > summary .file-tree-caret { transform: rotate(90deg); }
+  .file-tree-count {
+    margin-left: auto;
+    font-size: 10px;
+    color: var(--muted);
+    font-weight: 500;
+    flex-shrink: 0;
+  }
+  .file-tree-children {
+    margin-left: 10px;
+    padding-left: 6px;
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
   .file-name { font-family: monospace; word-break: break-all; font-weight: 600; font-size: 11px; }
   .file-meta { color: var(--muted); font-size: 11px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 
@@ -1236,7 +1315,7 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
   </div>
   <div class="row">
     <label title="Context lines (n)">Ctx: <input id="nInput" type="number" min="0" max="30" value="3" style="width:46px" onchange="loadItems(1)" /></label>
-    <button id="refreshBtn" class="small" title="Reload UI (Ctrl+R rescans directory)" onclick="reloadUi()">↻ Reload</button>
+    <button id="refreshBtn" class="small" title="Reload UI (Ctrl+R rescans directory)" onclick="reloadUi()">↻ <u class="sc-key sc-ctrl">R</u>eload</button>
     <label title="Editor font size in px — matches VS Code (25) / IntelliJ IDEA (28)">Font: <input id="fontPxInput" type="number" min="14" max="42" value="26" style="width:46px" onchange="applyEditorFont(this.value)" /></label>
     <label>Git:
       <select id="gitFilter" onchange="loadItems(1)">
@@ -1263,10 +1342,10 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     </label>
     <input id="searchInput" type="text" placeholder="Filter..." style="width:100px;" oninput="debouncedSearch()" />
     <button id="undoBtn" class="small" title="Undo last review action (Ctrl+Z)" onclick="undoLastAction()" disabled>↶ Undo</button>
-    <button type="button" class="stat-pill filter-pill" id="statTotal" data-status-filter="all" title="Show all matching suggestions (Alt+L / Alt+0)" onclick="setStatusFilter('all')">0 <span class="kbd-hint">Alt+L</span></button>
+    <button type="button" class="stat-pill filter-pill" id="statTotal" data-status-filter="all" title="Show all matching suggestions (Alt+L / Alt+0)" onclick="setStatusFilter('all')">A<u class="sc-key sc-alt">l</u>l: 0 <span class="kbd-hint">Alt+L</span></button>
     <button type="button" class="stat-pill filter-pill pill-pending active" id="statPending" data-status-filter="pending" title="Show only pending suggestions without !! (Alt+U)" onclick="setStatusFilter('pending')">Pend: 0 <span class="kbd-hint">Alt+U</span></button>
-    <button type="button" class="stat-pill filter-pill pill-accept" id="statAccept" data-status-filter="accept" title="Show only accepted suggestions (Alt+A)" onclick="setStatusFilter('accept')">Acc: 0 <span class="kbd-hint">Alt+A</span></button>
-    <button type="button" class="stat-pill filter-pill" id="statReject" data-status-filter="reject" title="Show only rejected suggestions (Alt+R)" style="background:var(--red-soft); color:var(--red); border-color:#f5b7b1;" onclick="setStatusFilter('reject')">Rej: 0 <span class="kbd-hint">Alt+R</span></button>
+    <button type="button" class="stat-pill filter-pill pill-accept" id="statAccept" data-status-filter="accept" title="Show only accepted suggestions (Alt+A)" onclick="setStatusFilter('accept')"><u class="sc-key sc-alt">A</u>cc: 0 <span class="kbd-hint">Alt+A</span></button>
+    <button type="button" class="stat-pill filter-pill" id="statReject" data-status-filter="reject" title="Show only rejected suggestions (Alt+R)" style="background:var(--red-soft); color:var(--red); border-color:#f5b7b1;" onclick="setStatusFilter('reject')"><u class="sc-key sc-alt">R</u>ej: 0 <span class="kbd-hint">Alt+R</span></button>
     <button type="button" class="stat-pill filter-pill pill-hold" id="statHold" data-status-filter="has_feedback" title="Show only suggestions with !! comments (Alt+W)" onclick="setStatusFilter('has_feedback')">!!: 0 <span class="kbd-hint">Alt+W</span></button>
     <button id="helpBtn" class="small" type="button" title="About &amp; keyboard shortcuts (?)" onclick="toggleHelpPane()">?</button>
   </div>
@@ -1276,7 +1355,7 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     <strong style="font-size:15px;">Vedic Accent Fix Reviewer (pada_svara)</strong>
     <button id="closeHelpBtn" class="small" type="button" onclick="closeHelpPane()">✕ Close</button>
   </div>
-  <div id="shortcutFooter" style="color:var(--muted); font-size:12px;">Shortcuts: Alt+U Pending • Alt+A Accepted • Alt+R Rejected • Alt+W With !! • Alt+L/0 All • Alt+1 Accept • Alt+2 Reject • Alt+3 Feedback • Enter Submit • Ctrl+Enter Accept+Submit • Ctrl+R Rescan • Ctrl+Z Undo • j/k/↑/↓ navigate • ←/→ Collapse/Expand • Ctrl+PgUp/PgDn Prev/Next file • ? About/Shortcuts • Esc Close help</div>
+  <div id="shortcutFooter" style="color:var(--muted); font-size:12px;">Shortcuts: Hold Alt/Ctrl Highlight button shortcut letters • Alt+U Pending • Alt+A Accepted • Alt+R Rejected • Alt+W With !! • Alt+L/0 All • Alt+1 Accept • Alt+2 Reject • Alt+3 Feedback • Enter Submit • Ctrl+Enter Accept+Submit • Ctrl+R Rescan • Ctrl+Z Undo • j/k/↑/↓ navigate • ←/→ Collapse/Expand • Shift+PgUp/PgDn Prev/Next file group • Ctrl+PgUp/PgDn Prev/Next file • ? About/Shortcuts • Esc Close help</div>
   <div id="aboutFooter" style="color:var(--muted); font-size:12px; border-top:1px solid var(--border); padding-top:8px;">
     <div><strong>pada_svara</strong> (<a href="https://github.com/sanskrit-coders/diff_san/tree/master/vishvAsa/pada_svara" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) — FastAPI review GUI and scanner for Vedic <code>पद-पाठः</code> and <code>विश्वास-प्रस्तुतिः</code> accent fix suggestions with scoped <code>git commit --only</code> support.</div>
   </div>
@@ -1393,6 +1472,7 @@ function applyEditorFont(pxVal) {
 }
 
 async function init() {
+  bindModifierHintTracking();
   try {
     const savedPx = localStorage.getItem("accent_review_font_px");
     if (savedPx) applyEditorFont(savedPx);
@@ -1525,24 +1605,143 @@ async function loadItems(page) {
   renderCards(data);
 }
 
-function renderSummary(sum) {
-  if (!sum) return;
-  document.getElementById("statTotal").innerHTML = `${sum.total_items} <span class="kbd-hint">Alt+L</span>`;
-  document.getElementById("statPending").innerHTML = `Pend: ${sum.counts.pending} <span class="kbd-hint">Alt+U</span>`;
-  document.getElementById("statAccept").innerHTML = `Acc: ${sum.counts.accept} <span class="kbd-hint">Alt+A</span>`;
-  document.getElementById("statReject").innerHTML = `Rej: ${sum.counts.reject || 0} <span class="kbd-hint">Alt+R</span>`;
-  document.getElementById("statHold").innerHTML = `!!: ${sum.counts.with_feedback || 0} <span class="kbd-hint">Alt+W</span>`;
-  updateStatusFilterPills();
-  document.getElementById("markedCountPill").textContent = `${sum.marked_files.length} marked`;
+let collapsedPadaSvaraTreeDirs = {};
+let _padaSvaraModifierBound = false;
 
-  const files = sum.files || [];
-  document.getElementById("fileCount").textContent = files.length;
-  document.getElementById("fileList").innerHTML = files.map((f, fi) => {
-    const active = selectedFile === f.file_path ? "active" : "";
+function _syncModifierClasses(ev) {
+  if (typeof document === "undefined" || !document.body || !document.body.classList) return;
+  const altDown = Boolean(ev && (ev.altKey || (ev.type === "keydown" && ev.key === "Alt")));
+  const ctrlDown = Boolean(ev && (ev.ctrlKey || (ev.type === "keydown" && ev.key === "Control")));
+  document.body.classList.toggle("mod-alt-down", ev?.type === "keyup" && ev?.key === "Alt" ? false : altDown);
+  document.body.classList.toggle("mod-ctrl-down", ev?.type === "keyup" && ev?.key === "Control" ? false : ctrlDown);
+}
+
+function bindModifierHintTracking() {
+  if (_padaSvaraModifierBound || typeof window === "undefined" || typeof window.addEventListener !== "function") return;
+  _padaSvaraModifierBound = true;
+  window.addEventListener("keydown", _syncModifierClasses, true);
+  window.addEventListener("keyup", _syncModifierClasses, true);
+  window.addEventListener("blur", () => {
+    if (typeof document !== "undefined" && document.body && document.body.classList) {
+      document.body.classList.remove("mod-alt-down", "mod-ctrl-down");
+    }
+  });
+  if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden && document.body && document.body.classList) {
+        document.body.classList.remove("mod-alt-down", "mod-ctrl-down");
+      }
+    });
+  }
+}
+
+function onPadaSvaraTreeDirToggle(detailsEl) {
+  if (!detailsEl) return;
+  const dirPath = detailsEl.dataset ? detailsEl.dataset.dirPath : "";
+  if (!dirPath) return;
+  if (detailsEl.open) delete collapsedPadaSvaraTreeDirs[dirPath];
+  else collapsedPadaSvaraTreeDirs[dirPath] = true;
+}
+
+function getActiveSidebarFilePath() {
+  if (selectedFile) return selectedFile;
+  if (focusedIdx < 0 || focusedIdx >= currentItems.length) return "";
+  const it = currentItems[focusedIdx];
+  const files = latestSummary?.files || [];
+  const match = files.find(f => f.file_path === it.vp_file || f.file_path === it.display_file || f.file_path === it.pp_file || (it.rel_path && f.rel_display === it.rel_path));
+  return match ? match.file_path : (it.vp_file || it.display_file || "");
+}
+
+function syncActiveSidebarFileHighlight({ scroll = false } = {}) {
+  const fileListEl = typeof document !== "undefined" && typeof document.getElementById === "function"
+    ? document.getElementById("fileList")
+    : null;
+  if (!fileListEl || typeof fileListEl.querySelectorAll !== "function") return;
+  const activeFp = getActiveSidebarFilePath();
+  let activeEl = null;
+  fileListEl.querySelectorAll(".file-item[data-file-path]").forEach(el => {
+    const fp = el.getAttribute("data-file-path") || "";
+    const isAct = Boolean(activeFp) && fp === activeFp;
+    if (el.classList) el.classList.toggle("active", isAct);
+    if (isAct) activeEl = el;
+  });
+  if (activeEl) {
+    let cur = activeEl.parentElement;
+    while (cur && cur !== fileListEl) {
+      if (cur.tagName === "DETAILS") {
+        cur.open = true;
+        if (cur.dataset?.dirPath) delete collapsedPadaSvaraTreeDirs[cur.dataset.dirPath];
+      }
+      cur = cur.parentElement;
+    }
+    if (scroll && typeof activeEl.scrollIntoView === "function") {
+      activeEl.scrollIntoView({ block: "nearest" });
+    }
+  }
+}
+
+function _buildPadaSvaraFileTreeData(files) {
+  const entries = (files || []).map((f, fi) => {
+    const norm = String(f.rel_display || f.file_path || "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+    const segs = norm ? norm.split("/").filter(Boolean) : [norm];
+    return {
+      f,
+      fi,
+      fileName: segs[segs.length - 1] || norm,
+      dirSegs: segs.slice(0, -1),
+    };
+  });
+  let lcpSegs = entries.length ? entries[0].dirSegs.slice() : [];
+  for (let i = 1; i < entries.length; i++) {
+    const ds = entries[i].dirSegs;
+    let k = 0;
+    while (k < lcpSegs.length && k < ds.length && lcpSegs[k] === ds[k]) k++;
+    lcpSegs = lcpSegs.slice(0, k);
+  }
+  const makeDir = (name, keyPath) => ({ name, keyPath, dirs: new Map(), leaves: [], count: 0 });
+  const root = makeDir(lcpSegs.join("/"), lcpSegs.join("/") || ".");
+  for (const e of entries) {
+    const relDirs = e.dirSegs.slice(lcpSegs.length);
+    let cur = root;
+    cur.count += 1;
+    let curKey = lcpSegs.join("/");
+    for (const d of relDirs) {
+      curKey = curKey ? `${curKey}/${d}` : d;
+      if (!cur.dirs.has(d)) cur.dirs.set(d, makeDir(d, curKey));
+      cur = cur.dirs.get(d);
+      cur.count += 1;
+    }
+    cur.leaves.push(e);
+  }
+  const compactDir = (node) => {
+    const children = [];
+    for (const child of node.dirs.values()) {
+      let cur = child;
+      let label = cur.name;
+      while (cur.dirs.size === 1 && cur.leaves.length === 0) {
+        const only = Array.from(cur.dirs.values())[0];
+        label = `${label}/${only.name}`;
+        cur = only;
+      }
+      const compacted = compactDir(cur);
+      compacted.label = label;
+      children.push(compacted);
+    }
+    children.sort((a, b) => a.label.localeCompare(b.label));
+    return { name: node.name, label: node.name, keyPath: node.keyPath, dirs: children, leaves: node.leaves, count: node.count };
+  };
+  return { lcpSegs, root: compactDir(root) };
+}
+
+function renderPadaSvaraFileTreeHtml(files, activePath) {
+  if (!files || !files.length) return "";
+  const { lcpSegs, root } = _buildPadaSvaraFileTreeData(files);
+  const renderLeaf = ({ f, fi, fileName }) => {
+    const active = activePath && activePath === f.file_path ? "active" : "";
     const gitCls = f.dirty ? "pill-dirty" : "pill-clean";
     const mk = f.marked ? `<span class="stat-pill pill-accept" style="padding:1px 6px;">✓ commit</span>` : "";
-    return `<div class="file-item ${active}" onclick="selectFileFilterIdx(${fi})">
-      <div class="file-name"><a href="#" class="file-link" title="Open ${esc(f.file_path)} in IntelliJ IDEA (click card margin to filter)" onclick="event.stopPropagation(); event.preventDefault(); openSummaryFileInIdea(${fi});">${esc(f.rel_display)}</a></div>
+    return `<div class="file-item ${active}" data-file-path="${esc(f.file_path)}" data-file-idx="${fi}" title="${esc(f.rel_display)}" onclick="selectFileFilterIdx(${fi})">
+      <div class="file-name"><a href="#" class="file-link" title="Open ${esc(f.file_path)} in IntelliJ IDEA (click card margin to filter)" onclick="event.stopPropagation(); event.preventDefault(); openSummaryFileInIdea(${fi});">${esc(fileName)}</a></div>
       <div class="file-meta">
         <span class="stat-pill ${gitCls}" style="padding:1px 6px;">${esc(f.git_label)}</span>
         <span>${f.counts.accepted} acc / ${f.counts.rejected || 0} rej / ${f.counts.total}</span>
@@ -1550,7 +1749,39 @@ function renderSummary(sum) {
         ${mk}
       </div>
     </div>`;
-  }).join("");
+  };
+  const nodeContainsActive = (node) => {
+    if (!activePath) return false;
+    if (node.leaves.some(e => e.f.file_path === activePath)) return true;
+    return node.dirs.some(d => nodeContainsActive(d));
+  };
+  const renderNode = (node, isRoot) => {
+    const childrenHtml = node.dirs.map(d => renderNode(d, false)).join("") + node.leaves.map(renderLeaf).join("");
+    if (isRoot && !lcpSegs.length) return childrenHtml;
+    const isCollapsed = Boolean(collapsedPadaSvaraTreeDirs[node.keyPath]) && !nodeContainsActive(node);
+    const rootCls = isRoot ? " file-tree-root" : "";
+    return `<details class="file-tree-dir${rootCls}" data-dir-path="${esc(node.keyPath)}" ${isCollapsed ? "" : "open"} ontoggle="onPadaSvaraTreeDirToggle(this)">
+      <summary><span class="file-tree-caret">▸</span><span class="file-tree-label">${esc(node.label || node.name)}</span><span class="file-tree-count">${node.count}</span></summary>
+      <div class="file-tree-children">${childrenHtml}</div>
+    </details>`;
+  };
+  return renderNode(root, true);
+}
+
+function renderSummary(sum) {
+  if (!sum) return;
+  document.getElementById("statTotal").innerHTML = `A<u class="sc-key sc-alt">l</u>l: ${sum.total_items} <span class="kbd-hint">Alt+L</span>`;
+  document.getElementById("statPending").innerHTML = `Pend: ${sum.counts.pending} <span class="kbd-hint">Alt+U</span>`;
+  document.getElementById("statAccept").innerHTML = `<u class="sc-key sc-alt">A</u>cc: ${sum.counts.accept} <span class="kbd-hint">Alt+A</span>`;
+  document.getElementById("statReject").innerHTML = `<u class="sc-key sc-alt">R</u>ej: ${sum.counts.reject || 0} <span class="kbd-hint">Alt+R</span>`;
+  document.getElementById("statHold").innerHTML = `!!: ${sum.counts.with_feedback || 0} <span class="kbd-hint">Alt+W</span>`;
+  updateStatusFilterPills();
+  document.getElementById("markedCountPill").textContent = `${sum.marked_files.length} marked`;
+
+  const files = sum.files || [];
+  document.getElementById("fileCount").textContent = files.length;
+  const activeSidebarPath = getActiveSidebarFilePath();
+  document.getElementById("fileList").innerHTML = renderPadaSvaraFileTreeHtml(files, activeSidebarPath);
   const fileListEl = document.getElementById("fileList");
   const actFileEl = fileListEl && typeof fileListEl.querySelector === "function" ? fileListEl.querySelector(".file-item.active") : null;
   if (actFileEl && typeof actFileEl.scrollIntoView === "function") actFileEl.scrollIntoView({ block: "nearest" });
@@ -1592,26 +1823,36 @@ function selectFileFilterIdx(fi) {
 function stepSidebarFile(delta) {
   const files = latestSummary?.files || [];
   if (!files.length) return false;
-  const curIdx = selectedFile ? files.findIndex(f => f.file_path === selectedFile) : -1;
+  const fileListEl = typeof document !== "undefined" && typeof document.getElementById === "function"
+    ? document.getElementById("fileList")
+    : null;
+  let ordered = files;
+  if (fileListEl && typeof fileListEl.querySelectorAll === "function") {
+    const domFiles = Array.from(fileListEl.querySelectorAll(".file-item[data-file-idx]"))
+      .map(el => files[Number(el.getAttribute("data-file-idx"))])
+      .filter(Boolean);
+    if (domFiles.length) ordered = domFiles;
+  }
+  const curIdx = selectedFile ? ordered.findIndex(f => f.file_path === selectedFile) : -1;
   if (curIdx < 0) {
     if (delta > 0) {
-      selectFileFilter(files[0].file_path);
+      selectFileFilter(ordered[0].file_path);
     } else {
       flashStatus("Showing all files");
     }
     return true;
   }
   if (delta < 0 && curIdx === 0) {
-    selectFileFilter(files[0].file_path);
+    selectFileFilter(ordered[0].file_path);
     flashStatus("Showing all files");
     return true;
   }
-  const nextIdx = Math.max(0, Math.min(files.length - 1, curIdx + delta));
+  const nextIdx = Math.max(0, Math.min(ordered.length - 1, curIdx + delta));
   if (nextIdx === curIdx) {
-    flashStatus(delta > 0 ? `At last file (${files.length} / ${files.length})` : `At first file (1 / ${files.length})`);
+    flashStatus(delta > 0 ? `At last file (${ordered.length} / ${ordered.length})` : `At first file (1 / ${ordered.length})`);
     return true;
   }
-  selectFileFilter(files[nextIdx].file_path);
+  selectFileFilter(ordered[nextIdx].file_path);
   return true;
 }
 
@@ -1908,7 +2149,10 @@ function renderCards(data) {
 function setFocused(idx) {
   if (idx < 0 || idx >= currentItems.length) return;
   focusedIdx = idx;
-  document.querySelectorAll("#cardsContainer > .card").forEach((el, i) => el.classList.toggle("focused", i === idx));
+  if (typeof document !== "undefined" && typeof document.querySelectorAll === "function") {
+    document.querySelectorAll("#cardsContainer > .card").forEach((el, i) => el.classList.toggle("focused", i === idx));
+  }
+  syncActiveSidebarFileHighlight({ scroll: true });
 }
 
 function toggleCardCollapse(idx, forceState) {
@@ -2292,18 +2536,72 @@ function getCtrlPageStepDelta(ev) {
   return 0;
 }
 
+function getShiftPageStepDelta(ev) {
+  if (!ev || !ev.shiftKey || ev.ctrlKey || ev.altKey || ev.metaKey) return 0;
+  if (ev.key === "PageDown" || ev.code === "PageDown") return 1;
+  if (ev.key === "PageUp" || ev.code === "PageUp") return -1;
+  return 0;
+}
+
+function _isTextEditingTarget(tgt) {
+  const tag = (tgt && tgt.tagName || "").toUpperCase();
+  return tag === "TEXTAREA" || tag === "SELECT"
+    || (tag === "INPUT" && tgt.type !== "radio" && tgt.type !== "checkbox" && tgt.type !== "button")
+    || Boolean(tgt?.isContentEditable);
+}
+
+function getItemFileKey(it) {
+  if (!it) return "";
+  return it.vp_file || it.display_file || it.pp_file || it.rel_path || "";
+}
+
+function stepMainFileGroup(delta) {
+  if (!currentItems.length) return false;
+  const distinct = [];
+  for (const it of currentItems) {
+    const k = getItemFileKey(it);
+    if (k && !distinct.includes(k)) distinct.push(k);
+  }
+  if (distinct.length < 2) return false;
+  const curIdx = focusedIdx >= 0 && focusedIdx < currentItems.length ? focusedIdx : 0;
+  const curKey = getItemFileKey(currentItems[curIdx]);
+  const filePos = distinct.indexOf(curKey);
+  const nextFilePos = delta > 0
+    ? (filePos < 0 ? 0 : Math.min(distinct.length - 1, filePos + 1))
+    : (filePos <= 0 ? 0 : filePos - 1);
+  const targetKey = distinct[nextFilePos];
+  const targetIdx = currentItems.findIndex(it => getItemFileKey(it) === targetKey);
+  if (targetIdx < 0) return false;
+  setFocused(targetIdx);
+  document.getElementById(`card_${targetIdx}`)?.scrollIntoView({ block: "start" });
+  return true;
+}
+
+bindModifierHintTracking();
+
 if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
   window.addEventListener("keydown", (ev) => {
     const delta = getCtrlPageStepDelta(ev);
-    if (!delta) return;
-    ev.__padaSvaraSidebarPageHandled = true;
-    if (typeof ev.preventDefault === "function") ev.preventDefault();
-    if (typeof ev.stopPropagation === "function") ev.stopPropagation();
-    stepSidebarFile(delta);
+    if (delta) {
+      ev.__padaSvaraSidebarPageHandled = true;
+      if (typeof ev.preventDefault === "function") ev.preventDefault();
+      if (typeof ev.stopPropagation === "function") ev.stopPropagation();
+      stepSidebarFile(delta);
+      return;
+    }
+    const mainDelta = getShiftPageStepDelta(ev);
+    if (mainDelta && !_isTextEditingTarget(ev.target)) {
+      if (stepMainFileGroup(mainDelta)) {
+        ev.__padaSvaraMainFilePageHandled = true;
+        if (typeof ev.preventDefault === "function") ev.preventDefault();
+        if (typeof ev.stopPropagation === "function") ev.stopPropagation();
+      }
+    }
   }, true);
 }
 
 document.addEventListener("keydown", (ev) => {
+  _syncModifierClasses(ev);
   const sidebarDelta = !ev?.__padaSvaraSidebarPageHandled ? getCtrlPageStepDelta(ev) : 0;
   if (sidebarDelta) {
     ev.__padaSvaraSidebarPageHandled = true;
@@ -2311,6 +2609,15 @@ document.addEventListener("keydown", (ev) => {
     if (typeof ev.stopPropagation === "function") ev.stopPropagation();
     stepSidebarFile(sidebarDelta);
     return;
+  }
+  const mainDelta = !ev?.__padaSvaraMainFilePageHandled ? getShiftPageStepDelta(ev) : 0;
+  if (mainDelta && !_isTextEditingTarget(ev.target)) {
+    if (stepMainFileGroup(mainDelta)) {
+      ev.__padaSvaraMainFilePageHandled = true;
+      if (typeof ev.preventDefault === "function") ev.preventDefault();
+      if (typeof ev.stopPropagation === "function") ev.stopPropagation();
+      return;
+    }
   }
   const target = ev.target;
   const id = (target && target.id) || "";

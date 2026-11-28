@@ -249,16 +249,16 @@
     </span>
     <span id="stateFilterPills" class="row" style="gap:3px;">
       <input type="hidden" id="stateSelect" value="open" />
-      <button type="button" class="pill filter-pill pill-green active" id="stateOpenPill" data-state-filter="open" title="Show Open PRs (Alt+O)" onclick="setStateFilter('open')">Open</button>
-      <button type="button" class="pill filter-pill pill-amber" id="stateClosedPill" data-state-filter="closed" title="Show past 10 Closed PRs (Alt+C)" onclick="setStateFilter('closed')">Closed</button>
-      <button type="button" class="pill filter-pill pill-blue" id="stateMergedPill" data-state-filter="merged" title="Show past 10 Merged PRs (Alt+M)" onclick="setStateFilter('merged')">Merged</button>
-      <button type="button" class="pill filter-pill" id="stateAllPill" data-state-filter="all" title="Show past 10 PRs (Alt+L / Alt+0)" onclick="setStateFilter('all')">All</button>
+      <button type="button" class="pill filter-pill pill-green active" id="stateOpenPill" data-state-filter="open" title="Show Open PRs (Alt+O)" onclick="setStateFilter('open')"><u class="sc-key sc-alt">O</u>pen</button>
+      <button type="button" class="pill filter-pill pill-amber" id="stateClosedPill" data-state-filter="closed" title="Show past 10 Closed PRs (Alt+C)" onclick="setStateFilter('closed')"><u class="sc-key sc-alt">C</u>losed</button>
+      <button type="button" class="pill filter-pill pill-blue" id="stateMergedPill" data-state-filter="merged" title="Show past 10 Merged PRs (Alt+M)" onclick="setStateFilter('merged')"><u class="sc-key sc-alt">M</u>erged</button>
+      <button type="button" class="pill filter-pill" id="stateAllPill" data-state-filter="all" title="Show past 10 PRs (Alt+L / Alt+0)" onclick="setStateFilter('all')">A<u class="sc-key sc-alt">l</u>l</button>
     </span>
     <select id="repoSelect" title="Filter by repo" style="max-width:110px;" onchange="applyPrFilters()">
       <option value="">All repos</option>
     </select>
     <input id="prSearchInput" type="text" placeholder="Filter PRs..." style="width:100px;" oninput="applyPrFilters()" />
-    <button id="refreshAllBtn" class="primary" title="Refresh PRs from GitHub (Ctrl+R)" onclick="refreshAll()">↻ Refresh</button>
+    <button id="refreshAllBtn" class="primary" title="Refresh PRs from GitHub (Ctrl+R)" onclick="refreshAll()">↻ <u class="sc-key sc-ctrl">R</u>efresh</button>
     <button id="reloadBtn" class="small" title="Reload UI (Ctrl+R refreshes from GitHub)" onclick="reloadUi()">↻ Reload</button>
     <span id="authBadge" class="pill">Checking...</span>
     <span id="checkedUntilPill" class="checked-until-pill" style="display:none;"></span>
@@ -296,7 +296,7 @@
     </span>
     <label title="Editor font size in px — matches VS Code (25) / IntelliJ IDEA (28)">Font: <input id="fontPxInput" type="number" min="14" max="42" value="26" style="width:48px;" onchange="applyEditorFont(this.value)" /></label>
     <label style="cursor:pointer;" title="Single pane inline word flow without line matching (Alt+S)">
-      <input id="singlePaneChk" type="checkbox" checked onchange="toggleSinglePane(this.checked)" /> 1-pane
+      <input id="singlePaneChk" type="checkbox" checked onchange="toggleSinglePane(this.checked)" /> <u class="sc-key sc-alt">S</u>ingle
     </label>
     <label style="cursor:pointer;" title="Show changed lines only">
       <input id="changedOnlyChk" type="checkbox" onchange="renderActivePrFiles()" /> Changed
@@ -305,7 +305,7 @@
       <input id="wrapLinesChk" type="checkbox" checked onchange="renderActivePrFiles()" /> Wrap
     </label>
     <button id="gdSelectionBtn" class="small" title="Look up currently selected text in GoldenDict" onclick="lookupSelectedGoldenDict()">📖 GD</button>
-    <button id="findBtn" class="small" type="button" title="Find text or combining marks like ँ across spans (Ctrl+F)" onclick="openDiffFindBar()">🔍 Find</button>
+    <button id="findBtn" class="small" type="button" title="Find text or combining marks like ँ across spans (Ctrl+F)" onclick="openDiffFindBar()">🔍 <u class="sc-key sc-ctrl">F</u>ind</button>
     <button id="settingsBtn" class="small" type="button" title="Customize deleted and added diff highlight colors" onclick="toggleSettingsPane()">⚙ Settings</button>
     <button id="helpBtn" class="small" type="button" title="About &amp; keyboard shortcuts (?)" onclick="toggleHelpPane()">?</button>
   </div>
@@ -323,7 +323,7 @@
     <strong style="font-size:19px;">GitHub PR Character-Level Reviewer (diff_san)</strong>
     <button id="closeHelpBtn" class="small" type="button" onclick="closeHelpPane()">✕ Close</button>
   </div>
-  <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • Tab / Shift+Tab Step diffs • Ctrl+Space Checked until here • Click diff box Copy OLD/NEW • Right-click Copy diff / PR line link • Ctrl+F Find (supports ँ) • Ctrl+G / Ctrl+Shift+G Next/Prev find • Ctrl+D / Ctrl+Shift+D Next/Prev comment • Alt+D / Alt+Shift+D Next/Prev unresolved • ←/→ Collapse/Expand resolved comment • Alt+R Reply selected comment • Alt+V Resolve/Unresolve selected comment • Alt+W Word/Char diff • PgUp/PgDn Page &amp; select first line • Ctrl+PgUp/PgDn Prev/Next left-pane PR or file • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Shift+Enter Multiline reply • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • [/] Prev/Next PR • ? About/Shortcuts • Esc Close panel/bar/composer</div>
+  <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Hold Alt/Ctrl Highlight button shortcut letters • Shift+Click / ↑/↓ Select line • Tab / Shift+Tab Step diffs • Ctrl+Space Checked until here • Click diff box Copy OLD/NEW • Right-click Copy diff / PR line link • Ctrl+F Find (supports ँ) • Ctrl+G / Ctrl+Shift+G Next/Prev find • Ctrl+D / Ctrl+Shift+D Next/Prev comment • Alt+D / Alt+Shift+D Next/Prev unresolved • ←/→ Collapse/Expand resolved comment • Alt+R Reply selected comment • Alt+V Resolve/Unresolve selected comment • Alt+W Word/Char diff • PgUp/PgDn Page &amp; select first line • Shift+PgUp/PgDn Prev/Next file card in main pane • Ctrl+PgUp/PgDn Prev/Next left-pane PR or file • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Shift+Enter Multiline reply • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • [/] Prev/Next PR • ? About/Shortcuts • Esc Close panel/bar/composer</div>
   <footer id="aboutFooter" class="about-footer">
     <div>
       <strong>diff_san — Pull Requests</strong> (<a href="https://github.com/sanskrit-coders/diff_san" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) —
@@ -644,6 +644,7 @@ function toggleSinglePane(checked) {
 async function init() {
   initDiffSettingsPane();
   if (typeof bindSidebarPageNav === "function") bindSidebarPageNav(stepPrSidebarItem);
+  if (typeof bindMainFilePageNav === "function") bindMainFilePageNav(delta => stepPrMainFile(delta, { requireMultiple: true }));
   pendingPrDeepLink = parsePrDeepLinkTargetFromLocation();
   bindDiffRowContextMenu(
     () => renderedDiffRows,
@@ -1162,12 +1163,22 @@ function renderFileSidebar() {
     el.innerHTML = `<div style="color:var(--muted); font-size:16px;">No active PR files.</div>`;
     return;
   }
-  el.innerHTML = files.map((f, fi) => {
-    const active = selectedFileFilter === f.filename ? "active" : "";
+  const activeFi = selectedFileFilter
+    ? files.findIndex(f => f.filename === selectedFileFilter)
+    : focusedFileIdx;
+  const entries = files.map((f, fi) => ({
+    path: f.filename,
+    item: f,
+    idx: fi,
+    isActive: fi === activeFi,
+  }));
+  const renderLeaf = (entry) => {
+    const f = entry.item;
+    const fi = entry.idx;
     const tc = threadCounts[f.filename] || 0;
     const isConflict = conflictPaths.has(f.filename);
-    return `<div class="file-item ${active}" onclick="selectFileFilterIdx(${fi})">
-      <div class="mono" style="font-size:15.5px; word-break:break-all; font-weight:600;">${esc(f.filename)}</div>
+    return `<div class="file-item ${entry.isActive ? 'active' : ''}" data-file-idx="${fi}" title="${esc(f.filename)}" onclick="selectFileFilterIdx(${fi})">
+      <div class="mono" style="font-size:15px; word-break:break-all; font-weight:600;">${esc(entry.name)}</div>
       <div class="file-item-meta">
         <span class="pill" style="padding:0 5px;">${esc(f.status)}</span>
         <span style="color:var(--green);">+${f.additions}</span>
@@ -1176,7 +1187,10 @@ function renderFileSidebar() {
         ${tc ? `<span class="pill pill-amber" style="padding:0 5px;">💬 ${tc}</span>` : ""}
       </div>
     </div>`;
-  }).join("");
+  };
+  el.innerHTML = typeof renderFileTreeHtml === "function"
+    ? renderFileTreeHtml(entries, renderLeaf, { scopeKey: "pr_files" })
+    : entries.map(e => renderLeaf({ ...e, name: e.path })).join("");
   const actFile = typeof el.querySelector === "function" ? el.querySelector(".file-item.active") : null;
   if (actFile && typeof actFile.scrollIntoView === "function") actFile.scrollIntoView({ block: "nearest" });
 }
@@ -1406,10 +1420,10 @@ function renderHeaderPrActions(detail, ms, drafts) {
          <option value="squash" ${selectedMergeMethod === 'squash' ? 'selected' : ''}>Squash</option>
          <option value="rebase" ${selectedMergeMethod === 'rebase' ? 'selected' : ''}>Rebase</option>
        </select>
-       <button id="headerMergePrBtn" class="small green" ${ms.canMerge ? "" : "disabled"} title="${esc(ms.canMerge ? 'Merge this pull request on GitHub (Alt+Shift+M)' : ms.disabledReason)}" onclick="mergeActivePr()">⛙ Merge</button>`
+       <button id="headerMergePrBtn" class="small green" ${ms.canMerge ? "" : "disabled"} title="${esc(ms.canMerge ? 'Merge this pull request on GitHub (Alt+Shift+M)' : ms.disabledReason)}" onclick="mergeActivePr()">⛙ <u class="sc-key sc-alt">M</u>erge</button>`
     : "";
   const stateHtml = prStateLower === "open"
-    ? `<button id="headerClosePrBtn" class="small danger" title="Close this pull request on GitHub (Alt+Shift+C)" onclick="setActivePrState('closed')">✕ Close</button>`
+    ? `<button id="headerClosePrBtn" class="small danger" title="Close this pull request on GitHub (Alt+Shift+C)" onclick="setActivePrState('closed')">✕ <u class="sc-key sc-alt">C</u>lose</button>`
     : (prStateLower === "closed" && !ms.cls.includes("merged")
       ? `<button id="headerReopenPrBtn" class="small" title="Reopen this pull request on GitHub (Alt+Shift+C)" onclick="setActivePrState('open')">↺ Reopen</button>`
       : "");
@@ -1419,7 +1433,7 @@ function renderHeaderPrActions(detail, ms, drafts) {
     ${numDrafts ? `<button id="headerSubmitPendingReviewBtn" class="small primary submit-pending-review-btn" onclick="submitPendingReview()">Submit Review (${numDrafts})</button>` : ""}
     ${mergeHtml}
     ${stateHtml}
-    <button class="small" title="Open PR on GitHub in browser (Alt+B)" onclick="openActivePrInBrowser()">🌐 Open</button>
+    <button class="small" title="Open PR on GitHub in browser (Alt+B)" onclick="openActivePrInBrowser()">🌐 <u class="sc-key sc-alt">B</u>rowser</button>
     <button class="small" title="Copy PR URL to clipboard" onclick="copyActivePrUrl()">🔗 Copy</button>
   `;
   bar.style.display = "flex";
@@ -1497,11 +1511,11 @@ function renderActivePr() {
          <option value="squash" ${selectedMergeMethod === 'squash' ? 'selected' : ''}>Squash &amp; merge</option>
          <option value="rebase" ${selectedMergeMethod === 'rebase' ? 'selected' : ''}>Rebase &amp; merge</option>
        </select>
-       <button id="mergePrBtn" class="small green" ${ms.canMerge ? "" : "disabled"} title="${esc(ms.canMerge ? 'Merge this pull request on GitHub (Alt+Shift+M)' : ms.disabledReason)}" onclick="mergeActivePr()">⛙ Merge PR <span class="kbd-hint" style="background:rgba(255,255,255,0.2); color:#fff;">Alt+Shift+M</span></button>`
+       <button id="mergePrBtn" class="small green" ${ms.canMerge ? "" : "disabled"} title="${esc(ms.canMerge ? 'Merge this pull request on GitHub (Alt+Shift+M)' : ms.disabledReason)}" onclick="mergeActivePr()">⛙ <u class="sc-key sc-alt">M</u>erge PR <span class="kbd-hint" style="background:rgba(255,255,255,0.2); color:#fff;">Alt+Shift+M</span></button>`
     : "";
 
   const stateBtnHtml = prStateLower === "open"
-    ? `<button id="closePrBtn" class="small danger" title="Close this pull request on GitHub (Alt+Shift+C)" onclick="setActivePrState('closed')">✕ Close PR <span class="kbd-hint" style="background:rgba(255,255,255,0.2); color:#fff;">Alt+Shift+C</span></button>`
+    ? `<button id="closePrBtn" class="small danger" title="Close this pull request on GitHub (Alt+Shift+C)" onclick="setActivePrState('closed')">✕ <u class="sc-key sc-alt">C</u>lose PR <span class="kbd-hint" style="background:rgba(255,255,255,0.2); color:#fff;">Alt+Shift+C</span></button>`
     : (prStateLower === "closed" && !ms.cls.includes("merged")
       ? `<button id="reopenPrBtn" class="small" title="Reopen this pull request on GitHub (Alt+Shift+C)" onclick="setActivePrState('open')">↺ Reopen PR <span class="kbd-hint">Alt+Shift+C</span></button>`
       : "");
@@ -1525,7 +1539,7 @@ function renderActivePr() {
           <div style="font-size:16px; color:var(--muted);">Author: <strong>@${esc(s.author)}</strong> · Updated: ${esc(shortDate(s.updated_at))} · Commits: ${activePrData.commits_count}</div>
         </div>
         <div class="row">
-          <button id="openPrBrowserBtn" class="small" title="Open PR on GitHub in main browser (Alt+B)" onclick="openActivePrInBrowser()">🌐 Open in Browser <span class="kbd-hint">Alt+B</span></button>
+          <button id="openPrBrowserBtn" class="small" title="Open PR on GitHub in main browser (Alt+B)" onclick="openActivePrInBrowser()">🌐 Open in <u class="sc-key sc-alt">B</u>rowser <span class="kbd-hint">Alt+B</span></button>
           <button id="copyPrUrlBtn" class="small" title="Copy PR URL to clipboard" onclick="copyActivePrUrl()">🔗 Copy PR URL</button>
           ${drafts.length ? `<button id="submitPendingReviewHeaderBtn" class="small primary submit-pending-review-btn" onclick="submitPendingReview()">Submit Pending Review (${drafts.length})</button>` : ""}
           <button class="small" onclick="refreshActivePr()">↻ Refresh PR</button>
@@ -1615,6 +1629,32 @@ function focusFeedbackInput() {
   }
 }
 
+function syncPrActiveFileSidebarHighlight(fi = focusedFileIdx, { scroll = false } = {}) {
+  if (!activePrData?.files) return;
+  const files = activePrData.files;
+  const displayed = getDisplayedFiles();
+  const targetName = selectedFileFilter || displayed?.[fi]?.filename || "";
+  const fileListEl = document.getElementById("fileList");
+  if (!fileListEl || typeof fileListEl.querySelectorAll !== "function") return;
+  let activeEl = null;
+  fileListEl.querySelectorAll(".file-item[data-file-idx]").forEach(el => {
+    const idx = Number(el.getAttribute("data-file-idx"));
+    const isAct = Boolean(targetName) && files[idx]?.filename === targetName;
+    el.classList.toggle("active", isAct);
+    if (isAct) activeEl = el;
+  });
+  if (activeEl) {
+    let cur = activeEl.parentElement;
+    while (cur && cur !== fileListEl) {
+      if (cur.tagName === "DETAILS") cur.open = true;
+      cur = cur.parentElement;
+    }
+    if (scroll && typeof activeEl.scrollIntoView === "function") {
+      activeEl.scrollIntoView({ block: "nearest" });
+    }
+  }
+}
+
 function setFocusedFile(fi) {
   if (fi < 0 || !getDisplayedFiles()?.[fi]) return;
   focusedFileIdx = fi;
@@ -1623,6 +1663,23 @@ function setFocusedFile(fi) {
       el.classList.toggle("focused", el.id === `fileCard_${fi}`);
     });
   }
+  syncPrActiveFileSidebarHighlight(fi, { scroll: !selectedFileFilter });
+}
+
+function stepPrMainFile(delta, { requireMultiple = false, scrollBlock = "nearest" } = {}) {
+  if (!visibleFileIndices.length) return false;
+  if (requireMultiple && visibleFileIndices.length < 2) return false;
+  const pos = visibleFileIndices.indexOf(focusedFileIdx);
+  const nextPos = delta > 0
+    ? (pos < 0 ? 0 : Math.min(visibleFileIndices.length - 1, pos + 1))
+    : (pos <= 0 ? 0 : pos - 1);
+  const nextFi = visibleFileIndices[nextPos];
+  setFocusedFile(nextFi);
+  const cardEl = document.getElementById(`fileCard_${nextFi}`);
+  if (cardEl && typeof cardEl.scrollIntoView === "function") {
+    cardEl.scrollIntoView({ block: scrollBlock });
+  }
+  return true;
 }
 
 function toggleAllFiles(collapse) {
@@ -1657,11 +1714,12 @@ function renderThreadHtml(item) {
     t.is_outdated ? `<span class="pill" style="padding:0 6px;">Outdated (orig L${t.original_line ?? '?'})</span>` : "",
   ].join(" ");
   const canResolve = t.id && !/^\d+$/.test(t.id);
+  const resolveLabel = t.is_resolved ? 'Unresol<u class="sc-key sc-alt">v</u>e' : 'Resol<u class="sc-key sc-alt">v</u>e';
   const resolveBtn = canResolve
-    ? `<button class="small" title="${t.is_resolved ? 'Unresolve' : 'Resolve'} thread (Alt+V)" onclick="toggleResolveThreadIdx(${tk})">${t.is_resolved ? 'Unresolve' : 'Resolve'}</button>`
+    ? `<button class="small" title="${t.is_resolved ? 'Unresolve' : 'Resolve'} thread (Alt+V)" onclick="toggleResolveThreadIdx(${tk})">${resolveLabel}</button>`
     : "";
   const resolveSummaryBtn = canResolve
-    ? `<button class="small" title="${t.is_resolved ? 'Unresolve' : 'Resolve'} thread (Alt+V)" onclick="event.preventDefault(); event.stopPropagation(); toggleResolveThreadIdx(${tk})">${t.is_resolved ? 'Unresolve' : 'Resolve'}</button>`
+    ? `<button class="small" title="${t.is_resolved ? 'Unresolve' : 'Resolve'} thread (Alt+V)" onclick="event.preventDefault(); event.stopPropagation(); toggleResolveThreadIdx(${tk})">${resolveLabel}</button>`
     : "";
   const commentsHtml = (t.comments || []).map(c => `
     <div class="thread-comment">
@@ -1674,7 +1732,7 @@ function renderThreadHtml(item) {
   const replyHtml = rootCommentId
     ? `<div class="row" style="margin-top:4px; align-items:flex-end;">
         <textarea id="replyInput_${tk}" class="reply-input" rows="1" title="Reply to thread (Alt+R selects, Enter sends, Shift+Enter newline)" placeholder="Reply to thread (Alt+R selects, Shift+Enter for newline, Enter to send)..." onfocus="const b=this.closest('.thread-box'); if(b && b!==_activePrCommentEl) selectActivePrCommentEl(b);" oninput="autoResizeReplyBox(this)" onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!event.altKey&&!event.metaKey){event.preventDefault(); event.stopPropagation(); submitReplyIdx(${tk});}"></textarea>
-        <button class="small primary" onclick="submitReplyIdx(${tk})">Reply</button>
+        <button class="small primary" title="Submit reply (Ctrl+Enter)" onclick="submitReplyIdx(${tk})"><u class="sc-key sc-alt">R</u>eply</button>
         ${resolveBtn}
       </div>`
     : (resolveBtn ? `<div class="row" style="justify-content:flex-end; margin-top:4px;">${resolveBtn}</div>` : "");
@@ -2635,6 +2693,7 @@ function renderActivePrFiles() {
     });
   }
   if (typeof refreshDiffFindIfOpen === "function") refreshDiffFindIfOpen();
+  syncPrActiveFileSidebarHighlight(focusedFileIdx, { scroll: false });
   updateCommentNavUi();
 }
 
@@ -3234,6 +3293,7 @@ document.addEventListener("keydown", (ev) => {
     getScopeKey: getActivePrCheckedScopeKey,
     checkedStorageKey: PR_CHECKED_UNTIL_STORAGE_KEY,
     stepSidebar: stepPrSidebarItem,
+    stepMainFile: delta => stepPrMainFile(delta, { requireMultiple: true, scrollBlock: "start" }),
   })) return;
   const target = ev.target;
   const id = (target && target.id) || "";
@@ -3410,22 +3470,14 @@ document.addEventListener("keydown", (ev) => {
 
   // j/k navigate file cards; ArrowLeft/ArrowRight collapse/expand resolved comment thread
   if (ev.key === "j") {
-    if (visibleFileIndices.length) {
+    if (stepPrMainFile(1)) {
       ev.preventDefault();
-      const pos = visibleFileIndices.indexOf(focusedFileIdx);
-      const nxt = visibleFileIndices[Math.min(visibleFileIndices.length - 1, pos + 1)];
-      setFocusedFile(nxt);
-      document.getElementById(`fileCard_${nxt}`)?.scrollIntoView({ block: "nearest" });
     }
     return;
   }
   if (ev.key === "k") {
-    if (visibleFileIndices.length) {
+    if (stepPrMainFile(-1)) {
       ev.preventDefault();
-      const pos = visibleFileIndices.indexOf(focusedFileIdx);
-      const prev = visibleFileIndices[Math.max(0, pos <= 0 ? 0 : pos - 1)];
-      setFocusedFile(prev);
-      document.getElementById(`fileCard_${prev}`)?.scrollIntoView({ block: "nearest" });
     }
     return;
   }

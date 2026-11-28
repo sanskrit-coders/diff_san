@@ -90,7 +90,7 @@
       <button id="clearTextsBtn" class="small" type="button" onclick="clearStaticTexts()">Clear</button>
     </span>
     <button id="compareBtn" class="primary" type="button" onclick="submitCompareSpec()">Compare</button>
-    <button id="refreshBtn" class="small" type="button" title="Reload diff (Ctrl+R)" onclick="refreshDiff()">↻ Refresh</button>
+    <button id="refreshBtn" class="small" type="button" title="Reload diff (Ctrl+R)" onclick="refreshDiff()">↻ <u class="sc-key sc-ctrl">R</u>efresh</button>
     <button id="reloadBtn" class="small" type="button" title="Reload UI" onclick="window.location.reload()">↻ Reload</button>
     <span id="checkedUntilPill" class="checked-until-pill" style="display:none;"></span>
     <span id="statusText" style="color:var(--muted);"></span>
@@ -122,7 +122,7 @@
     </span>
     <label title="Editor font size in px — matches VS Code (25) / IntelliJ IDEA (28)">Font: <input id="fontPxInput" type="number" min="14" max="42" value="26" style="width:48px;" onchange="applyEditorFont(this.value, 'local_diff_san_font_px')" /></label>
     <label style="cursor:pointer;" title="Single pane inline word flow (Alt+S)">
-      <input id="singlePaneChk" type="checkbox" checked onchange="toggleSinglePane(this.checked)" /> 1-pane
+      <input id="singlePaneChk" type="checkbox" checked onchange="toggleSinglePane(this.checked)" /> <u class="sc-key sc-alt">S</u>ingle
     </label>
     <label style="cursor:pointer;" title="Collapse long runs of unchanged context lines with expandable gaps">
       <input id="collapseContextChk" type="checkbox" checked onchange="renderWorkspace()" /> Fold same
@@ -134,7 +134,7 @@
       <input id="wrapLinesChk" type="checkbox" checked onchange="renderWorkspace()" /> Wrap
     </label>
     <button id="gdSelectionBtn" class="small" type="button" title="Look up currently selected text in GoldenDict" onclick="lookupSelectedGoldenDict()">📖 GD</button>
-    <button id="findBtn" class="small" type="button" title="Find text or combining marks like ँ across spans (Ctrl+F)" onclick="openDiffFindBar()">🔍 Find</button>
+    <button id="findBtn" class="small" type="button" title="Find text or combining marks like ँ across spans (Ctrl+F)" onclick="openDiffFindBar()">🔍 <u class="sc-key sc-ctrl">F</u>ind</button>
     <button id="settingsBtn" class="small" type="button" title="Customize deleted and added diff highlight colors" onclick="toggleSettingsPane()">⚙ Settings</button>
     <button id="helpBtn" class="small" type="button" title="About &amp; keyboard shortcuts (?)" onclick="toggleHelpPane()">?</button>
   </div>
@@ -145,7 +145,7 @@
     <strong style="font-size:19px;">local-diff-san — Sanskrit Local &amp; Git Diff Viewer</strong>
     <button id="closeHelpBtn" class="small" type="button" onclick="closeHelpPane()">✕ Close</button>
   </div>
-  <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • Tab / Shift+Tab Step diffs • Ctrl+Space Checked until here • Click diff box Copy OLD/NEW • Right-click Copy diff • Ctrl+F Find (supports ँ) • Ctrl+G / Ctrl+Shift+G Next/Prev find • Alt+W Word/Char diff • PgUp/PgDn Page &amp; select first line • Ctrl+PgUp/PgDn Prev/Next file in left pane • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Alt+S Single/2-Pane • Ctrl+R Refresh • j/k Navigate files • ? About/Shortcuts • Esc Close bar/panel</div>
+  <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Hold Alt/Ctrl Highlight button shortcut letters • Shift+Click / ↑/↓ Select line • Tab / Shift+Tab Step diffs • Ctrl+Space Checked until here • Click diff box Copy OLD/NEW • Right-click Copy diff • Ctrl+F Find (supports ँ) • Ctrl+G / Ctrl+Shift+G Next/Prev find • Alt+W Word/Char diff • PgUp/PgDn Page &amp; select first line • Ctrl+PgUp/PgDn Prev/Next file in left pane • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Alt+S Single/2-Pane • Ctrl+R Refresh • j/k Navigate files • ? About/Shortcuts • Esc Close bar/panel</div>
   <footer id="aboutFooter" class="about-footer">
     <div>
       <strong>diff_san</strong> (<a href="https://github.com/sanskrit-coders/diff_san" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) —
@@ -539,17 +539,26 @@ function renderSidebar() {
     return;
   }
   const activeId = workspaceData?.active_item?.id || selectedItemId || items[0].id;
-  listEl.innerHTML = items.map(it => {
-    const isAct = it.id === activeId;
-    return `<div class="file-item ${isAct ? 'active' : ''}" onclick="selectItem('${esc(it.id)}')">
-      <div class="mono" style="font-size:15.5px; font-weight:600; word-break:break-word;">${esc(it.title)}</div>
+  const entries = items.map((it, idx) => ({
+    path: it.title,
+    item: it,
+    idx,
+    isActive: it.id === activeId,
+  }));
+  const renderLeaf = (entry) => {
+    const it = entry.item;
+    return `<div class="file-item ${entry.isActive ? 'active' : ''}" data-item-id="${esc(it.id)}" title="${esc(it.title)}" onclick="selectItem('${esc(it.id)}')">
+      <div class="mono" style="font-size:15px; font-weight:600; word-break:break-word;">${esc(entry.name)}</div>
       <div class="file-item-meta">
         <span class="pill ${statusPillClass(it.status)}" style="padding:0 6px; font-size:13.5px;">${esc(it.status)}</span>
         <span style="color:var(--green); font-weight:600;">+${it.additions}</span>
         <span style="color:var(--red); font-weight:600;">-${it.deletions}</span>
       </div>
     </div>`;
-  }).join("");
+  };
+  listEl.innerHTML = typeof renderFileTreeHtml === "function"
+    ? renderFileTreeHtml(entries, renderLeaf, { scopeKey: "local_diff" })
+    : entries.map(e => renderLeaf({ ...e, name: e.path })).join("");
   const actEl = typeof listEl.querySelector === "function" ? listEl.querySelector(".file-item.active") : null;
   if (actEl && typeof actEl.scrollIntoView === "function") actEl.scrollIntoView({ block: "nearest" });
 }

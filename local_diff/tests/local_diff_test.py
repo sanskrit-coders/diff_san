@@ -595,8 +595,27 @@ def test_pure_js_diff_engine_parity_and_static_export_with_gap_expand(tmp_path: 
     "  if (!edgeHtml.includes('>&gt; </span>') || !edgeHtml.includes('[[P203]]') || edgeHtml.split('तर्हि पुनः कृत्यांशः कः').length !== 2) {\n"
     "    throw new Error('Local diff > space or intervening context bridge failed: ' + edgeHtml);\n"
     "  }\n"
+    "  // Sidebar LCP collapsible tree + active highlight + modifier underline tracking\n"
+    "  if (typeof renderFileTreeHtml !== 'function') throw new Error('Missing renderFileTreeHtml in local_diff');\n"
+    "  const lTree = renderFileTreeHtml([\n"
+    "    { path: 'vedAH/yajuH/01/a.md', idx: 0 },\n"
+    "    { path: 'vedAH/yajuH/02/b.md', idx: 1, isActive: true },\n"
+    "  ], (e) => `<div class=\"file-item ${e.isActive ? 'active' : ''}\" data-idx=\"${e.idx}\">${e.name}</div>`, { scopeKey: 'local_t' });\n"
+    "  if (!lTree.includes('file-tree-root') || !lTree.includes('vedAH/yajuH/') || !lTree.includes('file-item active') || !lTree.includes('>b.md</div>')) {\n"
+    "    throw new Error('Local diff tree missing LCP root or active item: ' + lTree);\n"
+    "  }\n"
+    "  const pairTree = renderFileTreeHtml([{ path: 'a.md ↔ b.md', idx: 0 }], (e) => `<div class=\"file-item\">${e.name}</div>`, { scopeKey: 'pair_t' });\n"
+    "  if (pairTree.includes('file-tree-dir') || !pairTree.includes('a.md ↔ b.md')) throw new Error('Pair comparison label should remain a flat leaf: ' + pairTree);\n"
+    "  document.body = document.body || { classList: makeClassList() };\n"
+    "  _syncModifierClasses({ type: 'keydown', key: 'Alt', altKey: true, ctrlKey: false });\n"
+    "  if (!document.body.classList.contains('mod-alt-down')) throw new Error('local_diff Alt modifier tracking failed');\n"
+    "  _syncModifierClasses({ type: 'keydown', key: 'Control', altKey: false, ctrlKey: true });\n"
+    "  if (!document.body.classList.contains('mod-ctrl-down') || document.body.classList.contains('mod-alt-down')) throw new Error('local_diff Ctrl modifier tracking failed');\n"
     "})().catch(err => { console.error(err); process.exit(1); });\n"
   )
+  assert '<u class="sc-key sc-ctrl">R</u>efresh' in static_html
+  assert '<u class="sc-key sc-alt">S</u>ingle' in static_html
+  assert '<u class="sc-key sc-ctrl">F</u>ind' in static_html
   s_js = tmp_path / "static_test.js"
   s_js.write_text(static_harness, encoding="utf-8")
   subprocess.check_call(["node", str(s_js)])

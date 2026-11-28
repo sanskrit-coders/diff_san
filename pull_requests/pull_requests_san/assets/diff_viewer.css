@@ -194,20 +194,104 @@
     align-items: center;
   }
   .pr-item, .file-item {
-    padding: 8px 10px;
+    padding: 7px 9px;
     border-radius: 7px;
     border: 1px solid var(--border);
     background: var(--surface-2);
     cursor: pointer;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 3px;
   }
   .pr-item:hover, .file-item:hover { background: #f2ede2; }
   .pr-item.active, .file-item.active {
     background: var(--accent-soft);
     border-color: var(--accent);
-    box-shadow: inset 3px 0 0 var(--accent);
+    box-shadow: inset 4px 0 0 var(--accent);
+  }
+  .file-tree-dir {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .file-tree-dir > summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    padding: 3px 6px;
+    border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--muted);
+    background: var(--surface-2);
+    border: 1px solid #ebe4d5;
+    word-break: break-all;
+    user-select: none;
+  }
+  .file-tree-dir.file-tree-root > summary {
+    color: var(--blue);
+    background: #f3f7fb;
+    border-color: #d6e4f2;
+  }
+  .file-tree-dir > summary:hover { background: #efeae0; }
+  .file-tree-dir > summary::-webkit-details-marker { display: none; }
+  .file-tree-caret {
+    display: inline-block;
+    font-size: 11px;
+    flex-shrink: 0;
+    transition: transform 0.12s ease;
+  }
+  .file-tree-dir[open] > summary > .file-tree-caret { transform: rotate(90deg); }
+  .file-tree-count {
+    margin-left: auto;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--muted);
+    flex-shrink: 0;
+  }
+  .file-tree-children {
+    margin-left: 7px;
+    padding-left: 7px;
+    border-left: 1.5px solid #e2dac9;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 3px;
+  }
+  u.sc-key {
+    text-decoration: underline dotted currentColor;
+    text-decoration-thickness: 1.2px;
+    text-underline-offset: 2px;
+  }
+  body.mod-alt-down u.sc-key.sc-alt,
+  body.mod-ctrl-down u.sc-key.sc-ctrl {
+    text-decoration: underline solid currentColor;
+    text-decoration-thickness: 2.5px;
+    background: rgba(139, 69, 19, 0.16);
+    border-radius: 2px;
+    font-weight: 800;
+    padding: 0 1px;
+  }
+  button.primary u.sc-key,
+  button.green u.sc-key,
+  button.danger u.sc-key {
+    text-decoration-color: rgba(255, 255, 255, 0.85);
+  }
+  body.mod-alt-down button.primary u.sc-key.sc-alt,
+  body.mod-alt-down button.green u.sc-key.sc-alt,
+  body.mod-alt-down button.danger u.sc-key.sc-alt,
+  body.mod-ctrl-down button.primary u.sc-key.sc-ctrl,
+  body.mod-ctrl-down button.green u.sc-key.sc-ctrl,
+  body.mod-ctrl-down button.danger u.sc-key.sc-ctrl {
+    background: rgba(255, 255, 255, 0.28);
+    text-decoration-color: #ffffff;
+  }
+  body.mod-alt-down:not(.mod-ctrl-down) u.sc-key.sc-ctrl:not(.sc-alt),
+  body.mod-ctrl-down:not(.mod-alt-down) u.sc-key.sc-alt:not(.sc-ctrl) {
+    text-decoration: none;
   }
   .pr-item-meta, .file-item-meta {
     font-size: 15px;

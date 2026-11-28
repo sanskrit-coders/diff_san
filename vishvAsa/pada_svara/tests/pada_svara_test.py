@@ -792,8 +792,31 @@ def test_review_gui_embedded_js_syntax(tmp_path: Path):
   + '    throw new Error("Bad sūtra link filtering in: " + mixedHtml);\n'
   + '  }\n'
   + '  const vpNoteHtml = formatTextSegment("Note +++(पा॰ 8.1.70)+++ end");\n'
-  + '  if (!vpNoteHtml.includes(\'href="https://ashtadhyayi.com/sutraani/8/1/70"\')) throw new Error("Missing VP note sūtra link: " + vpNoteHtml);\n'
-      + '})();\n'
+    "  if (!vpNoteHtml.includes('href=\"https://ashtadhyayi.com/sutraani/8/1/70\"')) throw new Error('Missing VP note sūtra link: ' + vpNoteHtml);\n"
+    "  // LCP collapsible tree, active file highlight, Shift+PgDn/Up across multi-file cards, modifier class tracking\n"
+    "  const treeHtml = renderPadaSvaraFileTreeHtml([\n"
+    "    { file_path: '/repo/a/b/1.md', rel_display: 'a/b/1.md', git_label: 'clean', dirty: false, marked: false, counts: { accepted: 0, rejected: 0, total: 1, with_feedback: 0 } },\n"
+    "    { file_path: '/repo/a/c/2.md', rel_display: 'a/c/2.md', git_label: 'M', dirty: true, marked: false, counts: { accepted: 0, rejected: 0, total: 2, with_feedback: 0 } },\n"
+    "  ], '/repo/a/c/2.md');\n"
+    "  if (!treeHtml.includes('file-tree-root') || !treeHtml.includes('>a<') || !treeHtml.includes('class=\"file-item active\"')) {\n"
+    "    throw new Error('pada_svara tree HTML missing LCP root or active highlight: ' + treeHtml);\n"
+    "  }\n"
+    "  latestSummary = { files: [\n"
+    "    { file_path: '/repo/a/b/1.md', rel_display: 'a/b/1.md' },\n"
+    "    { file_path: '/repo/a/c/2.md', rel_display: 'a/c/2.md' },\n"
+    "  ] };\n"
+    "  currentItems = [\n"
+    "    { item_id: 'i1', vp_file: '/repo/a/b/1.md', rel_path: 'a/b/1.md' },\n"
+    "    { item_id: 'i2', vp_file: '/repo/a/b/1.md', rel_path: 'a/b/1.md' },\n"
+    "    { item_id: 'i3', vp_file: '/repo/a/c/2.md', rel_path: 'a/c/2.md' },\n"
+    "  ];\n"
+    "  focusedIdx = 0; selectedFile = '';\n"
+    "  if (getActiveSidebarFilePath() !== '/repo/a/b/1.md') throw new Error('Expected active sidebar file 1.md');\n"
+    "  if (!stepMainFileGroup(1) || focusedIdx !== 2 || getActiveSidebarFilePath() !== '/repo/a/c/2.md') throw new Error('Shift+PgDn did not advance to 2.md group: ' + focusedIdx);\n"
+    "  if (!stepMainFileGroup(-1) || focusedIdx !== 0) throw new Error('Shift+PgUp did not jump back to 1.md group: ' + focusedIdx);\n"
+    "  currentItems = [{ item_id: 'i1', vp_file: '/repo/a/b/1.md', rel_path: 'a/b/1.md' }];\n"
+    "  if (stepMainFileGroup(1) !== false) throw new Error('stepMainFileGroup must return false when only 1 file shown');\n"
+    "})().catch(err => { console.error(err); process.exit(1); });\n"
     )
     assert ".sutra-link {" in review_gui._RENDERED_HTML
     n_idx = review_gui._RENDERED_HTML.index('id="nInput"')

@@ -1872,7 +1872,145 @@ function syncDiffFocusAndCheckedUi(rows, scopeKey, { storageKey, selectRowFn = n
 }
 
 let _sidebarPageStepFn = null;
+let _mainFilePageStepFn = null;
 let _sidebarPageNavBound = false;
+let _modifierHintBound = false;
+const _fileTreeCollapsed = {};
+
+function setFileTreeDirCollapsed(scopeKey, dirKey, isOpen) {
+  const fullKey = `${scopeKey || "default"}:${dirKey}`;
+  if (isOpen) delete _fileTreeCollapsed[fullKey];
+  else _fileTreeCollapsed[fullKey] = true;
+}
+
+function buildFileTreeData(entries) {
+  const parsed = (entries || []).map((e, pos) => {
+    const raw = String(e?.path ?? "");
+    if (!raw || raw.includes(" ↔ ")) {
+      return { ...e, pos, dirs: [], name: raw || "(unnamed)", nonPath: true };
+    }
+    const clean = raw.replace(/\\/g, "/");
+    const slashIdx = clean.lastIndexOf("/");
+    const dirPart = slashIdx >= 0 ? clean.slice(0, slashIdx) : "";
+    const dirs = dirPart ? dirPart.split("/").filter(Boolean) : [];
+    const name = slashIdx >= 0 ? clean.slice(slashIdx + 1) : clean;
+    return { ...e, pos, dirs, name: name || raw, hasLeadingSlash: clean.startsWith("/") };
+  });
+  let lcpDirs = [];
+  const pathItems = parsed.filter(p => !p.nonPath);
+  if (pathItems.length) {
+    lcpDirs = pathItems[0].dirs.slice();
+    for (let i = 1; i < pathItems.length; i++) {
+      const d = pathItems[i].dirs;
+      let k = 0;
+      while (k < lcpDirs.length && k < d.length && lcpDirs[k] === d[k]) k++;
+      lcpDirs = lcpDirs.slice(0, k);
+    }
+  }
+  const allLeadingSlash = pathItems.length > 0 && pathItems.every(p => p.hasLeadingSlash);
+  const rootLabel = lcpDirs.length ? `${allLeadingSlash ? "/" : ""}${lcpDirs.join("/")}/` : "";
+  const rootNode = { key: "__root__", name: rootLabel, children: new Map(), files: [] };
+
+  for (const item of parsed) {
+    let cur = rootNode;
+    const relDirs = item.nonPath ? [] : item.dirs.slice(lcpDirs.length);
+    let prefix = "";
+    for (const seg of relDirs) {
+      prefix = prefix ? `${prefix}/${seg}` : seg;
+      if (!cur.children.has(seg)) {
+        cur.children.set(seg, { key: prefix, name: seg, children: new Map(), files: [] });
+      }
+      cur = cur.children.get(seg);
+    }
+    cur.files.push(item);
+  }
+
+  function compact(node, isRoot) {
+    for (const child of node.children.values()) {
+      compact(child, false);
+    }
+    if (!isRoot) {
+      while (node.files.length === 0 && node.children.size === 1) {
+        const only = Array.from(node.children.values())[0];
+        node.name = `${node.name}/${only.name}`;
+        node.key = only.key;
+        node.files = only.files;
+        node.children = only.children;
+      }
+    }
+  }
+  compact(rootNode, true);
+  return { rootNode, rootLabel };
+}
+
+function renderFileTreeHtml(entries, renderLeafHtml, { scopeKey = "files" } = {}) {
+  if (!entries || !entries.length) return "";
+  const { rootNode, rootLabel } = buildFileTreeData(entries);
+
+  function countNode(node) {
+    let total = node.files.length;
+    let hasActive = node.files.some(f => Boolean(f.isActive));
+    for (const child of node.children.values()) {
+      const sub = countNode(child);
+      total += sub.total;
+      if (sub.hasActive) hasActive = true;
+    }
+    node._total = total;
+    node._hasActive = hasActive;
+    return { total, hasActive };
+  }
+  countNode(rootNode);
+
+  function renderChildren(node) {
+    const subHtml = Array.from(node.children.values()).map(child => renderDir(child, false)).join("");
+    const leafHtml = node.files.map(f => renderLeafHtml(f)).join("");
+    return `${subHtml}${leafHtml}`;
+  }
+
+  function renderDir(node, isRoot) {
+    const collapsed = Boolean(_fileTreeCollapsed[`${scopeKey}:${node.key}`]);
+    const isOpen = node._hasActive || !collapsed;
+    const cls = isRoot ? "file-tree-dir file-tree-root" : "file-tree-dir";
+    const labelTxt = isRoot ? node.name : `${node.name}/`;
+    const toggleJs = `setFileTreeDirCollapsed(${esc(JSON.stringify(scopeKey))}, ${esc(JSON.stringify(node.key))}, this.open)`;
+    return `<details class="${cls}" data-dir-key="${esc(node.key)}" ${isOpen ? "open" : ""} ontoggle="${toggleJs}">
+      <summary title="${esc(labelTxt)}"><span class="file-tree-caret">▸</span><span>📁 ${esc(labelTxt)}</span><span class="file-tree-count">${node._total}</span></summary>
+      <div class="file-tree-children">${renderChildren(node)}</div>
+    </details>`;
+  }
+
+  if (rootLabel) {
+    return renderDir(rootNode, true);
+  }
+  return renderChildren(rootNode);
+}
+
+function _syncModifierClasses(ev) {
+  if (typeof document === "undefined" || !document.body || !document.body.classList) return;
+  const altDown = Boolean(ev && (ev.altKey || (ev.type === "keydown" && ev.key === "Alt")));
+  const ctrlDown = Boolean(ev && (ev.ctrlKey || (ev.type === "keydown" && ev.key === "Control")));
+  document.body.classList.toggle("mod-alt-down", ev?.type === "keyup" && ev?.key === "Alt" ? false : altDown);
+  document.body.classList.toggle("mod-ctrl-down", ev?.type === "keyup" && ev?.key === "Control" ? false : ctrlDown);
+}
+
+function bindModifierHintTracking() {
+  if (_modifierHintBound || typeof window === "undefined" || typeof window.addEventListener !== "function") return;
+  _modifierHintBound = true;
+  window.addEventListener("keydown", _syncModifierClasses, true);
+  window.addEventListener("keyup", _syncModifierClasses, true);
+  window.addEventListener("blur", () => {
+    if (typeof document !== "undefined" && document.body && document.body.classList) {
+      document.body.classList.remove("mod-alt-down", "mod-ctrl-down");
+    }
+  });
+  if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden && document.body && document.body.classList) {
+        document.body.classList.remove("mod-alt-down", "mod-ctrl-down");
+      }
+    });
+  }
+}
 
 function getCtrlPageStepDelta(ev) {
   if (!ev || !ev.ctrlKey || ev.altKey || ev.metaKey || ev.shiftKey) return 0;
@@ -1881,22 +2019,58 @@ function getCtrlPageStepDelta(ev) {
   return 0;
 }
 
-function bindSidebarPageNav(stepFn) {
-  _sidebarPageStepFn = typeof stepFn === "function" ? stepFn : null;
+function getShiftPageStepDelta(ev) {
+  if (!ev || !ev.shiftKey || ev.ctrlKey || ev.altKey || ev.metaKey) return 0;
+  if (ev.key === "PageDown" || ev.code === "PageDown") return 1;
+  if (ev.key === "PageUp" || ev.code === "PageUp") return -1;
+  return 0;
+}
+
+function _isTextEditingTarget(tgt) {
+  const tag = (tgt && tgt.tagName || "").toUpperCase();
+  return tag === "TEXTAREA" || tag === "SELECT"
+    || (tag === "INPUT" && tgt.type !== "checkbox" && tgt.type !== "radio" && tgt.type !== "button")
+    || Boolean(tgt?.isContentEditable);
+}
+
+function _ensurePageNavCaptureListener() {
   if (_sidebarPageNavBound || typeof window === "undefined" || typeof window.addEventListener !== "function") return;
   _sidebarPageNavBound = true;
   window.addEventListener("keydown", (ev) => {
-    const delta = getCtrlPageStepDelta(ev);
-    if (!delta || typeof _sidebarPageStepFn !== "function") return;
-    ev.__diffSanSidebarPageHandled = true;
-    if (typeof ev.preventDefault === "function") ev.preventDefault();
-    if (typeof ev.stopPropagation === "function") ev.stopPropagation();
-    _sidebarPageStepFn(delta);
+    const sideDelta = getCtrlPageStepDelta(ev);
+    if (sideDelta && typeof _sidebarPageStepFn === "function") {
+      ev.__diffSanSidebarPageHandled = true;
+      if (typeof ev.preventDefault === "function") ev.preventDefault();
+      if (typeof ev.stopPropagation === "function") ev.stopPropagation();
+      _sidebarPageStepFn(sideDelta);
+      return;
+    }
+    const mainDelta = getShiftPageStepDelta(ev);
+    if (mainDelta && typeof _mainFilePageStepFn === "function" && !_isTextEditingTarget(ev.target)) {
+      if (_mainFilePageStepFn(mainDelta)) {
+        ev.__diffSanMainFilePageHandled = true;
+        if (typeof ev.preventDefault === "function") ev.preventDefault();
+        if (typeof ev.stopPropagation === "function") ev.stopPropagation();
+      }
+    }
   }, true);
+}
+
+function bindSidebarPageNav(stepFn) {
+  _sidebarPageStepFn = typeof stepFn === "function" ? stepFn : null;
+  _ensurePageNavCaptureListener();
+  bindModifierHintTracking();
+}
+
+function bindMainFilePageNav(stepFn) {
+  _mainFilePageStepFn = typeof stepFn === "function" ? stepFn : null;
+  _ensurePageNavCaptureListener();
+  bindModifierHintTracking();
 }
 
 function handleSharedDiffKeydown(ev, navCtx = null) {
   if (!ev) return false;
+  _syncModifierClasses(ev);
   const sidebarDelta = !ev.__diffSanSidebarPageHandled ? getCtrlPageStepDelta(ev) : 0;
   const sidebarStepFn = navCtx && typeof navCtx.stepSidebar === "function" ? navCtx.stepSidebar : _sidebarPageStepFn;
   if (sidebarDelta && typeof sidebarStepFn === "function") {
@@ -1905,6 +2079,16 @@ function handleSharedDiffKeydown(ev, navCtx = null) {
     if (typeof ev.stopPropagation === "function") ev.stopPropagation();
     sidebarStepFn(sidebarDelta);
     return true;
+  }
+  const mainFileDelta = !ev.__diffSanMainFilePageHandled ? getShiftPageStepDelta(ev) : 0;
+  const mainFileStepFn = navCtx && typeof navCtx.stepMainFile === "function" ? navCtx.stepMainFile : _mainFilePageStepFn;
+  if (mainFileDelta && typeof mainFileStepFn === "function" && !_isTextEditingTarget(ev.target)) {
+    if (mainFileStepFn(mainFileDelta)) {
+      ev.__diffSanMainFilePageHandled = true;
+      if (typeof ev.preventDefault === "function") ev.preventDefault();
+      if (typeof ev.stopPropagation === "function") ev.stopPropagation();
+      return true;
+    }
   }
   if ((ev.key === "f" || ev.key === "F") && ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey) {
     if (typeof ev.preventDefault === "function") ev.preventDefault();
