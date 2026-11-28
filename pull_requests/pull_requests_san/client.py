@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import base64
+from datetime import datetime, timedelta, timezone
 import logging
 import os
 from pathlib import Path
 import re
-from typing import Any
+from typing import Any, Sequence
 from urllib.parse import quote
 
 import requests
@@ -41,12 +42,13 @@ VALID_REVIEW_EVENTS = ("COMMENT", "APPROVE", "REQUEST_CHANGES")
 VALID_MERGE_METHODS = ("merge", "squash", "rebase")
 DEFAULT_OPEN_PR_LIMIT = 100
 DEFAULT_PAST_PR_LIMIT = 10
+RECENT_MERGED_LOOKBACK_DAYS = 14
 
 
-def default_pr_list_limit(state: str = "open") -> int:
-  """Return default PR list limit: 100 for ``open``, 10 for ``closed`` / ``merged`` / ``all``."""
-  state_norm = (state or "open").strip().lower()
-  return DEFAULT_OPEN_PR_LIMIT if state_norm == "open" else DEFAULT_PAST_PR_LIMIT
+def default_pr_list_limit(state: str = "pend_comm") -> int:
+  """Return default PR list limit: 100 for ``open`` / ``pend_comm``, 10 for past states."""
+  state_norm = (state or "pend_comm").strip().lower()
+  return DEFAULT_OPEN_PR_LIMIT if state_norm in ("open", "pend_comm") else DEFAULT_PAST_PR_LIMIT
 
 _NEXT_LINK_RE = re.compile(r'<([^>]+)>;\s*rel="next"')
 _HEX_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
@@ -403,33 +405,61 @@ class GitHubClient:
       self._auth_user_cached = None
     return self._auth_user_cached
 
+  def _search_org_prs(
+    self,
+    clean_owner: str,
+    scope_term: str,
+    extra_terms: Sequence[str],
+    *,
+    limit: int,
+  ) -> list[PullRequestSummary]:
+    query_parts = [scope_term, "is:pr", *[t for t in extra_terms if t], "sort:updated-desc"]
+    search_q = " ".join(query_parts)
+    if self.token:
+      return self._list_prs_graphql(clean_owner, search_q, limit=limit)
+    return self._list_prs_rest_search(clean_owner, search_q, limit=limit)
+
   def list_org_pull_requests(
     self,
     owner: str = DEFAULT_OWNER,
     *,
-    state: str = "open",
+    state: str = "pend_comm",
     repo: str | None = None,
     limit: int | None = None,
   ) -> list[PullRequestSummary]:
     """List pull requests across all repositories owned by ``owner`` (e.g. ``vishvAsa``)."""
     clean_owner = normalize_owner(owner)
-    state_norm = (state or "open").strip().lower()
+    state_norm = (state or "pend_comm").strip().lower()
     state_terms = {"open": "is:open", "closed": "is:closed", "merged": "is:merged", "all": ""}
-    if state_norm not in state_terms:
-      raise ValueError(f"Unsupported PR state {state!r}; expected one of {tuple(state_terms)}")
+    if state_norm != "pend_comm" and state_norm not in state_terms:
+      raise ValueError(f"Unsupported PR state {state!r}; expected one of {('pend_comm', *state_terms)}")
 
     resolved_limit = int(limit) if limit is not None else default_pr_list_limit(state_norm)
     clean_repo = re.sub(r"\s+", "", repo or "").strip("/").split("/")[-1]
     scope_term = f"repo:{clean_owner}/{clean_repo}" if clean_repo else f"user:{clean_owner}"
-    query_parts = [scope_term, "is:pr"]
-    if state_terms[state_norm]:
-      query_parts.append(state_terms[state_norm])
-    query_parts.append("sort:updated-desc")
-    search_q = " ".join(query_parts)
 
-    if self.token:
-      return self._list_prs_graphql(clean_owner, search_q, limit=resolved_limit)
-    return self._list_prs_rest_search(clean_owner, search_q, limit=resolved_limit)
+    if state_norm == "pend_comm":
+      cutoff = (datetime.now(timezone.utc) - timedelta(days=RECENT_MERGED_LOOKBACK_DAYS)).date().isoformat()
+      open_prs = self._search_org_prs(clean_owner, scope_term, ["is:open"], limit=resolved_limit)
+      recent_merged = self._search_org_prs(
+        clean_owner,
+        scope_term,
+        ["is:merged", f"merged:>={cutoff}"],
+        limit=resolved_limit,
+      )
+      by_key: dict[tuple[str, str, int], PullRequestSummary] = {}
+      for pr in open_prs:
+        if pr.state.lower() == "open":
+          by_key[(pr.owner.lower(), pr.repo.lower(), pr.number)] = pr
+      for pr in recent_merged:
+        if pr.merged and pr.unresolved_comment_count > 0:
+          k = (pr.owner.lower(), pr.repo.lower(), pr.number)
+          by_key.setdefault(k, pr)
+      combined = sorted(by_key.values(), key=lambda p: (p.updated_at or "", p.number), reverse=True)
+      return combined[:resolved_limit]
+
+    extra = [state_terms[state_norm]] if state_terms[state_norm] else []
+    return self._search_org_prs(clean_owner, scope_term, extra, limit=resolved_limit)
 
   def _list_prs_graphql(self, clean_owner: str, search_q: str, *, limit: int) -> list[PullRequestSummary]:
     results: list[PullRequestSummary] = []

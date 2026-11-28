@@ -25,13 +25,13 @@ class PRReviewSession:
     self,
     *,
     owner: str | None = None,
-    state: str = "open",
+    state: str = "pend_comm",
     repo: str = "",
     refresh: bool = False,
     limit: int | None = None,
   ) -> list[PullRequestSummary]:
     norm_owner = normalize_owner(owner or self.default_owner)
-    norm_state = (state or "open").strip().lower()
+    norm_state = (state or "pend_comm").strip().lower()
     norm_repo = (repo or "").strip().strip("/")
     resolved_limit = int(limit) if limit is not None else default_pr_list_limit(norm_state)
     key = (norm_owner, norm_state, norm_repo, resolved_limit)
@@ -96,7 +96,7 @@ class PRReviewSession:
     self,
     *,
     owner: str | None = None,
-    state: str = "open",
+    state: str = "pend_comm",
     repo: str = "",
     active_pr: tuple[str, str, int] | None = None,
     char_diff_mode: str = "grapheme",
@@ -476,7 +476,8 @@ class PRReviewSession:
     for cache_key, lst in list(self.pr_list_cache.items()):
       list_state = cache_key[1]
       should_remove = (
-        (list_state == "open" and new_state != "open")
+        (list_state == "pend_comm" and not (new_state == "open" or (is_merged and s.unresolved_comment_count > 0)))
+        or (list_state == "open" and new_state != "open")
         or (list_state == "closed" and new_state != "closed")
         or (list_state == "merged" and not is_merged)
       )

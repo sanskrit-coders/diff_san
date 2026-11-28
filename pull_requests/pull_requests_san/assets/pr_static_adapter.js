@@ -219,6 +219,7 @@
       title: prObj.title || "",
       state,
       merged,
+      merged_at: prObj.merged_at || "",
       is_draft: Boolean(prObj.draft),
       url: prObj.html_url || `https://github.com/${owner}/${repo}/pull/${prObj.number}`,
       author: prObj.user?.login || "unknown",
@@ -612,7 +613,7 @@
       }
       return {
         default_owner: staticRepoTarget?.owner || "vishvAsa",
-        default_state: "open",
+        default_state: "pend_comm",
         default_repo: staticRepoTarget?.repo || "",
         has_token: Boolean(tok),
         auth_user: staticAuthUser ? { login: staticAuthUser.login } : null,
@@ -621,21 +622,57 @@
     }
 
     if (path === "/api/prs") {
-      const state = (params.get("state") || "open").toLowerCase();
+      const state = (params.get("state") || "pend_comm").toLowerCase();
       const rawLimit = params.get("limit");
-      const prLimit = rawLimit ? Math.max(1, Number(rawLimit)) : (state === "open" ? 30 : 10);
+      const prLimit = rawLimit ? Math.max(1, Number(rawLimit)) : ((state === "open" || state === "pend_comm") ? 30 : 10);
+      const isRecentFortnight = (isoStr) => {
+        if (!isoStr) return false;
+        const ts = Date.parse(isoStr);
+        return !Number.isNaN(ts) && (Date.now() - ts) <= 14 * 24 * 60 * 60 * 1000;
+      };
       if (staticRepoTarget && staticRepoTarget.owner && staticRepoTarget.repo) {
-        const ghState = (state === "closed" || state === "merged") ? "closed" : (state === "all" ? "all" : "open");
-        const fetchPerPage = (state === "closed" || state === "merged") ? Math.max(30, prLimit) : prLimit;
-        const rawList = await _ghRequest(`/repos/${encodeURIComponent(staticRepoTarget.owner)}/${encodeURIComponent(staticRepoTarget.repo)}/pulls?state=${ghState}&sort=updated&direction=desc&per_page=${fetchPerPage}`);
-        let summaries = (rawList || []).map(p => _normalizePrSummary(staticRepoTarget.owner, staticRepoTarget.repo, p));
-        if (state === "merged") summaries = summaries.filter(p => p.merged);
-        else if (state === "closed") summaries = summaries.filter(p => !p.merged);
+        let summaries = [];
+        if (state === "pend_comm") {
+          const [openRaw, closedRaw] = await Promise.all([
+            _ghRequest(`/repos/${encodeURIComponent(staticRepoTarget.owner)}/${encodeURIComponent(staticRepoTarget.repo)}/pulls?state=open&sort=updated&direction=desc&per_page=${prLimit}`),
+            _ghRequest(`/repos/${encodeURIComponent(staticRepoTarget.owner)}/${encodeURIComponent(staticRepoTarget.repo)}/pulls?state=closed&sort=updated&direction=desc&per_page=${Math.max(30, prLimit)}`),
+          ]);
+          const seen = new Set();
+          for (const rawP of (openRaw || [])) {
+            const norm = _normalizePrSummary(staticRepoTarget.owner, staticRepoTarget.repo, rawP);
+            seen.add(norm.number);
+            summaries.push(norm);
+          }
+          for (const rawP of (closedRaw || [])) {
+            const norm = _normalizePrSummary(staticRepoTarget.owner, staticRepoTarget.repo, rawP);
+            if (!seen.has(norm.number) && norm.merged && Number(norm.unresolved_comment_count || 0) > 0 && isRecentFortnight(norm.merged_at || norm.updated_at)) {
+              summaries.push(norm);
+            }
+          }
+          summaries.sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")));
+        } else {
+          const ghState = (state === "closed" || state === "merged") ? "closed" : (state === "all" ? "all" : "open");
+          const fetchPerPage = (state === "closed" || state === "merged") ? Math.max(30, prLimit) : prLimit;
+          const rawList = await _ghRequest(`/repos/${encodeURIComponent(staticRepoTarget.owner)}/${encodeURIComponent(staticRepoTarget.repo)}/pulls?state=${ghState}&sort=updated&direction=desc&per_page=${fetchPerPage}`);
+          summaries = (rawList || []).map(p => _normalizePrSummary(staticRepoTarget.owner, staticRepoTarget.repo, p));
+          if (state === "merged") summaries = summaries.filter(p => p.merged);
+          else if (state === "closed") summaries = summaries.filter(p => !p.merged);
+        }
         summaries = summaries.slice(0, prLimit);
         staticRepoPrsCache[`${staticRepoTarget.owner.toLowerCase()}/${staticRepoTarget.repo.toLowerCase()}`] = summaries;
         return { prs: summaries, repos: [staticRepoTarget.repo] };
       }
-      return _collectPrSidebarSummaries();
+      const side = _collectPrSidebarSummaries();
+      if (state === "open") side.prs = side.prs.filter(p => String(p.state || "").toLowerCase() === "open");
+      else if (state === "pend_comm") {
+        side.prs = side.prs.filter(p =>
+          String(p.state || "").toLowerCase() === "open"
+          || (p.merged && Number(p.unresolved_comment_count || 0) > 0 && isRecentFortnight(p.merged_at || p.updated_at))
+        );
+      } else if (state === "merged") side.prs = side.prs.filter(p => p.merged);
+      else if (state === "closed") side.prs = side.prs.filter(p => !p.merged && String(p.state || "").toLowerCase() === "closed");
+      side.repos = [...new Set(side.prs.map(p => p.repo))];
+      return side;
     }
 
     if (path === "/api/open_in_browser") {
@@ -652,7 +689,7 @@
         const side = _collectPrSidebarSummaries(staticRepoTarget);
         return { ...side, active_pr: detail };
       }
-      return handleStaticPrApi(`/api/prs?state=${encodeURIComponent(reqBody.state || "open")}&refresh=true`);
+      return handleStaticPrApi(`/api/prs?state=${encodeURIComponent(reqBody.state || "pend_comm")}&refresh=true`);
     }
 
     let m = path.match(/^\/api\/pr\/([^/]+)\/([^/]+)\/(\d+)$/);

@@ -65,7 +65,7 @@ class _DiffOptionsModel(BaseModel):
 
 class _RefreshRequest(_DiffOptionsModel):
   owner: str = pr_review.DEFAULT_OWNER
-  state: str = "open"
+  state: str = "pend_comm"
   repo: str = ""
   limit: int | None = None
   active_owner: str | None = None
@@ -559,7 +559,7 @@ def _register_local_routes(app: FastAPI, store: _AppStore) -> None:
 def create_app(
   *,
   default_owner: str = pr_review.DEFAULT_OWNER,
-  default_state: str = "open",
+  default_state: str = "pend_comm",
   default_repo: str = "",
   token: str | None = None,
   local_org_dir: str | None = pr_review.DEFAULT_LOCAL_ORG_DIR,
@@ -588,7 +588,7 @@ def _launch_browser(url: str) -> None:
 def main(argv: Sequence[str] | None = None) -> int:
   p = argparse.ArgumentParser(description="Launch pull_requests_san — GitHub PR Reviewer for Sanskrit scholarship.")
   p.add_argument("--owner", default=pr_review.DEFAULT_OWNER, help="GitHub organization/user (default: vishvAsa).")
-  p.add_argument("--state", default="open", choices=["open", "closed", "merged", "all"], help="PR state filter (default: open).")
+  p.add_argument("--state", default="pend_comm", choices=["pend_comm", "open", "merged", "all"], help="PR state filter (default: pend_comm).")
   p.add_argument("--repo", default="", help="Optional single repo name filter.")
   p.add_argument("--token", default=None, help="GitHub token (defaults to env, gh CLI config, or tokens.toml).")
   p.add_argument("--local-org-dir", default=pr_review.DEFAULT_LOCAL_ORG_DIR, help="Optional local checkout root for opening files in IDEA.")

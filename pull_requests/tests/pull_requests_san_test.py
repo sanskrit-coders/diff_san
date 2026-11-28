@@ -724,7 +724,7 @@ def test_build_full_file_hunk_marks_in_diff_hunk():
   assert hunk.rows[7].in_diff_hunk is False
 
 
-def test_client_fallback_v3_diff_and_unauth_guards():
+def test_client_fallback_v3_diff_and_unauth_guards(monkeypatch):
   fake = _FakeSession()
   fake.patch_in_files = False
   client = GitHubClient(token="tok_test", session=fake, local_org_dir=None)
@@ -733,6 +733,52 @@ def test_client_fallback_v3_diff_and_unauth_guards():
   assert prs[0].repo_full_name == "vishvAsa/mahAbhAratam"
   assert prs[0].number == 192
   assert fake.calls[-1]["json"]["variables"]["first"] == 100
+
+  # Default state="pend_comm" returns union of open PRs and recent (past 14 days) merged PRs with unresolved comments
+  from datetime import datetime, timedelta, timezone
+  cutoff_expected = (datetime.now(timezone.utc) - timedelta(days=14)).date().isoformat()
+  gql_search_queries: list[str] = []
+
+  def pend_comm_graphql(q_str: str, variables: dict[str, Any]):
+    search_q = str(variables.get("q") or "")
+    gql_search_queries.append(search_q)
+    base_node = {
+      "url": "https://github.com/vishvAsa/mahAbhAratam/pull/192",
+      "isDraft": False,
+      "mergeable": "MERGEABLE",
+      "mergeStateStatus": "CLEAN",
+      "createdAt": "2026-11-16T06:10:19Z",
+      "updatedAt": "2026-11-28T10:00:00Z",
+      "additions": 1,
+      "deletions": 1,
+      "changedFiles": 1,
+      "reviewDecision": "CHANGES_REQUESTED",
+      "baseRefName": "content",
+      "baseRefOid": "b",
+      "headRefName": "content",
+      "headRefOid": "h",
+      "headRepository": {"nameWithOwner": "vishvAsa/mahAbhAratam"},
+      "author": {"login": "vvasuki"},
+      "repository": {"name": "mahAbhAratam", "nameWithOwner": "vishvAsa/mahAbhAratam"},
+      "comments": {"totalCount": 0},
+    }
+    if "is:open" in search_q:
+      nodes = [{**base_node, "number": 192, "title": "Open PR", "state": "OPEN", "merged": False, "reviewThreads": {"totalCount": 0, "nodes": []}}]
+    elif "is:merged" in search_q:
+      nodes = [
+        {**base_node, "number": 201, "title": "Merged unresolved", "state": "MERGED", "merged": True, "updatedAt": "2026-11-28T11:00:00Z", "reviewThreads": {"totalCount": 1, "nodes": [{"isResolved": False, "comments": {"totalCount": 2}}]}},
+        {**base_node, "number": 202, "title": "Merged clean", "state": "MERGED", "merged": True, "updatedAt": "2026-11-28T09:00:00Z", "reviewThreads": {"totalCount": 1, "nodes": [{"isResolved": True, "comments": {"totalCount": 3}}]}},
+      ]
+    else:
+      nodes = []
+    return {"search": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": nodes}}
+
+  pend_client = GitHubClient(token="tok_test", session=fake, local_org_dir=None)
+  monkeypatch.setattr(pend_client, "graphql", pend_comm_graphql)
+  pend_prs = pend_client.list_org_pull_requests("vishvAsa", state="pend_comm")
+  assert [p.number for p in pend_prs] == [201, 192]
+  assert any("is:open" in sq for sq in gql_search_queries)
+  assert any(f"is:merged merged:>={cutoff_expected}" in sq for sq in gql_search_queries)
 
   for past_state in ("closed", "merged", "all"):
     client.list_org_pull_requests("vishvAsa", state=past_state)
@@ -801,9 +847,11 @@ def test_gui_endpoints_diff_comments_refresh_and_local_helpers(tmp_path: Path, m
   assert r_html.status_code == 200 and "<title>GitHub PR Character-Level Reviewer</title>" in r_html.text
   hdr_top = r_html.text.split("<header>", 1)[1].split("</div>", 1)[0]
   assert "GitHub PR Character-Level Reviewer" not in hdr_top
-  for pill_id in ("stateOpenPill", "stateClosedPill", "stateMergedPill", "stateAllPill"):
+  for pill_id in ("stateOpenPill", "statePendCommPill", "stateMergedPill", "stateAllPill"):
     assert f'id="{pill_id}"' in hdr_top
     assert r_html.text.count(f'id="{pill_id}"') == 1
+  assert 'id="stateClosedPill"' not in r_html.text
+  assert 'id="statePendCommPill"' in hdr_top and 'active" id="statePendCommPill"' in hdr_top
   for btn_id in ("commentNavBtn", "prevCommentBtn", "nextCommentBtn", "commentNavCount", "helpBtn", "helpPane"):
     assert f'id="{btn_id}"' in r_html.text
   assert "> Wrap\n" in r_html.text and "> Wrap long lines\n" not in r_html.text
@@ -815,9 +863,10 @@ def test_gui_endpoints_diff_comments_refresh_and_local_helpers(tmp_path: Path, m
   r_meta = tc.get("/api/meta")
   assert r_meta.status_code == 200
   assert r_meta.json()["auth_user"]["login"] == "vvasuki"
+  assert r_meta.json()["default_state"] == "pend_comm"
   assert "nfc" in r_meta.json()["normalizations"]
 
-  r_prs = tc.get("/api/prs?owner=vishvAsa&state=open")
+  r_prs = tc.get("/api/prs?owner=vishvAsa")
   assert r_prs.status_code == 200
   assert r_prs.json()["repos"] == ["mahAbhAratam"]
   assert fake.calls[-1]["json"]["variables"]["first"] == 100
@@ -1241,7 +1290,7 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
     "  addEventListener(evt, fn) { if (!listenerLists[evt]) listenerLists[evt] = []; listenerLists[evt].push(fn); listeners[evt] = (ev) => listenerLists[evt].forEach(h => h(ev)); },\n"
     "};\n"
     "elems['ownerInput'] = Object.assign(makeEl('ownerInput'), { value: 'vishvAsa' });\n"
-    "elems['stateSelect'] = Object.assign(makeEl('stateSelect'), { value: 'open' });\n"
+    "elems['stateSelect'] = Object.assign(makeEl('stateSelect'), { value: 'pend_comm' });\n"
     "elems['diffModeSelect'] = Object.assign(makeEl('diffModeSelect'), { value: 'word' });\n"
     "elems['normalizeSelect'] = Object.assign(makeEl('normalizeSelect'), { value: 'none' });\n"
     "elems['ignorePunctChk'] = Object.assign(makeEl('ignorePunctChk'), { checked: false });\n"
@@ -1374,15 +1423,15 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
     "  await new Promise(r => setTimeout(r, 20));\n"
     "  const revCall = fetched.find(c => c.url.endsWith('/review'));\n"
     "  if (!revCall || !revCall.body.includes('\"event\":\"REQUEST_CHANGES\"')) throw new Error('Ctrl+Enter did not submit selected review');\n"
-    "  // Alt+C / Alt+M / Alt+L / Alt+O state filter shortcuts (past 10 limit for closed/merged/all)\n"
-    "  for (const [key, code, exp] of [['c', 'KeyC', 'closed'], ['m', 'KeyM', 'merged'], ['l', 'KeyL', 'all'], ['o', 'KeyO', 'open']]) {\n"
+    "  // Alt+M / Alt+L / Alt+O / Alt+C state filter shortcuts (past 10 limit for merged/all; default 100 for open/pend_comm)\n"
+    "  for (const [key, code, exp] of [['m', 'KeyM', 'merged'], ['l', 'KeyL', 'all'], ['o', 'KeyO', 'open'], ['c', 'KeyC', 'pend_comm']]) {\n"
     "    const beforeN = fetched.length;\n"
     "    listeners['keydown']({ key, code, altKey: true, ctrlKey: false, metaKey: false, shiftKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
     "    await new Promise(r => setTimeout(r, 10));\n"
-    "    if (elems['stateSelect'].value !== exp) throw new Error('Alt+' + key + ' failed state filter');\n"
+    "    if (elems['stateSelect'].value !== exp) throw new Error('Alt+' + key + ' failed state filter: got ' + elems['stateSelect'].value);\n"
     "    const prCall = fetched.slice(beforeN).find(c => c.url.includes('/api/prs?'));\n"
-    "    if (exp === 'open' && (!prCall || prCall.url.includes('limit=10'))) throw new Error('open state unexpectedly capped: ' + JSON.stringify(prCall));\n"
-    "    if (exp !== 'open' && (!prCall || !prCall.url.includes('limit=10'))) throw new Error(exp + ' state did not request limit=10: ' + JSON.stringify(prCall));\n"
+    "    if ((exp === 'open' || exp === 'pend_comm') && (!prCall || prCall.url.includes('limit=10'))) throw new Error(exp + ' state unexpectedly capped: ' + JSON.stringify(prCall));\n"
+    "    if (exp !== 'open' && exp !== 'pend_comm' && (!prCall || !prCall.url.includes('limit=10'))) throw new Error(exp + ' state did not request limit=10: ' + JSON.stringify(prCall));\n"
     "  }\n"
     "  // Open inline composer on row (left=1, right=2), verify side toggle updates target line\n"
     "  startInlineComposer(0, 2, 'RIGHT', 1, 2);\n"
@@ -1945,7 +1994,7 @@ def test_static_pr_export_and_github_rest_adapter(tmp_path: Path):
     "  addEventListener(e, fn){ listeners[e] = fn; },\n"
     "};\n"
     "elems['ownerInput'] = Object.assign(makeEl('ownerInput'), { value: 'vishvAsa' });\n"
-    "elems['stateSelect'] = Object.assign(makeEl('stateSelect'), { value: 'open' });\n"
+    "elems['stateSelect'] = Object.assign(makeEl('stateSelect'), { value: 'pend_comm' });\n"
     "elems['diffModeSelect'] = Object.assign(makeEl('diffModeSelect'), { value: 'word' });\n"
     "elems['normalizeSelect'] = Object.assign(makeEl('normalizeSelect'), { value: 'none' });\n"
     "elems['ignorePunctChk'] = Object.assign(makeEl('ignorePunctChk'), { checked: false });\n"
@@ -1968,7 +2017,9 @@ def test_static_pr_export_and_github_rest_adapter(tmp_path: Path):
     "  if (url.includes('/pulls/9/comments')) return mk([{ id: 701, path: 'a.md', line: 2, original_line: 2, side: 'RIGHT', position: 1, user: { login: 'rev' }, body: 'Nice!', created_at: '2026-11-27T09:05:00Z' }]);\n"
     "  if (url.includes('/issues/9/comments') || url.includes('/pulls/9/reviews')) return mk([]);\n"
     "  if (url.includes('/repos/vishvAsa/test/pulls?')) {\n"
-    "    const mkPr = (n, m) => ({ number: n, title: 'PR ' + n, html_url: 'https://github.com/vishvAsa/test/pull/' + n, state: 'closed', merged: m, merged_at: m ? '2026-11-26T00:00:00Z' : null, draft: false, user: { login: 'u' }, created_at: '2026-11-26T00:00:00Z', updated_at: '2026-11-26T00:00:00Z', comments: 0 });\n"
+    "    const isOpenQuery = url.includes('state=open');\n"
+    "    const recentIso = new Date().toISOString();\n"
+    "    const mkPr = (n, m) => ({ number: n, title: 'PR ' + n, html_url: 'https://github.com/vishvAsa/test/pull/' + n, state: isOpenQuery ? 'open' : 'closed', merged: isOpenQuery ? false : m, merged_at: (!isOpenQuery && m) ? recentIso : null, draft: false, user: { login: 'u' }, created_at: '2026-11-26T00:00:00Z', updated_at: recentIso, comments: 0 });\n"
     "    return mk(Array.from({length: 25}, (_, i) => mkPr(i === 0 ? 9 : 100 + i, i % 2 === 0)));\n"
     "  }\n"
     f"  if (url.includes('/contents/a.md?ref=b9')) return mk({{ encoding: 'base64', content: {json.dumps(b64_left)} }});\n"
@@ -2024,8 +2075,13 @@ def test_static_pr_export_and_github_rest_adapter(tmp_path: Path):
     "  if (!selectedDiffRowKey || !selectedDiffRowKey.startsWith('skandha_10/01.md:') || !renderedDiffRows.some(r => r.rowKey === selectedDiffRowKey && r.rightNum === 17)) {\n"
     "    throw new Error('Deep link did not select target row: ' + selectedDiffRowKey);\n"
     "  }\n"
-    "  // Static repo listing for closed, merged, all returns at most past 10 PRs\n"
+    "  // Static meta default_state is pend_comm, and pend_comm returns open PR #9\n"
+    "  const metaRes = await handleStaticPrApi('/api/meta');\n"
+    "  if (metaRes.default_state !== 'pend_comm') throw new Error('Expected static default_state pend_comm, got ' + metaRes.default_state);\n"
     "  await openStaticPrRef('vishvAsa/test');\n"
+    "  const pendCommRes = await handleStaticPrApi('/api/prs?state=pend_comm&limit=100');\n"
+    "  if (!pendCommRes.prs || !pendCommRes.prs.some(p => p.number === 9 && p.state === 'open')) throw new Error('Static state pend_comm did not include open PR #9');\n"
+    "  // Static repo listing for closed, merged, all returns at most past 10 PRs\n"
     "  for (const st of ['closed', 'merged', 'all']) {\n"
     "    const res = await handleStaticPrApi('/api/prs?state=' + st + '&limit=10');\n"
     "    if (!res.prs || res.prs.length !== 10) throw new Error('Static state ' + st + ' returned ' + res.prs?.length + ' PRs instead of 10');\n"
