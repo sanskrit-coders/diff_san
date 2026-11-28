@@ -201,7 +201,7 @@ function renderSettingsPaneHtml() {
         <span class="ch-ins">नवीनम्</span> (added line / token preview)
       </div>
       <div class="settings-preview-line sandhi-sample">
-        <span class="ch-pair ch-sandhi"><span class="ch-del ch-has-sub ch-sandhi">अस्<span class="ch-sub">ति इ</span>ति</span><span class="ch-ins ch-has-sub ch-sandhi">अस्<span class="ch-sub">ती</span>ति</span></span> (interword sandhi preview)
+        <span class="ch-pair ch-sandhi"><span class="ch-del ch-has-sub ch-sandhi">अस्<span class="ch-sub">ति इ</span>ति</span><span class="ch-sep">➤➤</span><span class="ch-ins ch-has-sub ch-sandhi">अस्<span class="ch-sub">ती</span>ति</span></span> (interword sandhi preview)
       </div>
     </div>
     ${groupsHtml}
@@ -278,6 +278,7 @@ let _diffMouseDownPos = null;
 function _extractDiffInlineNodeText(node, isNlStandalone = false) {
   if (!node) return "";
   if (node.nodeType === 3) return String(node.nodeValue || "");
+  if (node.classList && node.classList.contains("ch-sep")) return "";
   if (typeof node.getAttribute === "function") {
     const dataCh = node.getAttribute("data-ch");
     if (dataCh != null) return dataCh;
@@ -329,6 +330,7 @@ function extractDiffBoxOldNewText(boxEl) {
       for (let i = 0; i < children.length; i++) {
         const child = children[i];
         if (child && child.classList) {
+          if (child.classList.contains("ch-sep")) continue;
           if (child.classList.contains("ch-del")) oldParts.push(_extractDiffInlineNodeText(child, false));
           else if (child.classList.contains("ch-ins")) newParts.push(_extractDiffInlineNodeText(child, false));
           else if (child.classList.contains("nl-del")) oldParts.push("\n");
@@ -358,7 +360,7 @@ function extractDiffBoxOldNewText(boxEl) {
   } else {
     return "";
   }
-  return `OLD:\n${oldText}\nNEW:\n${newText}`;
+  return `${oldText}➤➤${newText}`;
 }
 
 async function copyDiffBoxOldNew(boxEl) {
@@ -369,7 +371,7 @@ async function copyDiffBoxOldNew(boxEl) {
     boxEl.classList.add("diff-box-copied");
     setTimeout(() => { if (boxEl.classList) boxEl.classList.remove("diff-box-copied"); }, 900);
   }
-  setStatus(ok ? "Copied diff box (OLD / NEW)" : "Copy failed — check clipboard permissions", 2500);
+  setStatus(ok ? "Copied diff box (OLD➤➤NEW)" : "Copy failed — check clipboard permissions", 2500);
   return ok;
 }
 
@@ -733,7 +735,8 @@ function renderDiffSegments(segments, diffMode = null, sandhiContext = null) {
             }
           }
         }
-        let pairHtml = "";
+        let oldHtml = "";
+        let newHtml = "";
         let oldParts = [];
         let newParts = [];
         let pairIsSandhi = false;
@@ -744,8 +747,12 @@ function renderDiffSegments(segments, diffMode = null, sandhiContext = null) {
           else if (ps.op === "del_nl") oldParts.push("\n");
           else if (ps.op === "ins") newParts.push(ps.text || "");
           else if (ps.op === "ins_nl") newParts.push("\n");
-          pairHtml += renderOneSegment(p);
+          const segHtml = renderOneSegment(p);
+          if (ps.op === "ins" || ps.op === "ins_nl") newHtml += segHtml;
+          else oldHtml += segHtml;
         }
+        const pairSepHtml = (oldHtml && newHtml) ? `<span class="ch-sep">➤➤</span>` : "";
+        const pairHtml = `${oldHtml}${pairSepHtml}${newHtml}`;
         out += _wrapOldNewPairHtml(pairHtml, pairIsSandhi, oldParts.join(""), newParts.join(""));
         i = lastContentIdx;
         continue;
@@ -1125,7 +1132,7 @@ function _ensureDiffRowContextMenuEl() {
       .join("");
     menu.innerHTML = `
       ${extraHtml}
-      <button id="ctxCopyBoxDiffBtn" class="diff-ctx-item" type="button">📋 Copy this diff box (OLD / NEW)</button>
+      <button id="ctxCopyBoxDiffBtn" class="diff-ctx-item" type="button">📋 Copy this diff box (OLD➤➤NEW)</button>
       <button id="ctxCopyBugDiffBtn" class="diff-ctx-item" type="button">📋 Copy diff for bug report</button>
       <button id="ctxSelectLineBtn" class="diff-ctx-item" type="button">☑ Select line</button>
     `;

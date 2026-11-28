@@ -520,6 +520,17 @@
     margin: 0 1px;
     padding: 0 1px;
   }
+  .ch-sep {
+    color: var(--muted);
+    font-weight: 700;
+    font-size: 0.78em;
+    margin: 0 2px;
+    letter-spacing: -0.05em;
+    user-select: text;
+  }
+  .ch-pair.ch-sandhi .ch-sep {
+    color: var(--sandhi-border);
+  }
   .ch-pair > .ch-del + .ch-ins,
   .ch-pair > .ch-del + .nl-badge,
   .ch-pair > .nl-badge + .ch-ins {

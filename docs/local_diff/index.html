@@ -527,6 +527,17 @@
     margin: 0 1px;
     padding: 0 1px;
   }
+  .ch-sep {
+    color: var(--muted);
+    font-weight: 700;
+    font-size: 0.78em;
+    margin: 0 2px;
+    letter-spacing: -0.05em;
+    user-select: text;
+  }
+  .ch-pair.ch-sandhi .ch-sep {
+    color: var(--sandhi-border);
+  }
   .ch-pair > .ch-del + .ch-ins,
   .ch-pair > .ch-del + .nl-badge,
   .ch-pair > .nl-badge + .ch-ins {
@@ -1049,7 +1060,7 @@
     <strong style="font-size:19px;">local-diff-san — Sanskrit Local &amp; Git Diff Viewer</strong>
     <button id="closeHelpBtn" class="small" type="button" onclick="closeHelpPane()">✕ Close</button>
   </div>
-  <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;"><strong>Shortcuts:</strong> <strong>Hold Alt/Ctrl</strong> Highlight button shortcut letters • <strong>Shift+Click</strong> / <strong>↑</strong>/<strong>↓</strong> Select line • <strong>Tab</strong> / <strong>Shift+Tab</strong> Step diffs • <strong>Ctrl+Space</strong> Checked until here • <strong>Click diff box</strong> Copy OLD/NEW • <strong>Right-click</strong> Copy diff • <strong>Ctrl+F</strong> Find (supports ँ) • <strong>Ctrl+G</strong> / <strong>Ctrl+Shift+G</strong> Next/Prev find • <strong>Alt+W</strong> Word/Char diff • <strong>PgUp</strong>/<strong>PgDn</strong> Page &amp; select first line • <strong>Ctrl+PgUp</strong>/<strong>PgDn</strong> Prev/Next file in left pane • <strong>Alt+↑</strong>/<strong>↓</strong> Prev/Next diff line • <strong>Alt+Shift+↑</strong>/<strong>↓</strong> Prev/Next sandhi diff • <strong>Alt+S</strong> Single/2-Pane • <strong>Ctrl+R</strong> Refresh • <strong>j</strong>/<strong>k</strong> Navigate files • <strong>?</strong> About/Shortcuts • <strong>Esc</strong> Close bar/panel</div>
+  <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;"><strong>Shortcuts:</strong> <strong>Hold Alt/Ctrl</strong> Highlight button shortcut letters • <strong>Shift+Click</strong> / <strong>↑</strong>/<strong>↓</strong> Select line • <strong>Tab</strong> / <strong>Shift+Tab</strong> Step diffs • <strong>Ctrl+Space</strong> Checked until here • <strong>Click diff box</strong> Copy OLD➤➤NEW • <strong>Right-click</strong> Copy diff • <strong>Ctrl+F</strong> Find (supports ँ) • <strong>Ctrl+G</strong> / <strong>Ctrl+Shift+G</strong> Next/Prev find • <strong>Alt+W</strong> Word/Char diff • <strong>PgUp</strong>/<strong>PgDn</strong> Page &amp; select first line • <strong>Ctrl+PgUp</strong>/<strong>PgDn</strong> Prev/Next file in left pane • <strong>Alt+↑</strong>/<strong>↓</strong> Prev/Next diff line • <strong>Alt+Shift+↑</strong>/<strong>↓</strong> Prev/Next sandhi diff • <strong>Alt+S</strong> Single/2-Pane • <strong>Ctrl+R</strong> Refresh • <strong>j</strong>/<strong>k</strong> Navigate files • <strong>?</strong> About/Shortcuts • <strong>Esc</strong> Close bar/panel</div>
   <footer id="aboutFooter" class="about-footer">
     <div>
       <strong>diff_san</strong> (<a href="https://github.com/sanskrit-coders/diff_san" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) —
@@ -2922,7 +2933,7 @@ function renderSettingsPaneHtml() {
         <span class="ch-ins">नवीनम्</span> (added line / token preview)
       </div>
       <div class="settings-preview-line sandhi-sample">
-        <span class="ch-pair ch-sandhi"><span class="ch-del ch-has-sub ch-sandhi">अस्<span class="ch-sub">ति इ</span>ति</span><span class="ch-ins ch-has-sub ch-sandhi">अस्<span class="ch-sub">ती</span>ति</span></span> (interword sandhi preview)
+        <span class="ch-pair ch-sandhi"><span class="ch-del ch-has-sub ch-sandhi">अस्<span class="ch-sub">ति इ</span>ति</span><span class="ch-sep">➤➤</span><span class="ch-ins ch-has-sub ch-sandhi">अस्<span class="ch-sub">ती</span>ति</span></span> (interword sandhi preview)
       </div>
     </div>
     ${groupsHtml}
@@ -2999,6 +3010,7 @@ let _diffMouseDownPos = null;
 function _extractDiffInlineNodeText(node, isNlStandalone = false) {
   if (!node) return "";
   if (node.nodeType === 3) return String(node.nodeValue || "");
+  if (node.classList && node.classList.contains("ch-sep")) return "";
   if (typeof node.getAttribute === "function") {
     const dataCh = node.getAttribute("data-ch");
     if (dataCh != null) return dataCh;
@@ -3050,6 +3062,7 @@ function extractDiffBoxOldNewText(boxEl) {
       for (let i = 0; i < children.length; i++) {
         const child = children[i];
         if (child && child.classList) {
+          if (child.classList.contains("ch-sep")) continue;
           if (child.classList.contains("ch-del")) oldParts.push(_extractDiffInlineNodeText(child, false));
           else if (child.classList.contains("ch-ins")) newParts.push(_extractDiffInlineNodeText(child, false));
           else if (child.classList.contains("nl-del")) oldParts.push("\n");
@@ -3079,7 +3092,7 @@ function extractDiffBoxOldNewText(boxEl) {
   } else {
     return "";
   }
-  return `OLD:\n${oldText}\nNEW:\n${newText}`;
+  return `${oldText}➤➤${newText}`;
 }
 
 async function copyDiffBoxOldNew(boxEl) {
@@ -3090,7 +3103,7 @@ async function copyDiffBoxOldNew(boxEl) {
     boxEl.classList.add("diff-box-copied");
     setTimeout(() => { if (boxEl.classList) boxEl.classList.remove("diff-box-copied"); }, 900);
   }
-  setStatus(ok ? "Copied diff box (OLD / NEW)" : "Copy failed — check clipboard permissions", 2500);
+  setStatus(ok ? "Copied diff box (OLD➤➤NEW)" : "Copy failed — check clipboard permissions", 2500);
   return ok;
 }
 
@@ -3454,7 +3467,8 @@ function renderDiffSegments(segments, diffMode = null, sandhiContext = null) {
             }
           }
         }
-        let pairHtml = "";
+        let oldHtml = "";
+        let newHtml = "";
         let oldParts = [];
         let newParts = [];
         let pairIsSandhi = false;
@@ -3465,8 +3479,12 @@ function renderDiffSegments(segments, diffMode = null, sandhiContext = null) {
           else if (ps.op === "del_nl") oldParts.push("\n");
           else if (ps.op === "ins") newParts.push(ps.text || "");
           else if (ps.op === "ins_nl") newParts.push("\n");
-          pairHtml += renderOneSegment(p);
+          const segHtml = renderOneSegment(p);
+          if (ps.op === "ins" || ps.op === "ins_nl") newHtml += segHtml;
+          else oldHtml += segHtml;
         }
+        const pairSepHtml = (oldHtml && newHtml) ? `<span class="ch-sep">➤➤</span>` : "";
+        const pairHtml = `${oldHtml}${pairSepHtml}${newHtml}`;
         out += _wrapOldNewPairHtml(pairHtml, pairIsSandhi, oldParts.join(""), newParts.join(""));
         i = lastContentIdx;
         continue;
@@ -3846,7 +3864,7 @@ function _ensureDiffRowContextMenuEl() {
       .join("");
     menu.innerHTML = `
       ${extraHtml}
-      <button id="ctxCopyBoxDiffBtn" class="diff-ctx-item" type="button">📋 Copy this diff box (OLD / NEW)</button>
+      <button id="ctxCopyBoxDiffBtn" class="diff-ctx-item" type="button">📋 Copy this diff box (OLD➤➤NEW)</button>
       <button id="ctxCopyBugDiffBtn" class="diff-ctx-item" type="button">📋 Copy diff for bug report</button>
       <button id="ctxSelectLineBtn" class="diff-ctx-item" type="button">☑ Select line</button>
     `;
