@@ -171,6 +171,18 @@ def _pick_directory_dialog(initial_dir: str | None = None) -> str | None:
   return None
 
 
+def _resolve_executable(candidates: Sequence[Path]) -> str | None:
+  """Return the first existing executable path from ``candidates``."""
+  for cand in candidates:
+    try:
+      resolved = cand.resolve(strict=True)
+    except OSError:
+      continue
+    if resolved.is_file() and os.access(resolved, os.X_OK):
+      return str(cand if os.access(cand, os.X_OK) else resolved)
+  return None
+
+
 def _resolve_idea_binary() -> str | None:
   """Locate an executable IntelliJ IDEA CLI launcher on the local machine."""
   candidates: list[Path] = []
@@ -185,14 +197,20 @@ def _resolve_idea_binary() -> str | None:
     w = shutil.which(fallback)
     if w:
       candidates.append(Path(w))
-  for cand in candidates:
-    try:
-      resolved = cand.resolve(strict=True)
-    except OSError:
-      continue
-    if resolved.is_file() and os.access(resolved, os.X_OK):
-      return str(cand if os.access(cand, os.X_OK) else resolved)
-  return None
+  return _resolve_executable(candidates)
+
+
+def _resolve_vscode_binary() -> str | None:
+  """Locate an executable VS Code CLI launcher on the local machine."""
+  candidates: list[Path] = []
+  for name in ("code", "code-insiders", "codium"):
+    w = shutil.which(name)
+    if w:
+      candidates.append(Path(w))
+  for p_str in ("/usr/bin/code", "/usr/local/bin/code", "/snap/bin/code"):
+    candidates.append(Path(p_str))
+  candidates.append(Path.home() / ".local/bin/code")
+  return _resolve_executable(candidates)
 
 
 def _infer_line_for_file(file_path: Path, *, line: int | None = None, needle: str | None = None) -> int | None:
@@ -217,21 +235,49 @@ def _infer_line_for_file(file_path: Path, *, line: int | None = None, needle: st
   return None
 
 
-def open_in_intellij(file_path: str, *, line: int | None = None, needle: str | None = None) -> dict[str, Any]:
-  """Launch/focus ``file_path`` inside the local IntelliJ IDEA IDE (optionally at ``line``)."""
+def _open_file_in_editor(
+  file_path: str,
+  *,
+  binary: str | None,
+  not_found_msg: str,
+  build_cmd: Any,
+  line: int | None = None,
+  needle: str | None = None,
+) -> dict[str, Any]:
+  """Launch/focus ``file_path`` inside a local editor binary with optional resolved line."""
   abs_path = Path(file_path).expanduser().resolve()
   if not abs_path.is_file():
     raise FileNotFoundError(f"File not found: {file_path}")
-  idea_bin = _resolve_idea_binary()
-  if not idea_bin:
-    raise RuntimeError("IntelliJ IDEA CLI binary ('idea') not found")
+  if not binary:
+    raise RuntimeError(not_found_msg)
   target_line = _infer_line_for_file(abs_path, line=line, needle=needle)
-  cmd = [idea_bin]
-  if target_line is not None:
-    cmd.extend(["--line", str(target_line)])
-  cmd.append(str(abs_path))
+  cmd = build_cmd(binary, abs_path, target_line)
   subprocess.Popen(cmd, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
   return {"ok": True, "file_path": str(abs_path), "line": target_line, "command": cmd}
+
+
+def open_in_intellij(file_path: str, *, line: int | None = None, needle: str | None = None) -> dict[str, Any]:
+  """Launch/focus ``file_path`` inside the local IntelliJ IDEA IDE (optionally at ``line``)."""
+  return _open_file_in_editor(
+    file_path,
+    binary=_resolve_idea_binary(),
+    not_found_msg="IntelliJ IDEA CLI binary ('idea') not found",
+    build_cmd=lambda idea_bin, abs_path, ln: [idea_bin, *(["--line", str(ln)] if ln is not None else []), str(abs_path)],
+    line=line,
+    needle=needle,
+  )
+
+
+def open_in_vscode(file_path: str, *, line: int | None = None, needle: str | None = None) -> dict[str, Any]:
+  """Launch/focus ``file_path`` inside VS Code (optionally at ``line``)."""
+  return _open_file_in_editor(
+    file_path,
+    binary=_resolve_vscode_binary(),
+    not_found_msg="VS Code CLI binary ('code') not found",
+    build_cmd=lambda code_bin, abs_path, ln: [code_bin, *(["--goto", f"{abs_path}:{ln}"] if ln is not None else [str(abs_path)])],
+    line=line,
+    needle=needle,
+  )
 
 
 def _resolve_goldendict_binary() -> str | None:
@@ -554,14 +600,21 @@ def create_app(
       raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
     return {"file_path": file_path, "diff": review.get_file_diff(file_path)}
 
-  @app.post("/api/open_in_idea")
-  def api_open_in_idea(req: _OpenIdeaRequest) -> dict[str, Any]:
+  def _open_editor_response(opener: Any, req: _OpenIdeaRequest) -> dict[str, Any]:
     try:
-      return open_in_intellij(req.file_path, line=req.line, needle=req.needle)
+      return opener(req.file_path, line=req.line, needle=req.needle)
     except FileNotFoundError as exc:
       raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
       raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+  @app.post("/api/open_in_idea")
+  def api_open_in_idea(req: _OpenIdeaRequest) -> dict[str, Any]:
+    return _open_editor_response(open_in_intellij, req)
+
+  @app.post("/api/open_in_vscode")
+  def api_open_in_vscode(req: _OpenIdeaRequest) -> dict[str, Any]:
+    return _open_editor_response(open_in_vscode, req)
 
   @app.post("/api/open_in_goldendict")
   def api_open_in_goldendict(req: _OpenGoldenDictRequest) -> dict[str, Any]:
@@ -927,6 +980,7 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     flex-direction: column;
     gap: 2px;
   }
+  .file-item-head { display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; }
   .file-name { font-family: monospace; word-break: break-all; font-weight: 600; font-size: 11px; }
   .file-meta { color: var(--muted); font-size: 11px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 
@@ -1032,6 +1086,18 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     cursor: pointer;
   }
   .file-link:hover {
+    color: var(--blue);
+    text-decoration: underline solid var(--blue);
+  }
+  .vscode-link {
+    color: var(--muted);
+    font-family: monospace;
+    font-size: 10px;
+    font-weight: 600;
+    text-decoration: none;
+    flex-shrink: 0;
+  }
+  .vscode-link:hover {
     color: var(--blue);
     text-decoration: underline solid var(--blue);
   }
@@ -1771,7 +1837,10 @@ function renderPadaSvaraFileTreeHtml(files, activePath) {
     const gitCls = f.dirty ? "pill-dirty" : "pill-clean";
     const mk = f.marked ? `<span class="stat-pill pill-accept" style="padding:1px 6px;">✓ commit</span>` : "";
     return `<div class="file-item ${active}" data-file-path="${esc(f.file_path)}" data-file-idx="${fi}" title="${esc(f.rel_display)}" onclick="selectFileFilterIdx(${fi})">
-      <div class="file-name"><a href="#" class="file-link" title="Open ${esc(f.file_path)} in IntelliJ IDEA (click card margin to filter)" onclick="event.stopPropagation(); event.preventDefault(); openSummaryFileInIdea(${fi});">${esc(fileName)}</a></div>
+      <div class="file-item-head">
+        <div class="file-name"><a href="#" class="file-link" title="Open ${esc(f.file_path)} in IntelliJ IDEA (click card margin to filter)" onclick="event.stopPropagation(); event.preventDefault(); openSummaryFileInIdea(${fi});">${esc(fileName)}</a></div>
+        <a href="#" class="vscode-link" title="Open ${esc(f.file_path)} in VS Code" onclick="event.stopPropagation(); event.preventDefault(); openSummaryFileInVscode(${fi});">[V]</a>
+      </div>
       <div class="file-meta">
         <span class="stat-pill ${gitCls}" style="padding:1px 6px;">${esc(f.git_label)}</span>
         <span>${f.counts.accepted} acc / ${f.counts.rejected || 0} rej / ${f.counts.total}</span>
@@ -1827,7 +1896,7 @@ function renderSummary(sum) {
     return `<div class="commit-file-row ${rowCls}">
       <div style="display:flex; gap:6px; align-items:flex-start;">
         <input type="checkbox" ${chk} ${disabled} style="cursor:pointer; margin-top:2px;" onchange="toggleFileMarkIdx(${fi}, this.checked)" />
-        <a href="#" class="file-link" style="font-family:monospace; font-size:11px; word-break:break-all;" title="Open ${esc(f.file_path)} in IntelliJ IDEA" onclick="event.preventDefault(); openSummaryFileInIdea(${fi});">${esc(f.rel_display)}</a>
+        <span style="font-family:monospace; font-size:11px; word-break:break-all;"><a href="#" class="file-link" title="Open ${esc(f.file_path)} in IntelliJ IDEA" onclick="event.preventDefault(); openSummaryFileInIdea(${fi});">${esc(f.rel_display)}</a> <a href="#" class="vscode-link" title="Open ${esc(f.file_path)} in VS Code" onclick="event.preventDefault(); openSummaryFileInVscode(${fi});">[V]</a></span>
       </div>
       <div class="file-meta">
         ${gitBadge}
@@ -1896,9 +1965,24 @@ function viewDiffIdx(fi) {
   if (f) viewDiff(f.file_path);
 }
 
-function openSummaryFileInIdea(fi) {
+function _itemPrimaryFile(it) {
+  if (!it) return "";
+  if (it.vp_file || it.display_file) return it.vp_file || it.display_file;
+  const vpRf = (it.relevant_files || []).find(rf => rf.role === "विश्वास-प्रस्तुतिः");
+  return vpRf?.path || "";
+}
+
+function openSummaryFileInEditor(fi, editor) {
   const f = latestSummary?.files?.[fi];
-  if (f) openInIdea(f.file_path, null);
+  if (f) openInEditor(editor, f.file_path, null);
+}
+
+function openSummaryFileInIdea(fi) {
+  openSummaryFileInEditor(fi, "idea");
+}
+
+function openSummaryFileInVscode(fi) {
+  openSummaryFileInEditor(fi, "vscode");
 }
 
 function _ideaNeedleForItemFile(it, filePath) {
@@ -1912,11 +1996,19 @@ function _ideaNeedleForItemFile(it, filePath) {
   return it.vp_raw_body || it.pp_line_core || null;
 }
 
-function openItemFileInIdea(idx) {
+function openItemFileInEditor(idx, editor) {
   const it = currentItems?.[idx];
   if (!it) return;
-  const fp = it.vp_file || it.display_file;
-  if (fp) openInIdea(fp, _ideaNeedleForItemFile(it, fp), it.item_id);
+  const fp = _itemPrimaryFile(it);
+  if (fp) openInEditor(editor, fp, _ideaNeedleForItemFile(it, fp), it.item_id);
+}
+
+function openItemFileInIdea(idx) {
+  openItemFileInEditor(idx, "idea");
+}
+
+function openItemFileInVscode(idx) {
+  openItemFileInEditor(idx, "vscode");
 }
 
 function _gdTargetsForItem(it) {
@@ -1932,10 +2024,18 @@ function openItemGoldenDict(idx, candIdx) {
   if (w) openInGoldenDict(w, it.item_id);
 }
 
-function openRelevantFileInIdea(idx, rfi) {
+function openRelevantFileInEditor(idx, rfi, editor) {
   const it = currentItems?.[idx];
   const rf = it?.relevant_files?.[rfi];
-  if (rf?.path) openInIdea(rf.path, _ideaNeedleForItemFile(it, rf.path), it.item_id);
+  if (rf?.path) openInEditor(editor, rf.path, _ideaNeedleForItemFile(it, rf.path), it.item_id);
+}
+
+function openRelevantFileInIdea(idx, rfi) {
+  openRelevantFileInEditor(idx, rfi, "idea");
+}
+
+function openRelevantFileInVscode(idx, rfi) {
+  openRelevantFileInEditor(idx, rfi, "vscode");
 }
 
 function acceptAllInFileIdx(fi) {
@@ -2059,9 +2159,19 @@ function renderOneCardHtml(it, idx, pageOffset) {
   const focCls = idx === focusedIdx ? "focused" : "";
   const isCollapsed = !!collapsedCards[it.item_id];
   const colCls = isCollapsed ? "collapsed" : "";
-  const fileBadges = it.relevant_files.map((rf, rfi) =>
-    `<span class="stat-pill ${rf.git_status === 'clean' ? 'pill-clean' : 'pill-dirty'}" style="padding:2px 7px;" title="${esc(rf.path)}"><strong>${esc(rf.role || '')}:</strong> <a href="#" class="file-link" title="Open ${esc(rf.path)} in IntelliJ IDEA" onclick="event.stopPropagation(); event.preventDefault(); openRelevantFileInIdea(${idx}, ${rfi});">${esc(rf.vishvasa_rel || rf.short)}</a> (${esc(rf.git_status.trim() || 'clean')})</span>`
-  ).join(" ");
+  const primaryFile = it.vp_file || it.display_file || "";
+  const primaryRf = (it.relevant_files || []).find(rf =>
+    (primaryFile && rf.path === primaryFile) ||
+    (rf.role === "विश्वास-प्रस्तुतिः" && (rf.vishvasa_rel || rf.short) === it.rel_path)
+  );
+  const primaryTarget = primaryFile || primaryRf?.path || "";
+  const primaryStatusPill = primaryRf
+    ? ` <span class="stat-pill ${primaryRf.git_status === 'clean' ? 'pill-clean' : 'pill-dirty'}" style="padding:1px 6px; font-weight:500;" title="${esc(primaryRf.path)}">${esc(primaryRf.git_status.trim() || 'clean')}</span>`
+    : "";
+  const fileBadges = (it.relevant_files || []).map((rf, rfi) => {
+    if (rf === primaryRf || (rf.path && primaryTarget && rf.path === primaryTarget)) return "";
+    return `<span class="stat-pill ${rf.git_status === 'clean' ? 'pill-clean' : 'pill-dirty'}" style="padding:2px 7px;" title="${esc(rf.path)}"><strong>${esc(rf.role || '')}:</strong> <a href="#" class="file-link" title="Open ${esc(rf.path)} in IntelliJ IDEA" onclick="event.stopPropagation(); event.preventDefault(); openRelevantFileInIdea(${idx}, ${rfi});">${esc(rf.vishvasa_rel || rf.short)}</a> <a href="#" class="vscode-link" title="Open ${esc(rf.path)} in VS Code" onclick="event.stopPropagation(); event.preventDefault(); openRelevantFileInVscode(${idx}, ${rfi});">[V]</a> (${esc(rf.git_status.trim() || 'clean')})</span>`;
+  }).filter(Boolean).join(" ");
 
   const gdTargets = _gdTargetsForItem(it);
   const gdInline = gdTargets.length
@@ -2103,7 +2213,7 @@ function renderOneCardHtml(it, idx, pageOffset) {
   return `<div class="card dec-${savedDec} ${focCls} ${colCls}" id="card_${idx}" onclick="handleCardClick(${idx})" onfocusin="setFocused(${idx})">
     <div class="card-head">
       <div style="min-width:0; flex:1;">
-        <span class="active-badge">Active</span><span class="card-title">#${pageOffset + idx + 1} · <a href="#" class="file-link" title="Open ${esc(it.vp_file || it.display_file || '')} in IntelliJ IDEA" onclick="event.stopPropagation(); event.preventDefault(); openItemFileInIdea(${idx});">${esc(it.rel_path)}</a></span>
+        <span class="active-badge">Active</span><span class="card-title">#${pageOffset + idx + 1} · <a href="#" class="file-link" title="Open ${esc(primaryTarget)} in IntelliJ IDEA" onclick="event.stopPropagation(); event.preventDefault(); openItemFileInIdea(${idx});">${esc(it.rel_path)}</a> <a href="#" class="vscode-link" title="Open ${esc(primaryTarget)} in VS Code" onclick="event.stopPropagation(); event.preventDefault(); openItemFileInVscode(${idx});">[V]</a>${primaryStatusPill}</span>
         <span class="card-section">${esc(it.section_heading)}</span>
         <span class="collapse-summary">${colDecPill}${colFbPill}${colTokPreview}</span>
         <div class="path-row">
@@ -2474,25 +2584,31 @@ async function openInGoldenDict(word, itemId) {
   }
 }
 
-async function openInIdea(filePath, needleOrLine, itemId) {
+const EDITOR_TARGETS = {
+  idea: { endpoint: "/api/open_in_idea", label: "IntelliJ IDEA" },
+  vscode: { endpoint: "/api/open_in_vscode", label: "VS Code" },
+};
+
+async function openInEditor(editor, filePath, needleOrLine, itemId) {
+  const cfg = EDITOR_TARGETS[editor] || EDITOR_TARGETS.idea;
   const payload = { file_path: filePath };
   if (typeof needleOrLine === "number" && needleOrLine >= 1) {
     payload.line = needleOrLine;
   } else if (typeof needleOrLine === "string" && needleOrLine.trim()) {
     payload.needle = needleOrLine;
   }
-  const resp = await fetch("/api/open_in_idea", {
+  const resp = await fetch(cfg.endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) {
-    return alert(data.detail || `Failed to open in IntelliJ IDEA: ${filePath}`);
+    return alert(data.detail || `Failed to open in ${cfg.label}: ${filePath}`);
   }
   const baseName = filePath.split("/").pop() || filePath;
   const loc = data.line ? `${baseName}:${data.line}` : baseName;
-  const msg = `Opened ${loc} in IntelliJ IDEA`;
+  const msg = `Opened ${loc} in ${cfg.label}`;
   const cardSt = itemId ? document.getElementById(`saveStatus_${itemId}`) : null;
   if (cardSt) {
     cardSt.textContent = msg;
@@ -2502,6 +2618,14 @@ async function openInIdea(filePath, needleOrLine, itemId) {
     sp.textContent = msg;
     setTimeout(() => { if (sp.textContent === msg) sp.textContent = ""; }, 2500);
   }
+}
+
+function openInIdea(filePath, needleOrLine, itemId) {
+  return openInEditor("idea", filePath, needleOrLine, itemId);
+}
+
+function openInVscode(filePath, needleOrLine, itemId) {
+  return openInEditor("vscode", filePath, needleOrLine, itemId);
 }
 
 async function commitMarked() {

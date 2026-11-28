@@ -565,6 +565,7 @@ def test_review_gui_embedded_js_syntax(tmp_path: Path):
           "rel_path": "vedAH_yajuH/static/ek/vishvAsa-prastutiH/01.md",
           "section_heading": "",
           "kind": "both",
+          "vp_file": "/tmp/vp.md",
           "vp_summary": "विश्वास-प्रस्तुतिः",
           "vp_raw_body": vp_body_sample,
           "vp_highlight_ranges": [[tok_s, tok_s + len(tok)]],
@@ -582,7 +583,13 @@ def test_review_gui_embedded_js_syntax(tmp_path: Path):
               "vishvasa_rel": "vedAH_yajuH/static/ek/vishvAsa-prastutiH/01.md",
               "role": "विश्वास-प्रस्तुतिः",
               "git_status": "clean",
-            }
+            },
+            {
+              "path": "/tmp/tk.md",
+              "vishvasa_rel": "vedAH_yajuH/content/ek/sarva-prastutiH/01.md",
+              "role": "सर्वाष् टीकाः / पद-पाठः",
+              "git_status": "M",
+            },
           ],
           "host_files_rel": ["vedAH_yajuH/content/ek/1.md"],
           "mula_preview": "",
@@ -689,8 +696,14 @@ def test_review_gui_embedded_js_syntax(tmp_path: Path):
       + '  if (fetchedCalls.length < 2 || fetchedCalls[1].url !== "/api/submit") {\n'
       + '    throw new Error("Enter did not submit: " + JSON.stringify(fetchedCalls));\n'
       + '  }\n'
-  + '  if (!out.includes("openItemFileInIdea(0)") || !out.includes("openRelevantFileInIdea(0, 0)") || !out.includes(\'class="file-link"\') || !out.includes("openItemGoldenDict(0, 0)") || !out.includes(\'id="ppTarget_abc123">\')) {\n'
-  + '    throw new Error("Missing IntelliJ or GoldenDict inline links in target line: " + out);\n'
+  + '  if (!out.includes("openItemFileInIdea(0)") || !out.includes("openItemFileInVscode(0)") || !out.includes("openRelevantFileInIdea(0, 1)") || !out.includes("openRelevantFileInVscode(0, 1)") || out.includes("openRelevantFileInIdea(0, 0)") || !out.includes(\'class="file-link"\') || !out.includes(\'class="vscode-link"\') || !out.includes("openItemGoldenDict(0, 0)") || !out.includes(\'id="ppTarget_abc123">\')) {\n'
+  + '    throw new Error("Missing or duplicated editor/GoldenDict inline links in card: " + out);\n'
+  + '  }\n'
+  + '  const vpLinkMatches = out.split("vedAH_yajuH/static/ek/vishvAsa-prastutiH/01.md").length - 1;\n'
+  + '  if (vpLinkMatches !== 1) throw new Error("Expected VP link once in card, found " + vpLinkMatches + ": " + out);\n'
+  + '  await openItemFileInVscode(0);\n'
+  + '  if (!fetchedCalls.some(c => c.url === "/api/open_in_vscode" && c.body && c.body.includes("/tmp/vp.md"))) {\n'
+  + '    throw new Error("openItemFileInVscode did not POST /api/open_in_vscode: " + JSON.stringify(fetchedCalls));\n'
   + '  }\n'
   + '  const targetLineHtml = out.slice(out.indexOf(\'id="ppTarget_abc123">\'), out.indexOf(\'</div>\', out.indexOf(\'id="ppTarget_abc123">\')));\n'
   + '  if (!targetLineHtml.includes("openItemGoldenDict(0, 0)") || !targetLineHtml.includes(\'class="gd-inline"\')) {\n'
@@ -798,8 +811,8 @@ def test_review_gui_embedded_js_syntax(tmp_path: Path):
     "    { file_path: '/repo/a/b/1.md', rel_display: 'a/b/1.md', git_label: 'clean', dirty: false, marked: false, counts: { accepted: 0, rejected: 0, total: 1, with_feedback: 0 } },\n"
     "    { file_path: '/repo/a/c/2.md', rel_display: 'a/c/2.md', git_label: 'M', dirty: true, marked: false, counts: { accepted: 0, rejected: 0, total: 2, with_feedback: 0 } },\n"
     "  ], '/repo/a/c/2.md');\n"
-    "  if (!treeHtml.includes('file-tree-root') || !treeHtml.includes('>a<') || !treeHtml.includes('class=\"file-item active\"')) {\n"
-    "    throw new Error('pada_svara tree HTML missing LCP root or active highlight: ' + treeHtml);\n"
+    "  if (!treeHtml.includes('file-tree-root') || !treeHtml.includes('>a<') || !treeHtml.includes('class=\"file-item active\"') || !treeHtml.includes('openSummaryFileInVscode(') || !treeHtml.includes('>[V]</a>')) {\n"
+    "    throw new Error('pada_svara tree HTML missing LCP root, active highlight, or [V] link: ' + treeHtml);\n"
     "  }\n"
     "  latestSummary = { files: [\n"
     "    { file_path: '/repo/a/b/1.md', rel_display: 'a/b/1.md' },\n"
@@ -868,6 +881,42 @@ def test_open_in_intellij_endpoint_and_line_resolution(tmp_path: Path, monkeypat
   assert launched[-1] == ["/usr/local/bin/idea-mock", "--line", "4", str(target.resolve())]
 
   r_missing = client.post("/api/open_in_idea", json={"file_path": str(tmp_path / "nope.md")})
+  assert r_missing.status_code == 404
+
+
+def test_open_in_vscode_endpoint_and_line_resolution(tmp_path: Path, monkeypatch):
+  from fastapi.testclient import TestClient
+  from pada_svara import review_gui
+
+  target = tmp_path / "09_mA_te.md"
+  target.write_text(
+    '+++\ntitle = "०९ मा ते"\n+++\n**मा᳓** ते गृहे᳓\nअन्य᳓त्र **[[व᳓धिष्ठा|वधिष्ठा]]**\n',
+    encoding="utf-8",
+  )
+
+  launched: list[list[str]] = []
+  monkeypatch.setattr(review_gui, "_resolve_vscode_binary", lambda: "/usr/bin/code-mock")
+  monkeypatch.setattr(review_gui.subprocess, "Popen", lambda cmd, **kw: launched.append(list(cmd)))
+
+  client = TestClient(review_gui.create_app(cache_dir=str(tmp_path / "cache")))
+
+  r1 = client.post("/api/open_in_vscode", json={"file_path": str(target), "needle": "[[व᳓धिष्ठा|वधिष्ठा]]"})
+  assert r1.status_code == 200
+  d1 = r1.json()
+  assert d1["ok"] is True and d1["line"] == 5
+  assert launched[-1] == ["/usr/bin/code-mock", "--goto", f"{target.resolve()}:5"]
+
+  r2 = client.post("/api/open_in_vscode", json={"file_path": str(target), "line": 4})
+  assert r2.status_code == 200
+  assert r2.json()["line"] == 4
+  assert launched[-1] == ["/usr/bin/code-mock", "--goto", f"{target.resolve()}:4"]
+
+  r3 = client.post("/api/open_in_vscode", json={"file_path": str(target)})
+  assert r3.status_code == 200
+  assert r3.json()["line"] is None
+  assert launched[-1] == ["/usr/bin/code-mock", str(target.resolve())]
+
+  r_missing = client.post("/api/open_in_vscode", json={"file_path": str(tmp_path / "nope.md")})
   assert r_missing.status_code == 404
 
 
