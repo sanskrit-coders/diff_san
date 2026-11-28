@@ -305,11 +305,39 @@
 
   main {
     min-width: 0;
-    overflow-y: auto;
+    min-height: 0;
+    overflow-y: scroll;
+    scrollbar-gutter: stable;
     padding: 14px 16px;
     display: flex;
     flex-direction: column;
     gap: 14px;
+  }
+  main::-webkit-scrollbar {
+    width: 14px;
+    height: 14px;
+  }
+  main::-webkit-scrollbar-track {
+    background: var(--surface-2);
+    border-left: 1px solid var(--border);
+  }
+  main::-webkit-scrollbar-thumb {
+    background: #a58f74;
+    border-radius: 7px;
+    border: 2px solid var(--surface-2);
+    min-height: 36px;
+  }
+  main::-webkit-scrollbar-thumb:hover {
+    background: var(--accent);
+  }
+  main::-webkit-scrollbar-thumb:active {
+    background: #6c340d;
+  }
+  @supports not selector(::-webkit-scrollbar) {
+    main {
+      scrollbar-width: auto;
+      scrollbar-color: #a58f74 var(--surface-2);
+    }
   }
   .card {
     background: var(--surface);
