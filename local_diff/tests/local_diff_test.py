@@ -200,6 +200,38 @@ def test_local_diff_fastapi_endpoints_and_cli_errors(tmp_path: Path, monkeypatch
   assert subprocess.check_output(["git", "-C", str(repo), "diff", "--cached", "--name-only"], text=True).strip() == "other_staged.md"
   remote_heads = subprocess.check_output(["git", "--git-dir", str(bare_remote), "show", "--name-only", "--format=", f"refs/heads/{branch_name}"], text=True).splitlines()
   assert set(remote_heads) == {"doc.md", "new_doc.md"}
+  # After commit+push in git_dir mode, only the uncommitted pre-staged file remains in reloaded diff
+  dir_ws_after = dtc.get("/api/diff").json()
+  assert [it["title"] for it in dir_ws_after["items"]] == ["other_staged.md"]
+  assert [cf["rel_path"] for cf in dir_ws_after["commit_files"]] == ["other_staged.md"]
+
+  # Explicitly passed files in git_head mode (--head f1 deleted_f) reload to 0 items and 0 commit_files after commit+push (including deleted files)
+  del_doc = repo / "deleted_head.md"
+  del_doc.write_text("to delete\n", encoding="utf-8")
+  _git(repo, "add", "deleted_head.md")
+  _git(repo, "commit", "-m", "add deleted_head")
+  _git(repo, "push", "-u", "origin", branch_name)
+  f1.write_text("अ᳓ग्निमीळे २\n", encoding="utf-8")
+  del_doc.unlink()
+  head_app = server.create_app(initial_spec=core.LocalDiffSpec(mode="git_head", paths=[str(f1), str(del_doc)]))
+  htc = TestClient(head_app)
+  head_ws = htc.get("/api/diff").json()
+  assert {it["title"] for it in head_ws["items"]} == {"doc.md", "deleted_head.md"}
+  assert {cf["rel_path"] for cf in head_ws["commit_files"]} == {"doc.md", "deleted_head.md"}
+  h_commit = htc.post(
+    "/api/commit",
+    json={"file_paths": [str(f1), str(del_doc)], "commit_message": "Commit multi-file HEAD diff + delete", "push": True},
+  )
+  assert h_commit.status_code == 200
+  hc_body = h_commit.json()
+  assert hc_body["push_ok"] is True
+  assert hc_body["workspace"]["items"] == []
+  assert hc_body["workspace"]["active_item"] is None
+  assert hc_body["workspace"]["commit_files"] == []
+  head_ws_after = htc.get("/api/diff").json()
+  assert head_ws_after["items"] == []
+  assert head_ws_after["active_item"] is None
+  assert head_ws_after["commit_files"] == []
 
   # Commit with push=True on a repo without remote succeeds locally and reports push_ok=False with push_error
   (tmp_path / "no_rem").mkdir()
@@ -247,16 +279,77 @@ def test_local_diff_fastapi_endpoints_and_cli_errors(tmp_path: Path, monkeypatch
     assert r_gd.status_code == 200
     assert launched[-1] == ["/usr/bin/gd-mock", "सुपेशसा"]
 
-  # CLI validates missing paths before killing existing servers, then kills previous local-diff-san before binding port
+  # CLI validates missing paths, reuses healthy server by default via /api/compare, and --restart kills + starts fresh
+  import http.server
+  import json as _json
+  import threading as _threading
+
   calls: list[str] = []
   with monkeypatch.context() as mp:
+    mp.setenv("DIFF_SAN_SERVER_REGISTRY_DIR", str(tmp_path / "ld_reg_empty"))
+    mp.setattr(server.local_helpers, "probe_running_server", lambda *a, **kw: None)
     mp.setattr(server.local_helpers, "kill_other_server_instances", lambda **kw: calls.append(f"kill:{kw.get('label')}") or [])
     mp.setattr(server.local_helpers, "find_free_port", lambda p: calls.append("port") or p)
     mp.setattr(server.uvicorn, "run", lambda *a, **kw: calls.append("run"))
     assert server.main([str(tmp_path / "does_not_exist.md"), "--no-browser"]) == 2
     assert calls == []
-    assert server.main([str(repo), "--no-browser", "--port", "8772"]) == 0
+    assert server.main([str(repo), "--no-browser", "--port", "18772"]) == 0
     assert calls == ["kill:local-diff-san", "port", "run"]
+    calls.clear()
+    assert server.main([str(repo), "--restart", "--no-browser", "--port", "18772"]) == 0
+    assert calls == ["kill:local-diff-san", "port", "run"]
+
+  captured_compares: list[dict] = []
+
+  class _MockLDHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+      if self.path == "/api/meta":
+        body = _json.dumps({"app": "local-diff-san", "supports_paths": True, "has_active_ui": False}).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+        return
+      self.send_response(404)
+      self.end_headers()
+
+    def do_POST(self):
+      if self.path == "/api/compare":
+        n = int(self.headers.get("Content-Length") or "0")
+        captured_compares.append(_json.loads(self.rfile.read(n).decode("utf-8")))
+        body = _json.dumps({"ok": True}).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+        return
+      self.send_response(404)
+      self.end_headers()
+
+    def log_message(self, *args):
+      return
+
+  ld_httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _MockLDHandler)
+  ld_th = _threading.Thread(target=ld_httpd.serve_forever, daemon=True)
+  ld_th.start()
+  try:
+    reuse_calls: list[str] = []
+    f1.write_text("अग्निः पुनः\n", encoding="utf-8")
+    with monkeypatch.context() as mp:
+      mp.setenv("DIFF_SAN_SERVER_REGISTRY_DIR", str(tmp_path / "ld_reg_live"))
+      mp.setattr(server.local_helpers, "kill_other_server_instances", lambda **kw: reuse_calls.append("kill") or [])
+      mp.setattr(server.uvicorn, "run", lambda *a, **kw: reuse_calls.append("run"))
+      assert server.main(["--head", str(f1), "--port", str(ld_httpd.server_address[1])]) == 0
+      assert reuse_calls == []
+      assert len(captured_compares) == 1
+      assert captured_compares[0]["mode"] == "git_head"
+      assert captured_compares[0]["paths"] == [str(f1.resolve())]
+      assert captured_compares[0]["open_browser_if_idle"] is True
+  finally:
+    ld_httpd.shutdown()
+    ld_httpd.server_close()
 
 
 def test_local_diff_frontend_js_renders_settings_and_diff(tmp_path: Path):
@@ -441,6 +534,12 @@ def test_local_diff_frontend_js_renders_settings_and_diff(tmp_path: Path):
     "  if (selectedCommitPaths.size !== 2 || elems['commitCountPill'].textContent !== '2 / 2') {\n"
     "    throw new Error('local_diff selectAllCommitFiles failed: size=' + selectedCommitPaths.size);\n"
     "  }\n"
+    "  clearCommitSelection();\n"
+    "  if (selectedCommitPaths.size !== 0) throw new Error('clearCommitSelection failed');\n"
+    "  listeners['keydown']({ key: 'a', code: 'KeyA', ctrlKey: true, altKey: false, metaKey: false, shiftKey: false, target: { tagName: 'TEXTAREA', id: 'commitMsg' }, preventDefault(){}, stopPropagation(){} });\n"
+    "  if (selectedCommitPaths.size !== 0) throw new Error('Ctrl+A inside textarea must not hijack commit selection');\n"
+    "  listeners['keydown']({ key: 'a', code: 'KeyA', ctrlKey: true, altKey: false, metaKey: false, shiftKey: false, target: { tagName: 'BODY' }, preventDefault(){}, stopPropagation(){} });\n"
+    "  if (selectedCommitPaths.size !== 2) throw new Error('Ctrl+A did not select all dirty commit files: ' + selectedCommitPaths.size);\n"
     "  elems['commitMsg'] = document.getElementById('commitMsg');\n"
     "  elems['commitMsg'].value = 'Push test';\n"
     "  mockRespWs = Object.assign({}, gitWs, { items: [], active_item: null, commit_files: [] });\n"
@@ -453,6 +552,9 @@ def test_local_diff_frontend_js_renders_settings_and_diff(tmp_path: Path):
     "  const cCall = fetched.find(c => c.url === '/api/commit');\n"
     "  if (!cCall || !String(cCall.opts?.body || '').includes('\"push\":true') || !elems['commitResult'].textContent.includes('pushed')) {\n"
     "    throw new Error('local_diff commitSelectedFiles(true) failed: ' + JSON.stringify(fetched));\n"
+    "  }\n"
+    "  if (workspaceData.items.length !== 0 || elems['diffContainer'].innerHTML.indexOf('No changed files found') === -1) {\n"
+    "    throw new Error('local_diff did not reload to 0 changed files after commit+push');\n"
     "  }\n"
     "})().catch(err => { console.error(err); process.exit(1); });\n"
   )
@@ -728,8 +830,9 @@ def test_pure_js_diff_engine_parity_and_static_export_with_gap_expand(tmp_path: 
   assert '<u class="sc-key sc-ctrl">R</u>efresh' in static_html
   assert '<u class="sc-key sc-alt">S</u>ingle' in static_html
   assert '<u class="sc-key sc-ctrl">F</u>ind' in static_html
+  assert 'Select <u class="sc-key sc-ctrl">A</u>ll' in static_html
   shortcut_line = static_html.split('id="shortcutFooter"')[1].split('</div>')[0]
-  assert "<strong>Ctrl+F</strong>" in shortcut_line and "<strong>Alt+S</strong>" in shortcut_line
+  assert "<strong>Ctrl+F</strong>" in shortcut_line and "<strong>Alt+S</strong>" in shortcut_line and "<strong>Ctrl+A</strong>" in shortcut_line
   assert "#shortcutFooter strong" in static_html
   assert "main::-webkit-scrollbar" in static_html and ".scroll-list::-webkit-scrollbar" in static_html and "scrollbar-gutter: stable" in static_html
   s_js = tmp_path / "static_test.js"

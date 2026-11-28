@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import asynccontextmanager
+import os
 from pathlib import Path
 import subprocess
 import sys
 import threading
 from typing import Any, Sequence
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 import uvicorn
 
@@ -62,11 +64,13 @@ class _CompareRequest(BaseModel):
   left_path: str | None = None
   right_path: str | None = None
   path: str | None = None
+  paths: list[str] | None = None
   rev: str = core.DEFAULT_REV
   active_id: str | None = None
   diff_mode: str = "word"
   normalize: str = "none"
   ignore_punct: bool = False
+  open_browser_if_idle: bool = False
 
 
 class _CommitRequest(BaseModel):
@@ -83,6 +87,11 @@ class _StateHolder:
   def __init__(self, initial_spec: core.LocalDiffSpec) -> None:
     self.lock = threading.RLock()
     self.spec = initial_spec
+    self.spec_version = 1
+    self.allow_missing_committed = False
+    self.active_sse_clients = 0
+    self.bound_url = ""
+    self.shutdown_event = threading.Event()
 
 
 def _spec_from_request(req: _CompareRequest, current: core.LocalDiffSpec) -> core.LocalDiffSpec:
@@ -97,6 +106,15 @@ def _spec_from_request(req: _CompareRequest, current: core.LocalDiffSpec) -> cor
       right_path=str(Path(rp).expanduser().resolve()) if rp else current.right_path,
       rev=rev,
     )
+  raw_list = [str(p).strip() for p in (req.paths or []) if str(p).strip()]
+  if raw_list:
+    resolved_list: list[str] = []
+    for raw_item in raw_list:
+      p = Path(raw_item).expanduser()
+      resolved_list.append(str(p.resolve() if p.exists() else p.absolute()))
+    if len(resolved_list) == 1 and Path(resolved_list[0]).is_dir():
+      return core.LocalDiffSpec(mode="git_dir", paths=resolved_list, rev=rev)
+    return core.LocalDiffSpec(mode="git_head", paths=resolved_list, rev=rev)
   raw_p = (req.path or "").strip()
   if raw_p:
     p = Path(raw_p).expanduser()
@@ -110,7 +128,16 @@ def _spec_from_request(req: _CompareRequest, current: core.LocalDiffSpec) -> cor
 def create_app(*, initial_spec: core.LocalDiffSpec | None = None) -> FastAPI:
   """Create the FastAPI application for local file and Git HEAD diff viewing."""
   holder = _StateHolder(initial_spec or core.resolve_spec_from_paths([]))
-  app = FastAPI(title="local-diff-san — Sanskrit Local & Git Diff Viewer")
+
+  @asynccontextmanager
+  async def _lifespan(_app: FastAPI):
+    try:
+      yield
+    finally:
+      holder.shutdown_event.set()
+
+  app = FastAPI(title="local-diff-san — Sanskrit Local & Git Diff Viewer", lifespan=_lifespan)
+  app.state.holder = holder
 
   @app.get("/", response_class=HTMLResponse)
   def index() -> HTMLResponse:
@@ -120,10 +147,37 @@ def create_app(*, initial_spec: core.LocalDiffSpec | None = None) -> FastAPI:
   def api_meta() -> dict[str, Any]:
     with holder.lock:
       return {
+        "app": "local-diff-san",
+        "supports_paths": True,
+        "spec_version": holder.spec_version,
+        "has_active_ui": holder.active_sse_clients > 0,
         "spec": holder.spec.to_dict(),
         "diff_modes": list(VALID_DIFF_MODES),
         "normalizations": list(VALID_NORMALIZATIONS),
       }
+
+  @app.get("/api/events")
+  async def api_events(request: Request) -> StreamingResponse:
+    def _inc() -> None:
+      with holder.lock:
+        holder.active_sse_clients += 1
+
+    def _dec() -> None:
+      with holder.lock:
+        holder.active_sse_clients = max(0, holder.active_sse_clients - 1)
+
+    return StreamingResponse(
+      local_helpers.iter_version_sse_events(
+        request,
+        get_version=lambda: holder.spec_version,
+        shutdown_event=holder.shutdown_event,
+        on_connect=_inc,
+        on_disconnect=_dec,
+        event_field="spec_version",
+      ),
+      media_type="text/event-stream",
+      headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
   @app.get("/api/diff")
   def api_diff(
@@ -144,13 +198,16 @@ def create_app(*, initial_spec: core.LocalDiffSpec | None = None) -> FastAPI:
             paths=list(holder.spec.paths),
             rev=rev.strip(),
           )
-        return core.build_diff_workspace(
+        res = core.build_diff_workspace(
           eff_spec,
           active_id=active_id,
           char_diff_mode=diff_mode,
           normalize=normalize,
           ignore_punct=ignore_punct,
+          allow_missing_committed=holder.allow_missing_committed,
         )
+        res["spec_version"] = holder.spec_version
+        return res
     except FileNotFoundError as exc:
       raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -159,6 +216,7 @@ def create_app(*, initial_spec: core.LocalDiffSpec | None = None) -> FastAPI:
   @app.post("/api/compare")
   def api_compare(req: _CompareRequest) -> dict[str, Any]:
     try:
+      launch_url = ""
       with holder.lock:
         next_spec = _spec_from_request(req, holder.spec)
         res = core.build_diff_workspace(
@@ -169,7 +227,16 @@ def create_app(*, initial_spec: core.LocalDiffSpec | None = None) -> FastAPI:
           ignore_punct=req.ignore_punct,
         )
         holder.spec = next_spec
-        return res
+        holder.allow_missing_committed = False
+        holder.spec_version += 1
+        active_ui = holder.active_sse_clients > 0
+        res["spec_version"] = holder.spec_version
+        res["has_active_ui"] = active_ui
+        if req.open_browser_if_idle and not active_ui and holder.bound_url:
+          launch_url = holder.bound_url
+      if launch_url:
+        threading.Thread(target=local_helpers.launch_browser, args=(launch_url,), daemon=True).start()
+      return res
     except FileNotFoundError as exc:
       raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -225,13 +292,17 @@ def create_app(*, initial_spec: core.LocalDiffSpec | None = None) -> FastAPI:
     try:
       with holder.lock:
         results = core.commit_files(req.file_paths, req.commit_message, push=req.push)
+        holder.allow_missing_committed = True
         workspace = core.build_diff_workspace(
           holder.spec,
           active_id=req.active_id,
           char_diff_mode=req.diff_mode,
           normalize=req.normalize,
           ignore_punct=req.ignore_punct,
+          allow_missing_committed=True,
         )
+        holder.spec_version += 1
+        workspace["spec_version"] = holder.spec_version
         push_ok = all(r.get("pushed", False) for r in results if r.get("committed")) if req.push else True
         return {"results": results, "push_ok": push_ok, "workspace": workspace}
     except FileNotFoundError as exc:
@@ -242,6 +313,23 @@ def create_app(*, initial_spec: core.LocalDiffSpec | None = None) -> FastAPI:
       raise HTTPException(status_code=500, detail=str(exc)) from exc
 
   return app
+
+
+def _compare_payload_from_spec(spec: core.LocalDiffSpec, *, open_browser_if_idle: bool) -> dict[str, Any]:
+  if spec.mode == "file_pair":
+    return {
+      "mode": "file_pair",
+      "left_path": spec.left_path,
+      "right_path": spec.right_path,
+      "rev": spec.rev,
+      "open_browser_if_idle": open_browser_if_idle,
+    }
+  return {
+    "mode": spec.mode,
+    "paths": list(spec.paths),
+    "rev": spec.rev,
+    "open_browser_if_idle": open_browser_if_idle,
+  }
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -258,6 +346,7 @@ def main(argv: Sequence[str] | None = None) -> int:
   p.add_argument("--export-static", default="", help="Write a self-contained pure-JS static HTML page to FILE and exit.")
   p.add_argument("--port", type=int, default=8772, help="Port to bind on 127.0.0.1 (default: 8772 or next free port).")
   p.add_argument("--no-browser", action="store_true", help="Do not auto-open browser window.")
+  p.add_argument("--restart", action="store_true", help="Kill any existing local-diff-san server and start a fresh instance.")
   args = p.parse_args(argv)
 
   if args.export_static:
@@ -267,10 +356,33 @@ def main(argv: Sequence[str] | None = None) -> int:
 
   spec = core.resolve_spec_from_paths(args.paths, rev=args.rev, force_head=args.head)
   try:
-    core.build_diff_workspace(spec)
+    ws_check = core.build_diff_workspace(spec)
   except (FileNotFoundError, ValueError) as exc:
     print(f"Error: {exc}", file=sys.stderr)
     return 2
+
+  if not args.restart:
+    existing = local_helpers.probe_running_server("local-diff-san", default_port=args.port, meta_path="/api/meta")
+    if existing:
+      meta = existing["meta"]
+      supports_paths = bool(meta.get("supports_paths"))
+      if supports_paths or len(spec.paths) <= 1:
+        url = existing["url"]
+        should_push_spec = bool(args.paths) or bool(ws_check.get("repo_root"))
+        reused_ok = True
+        if should_push_spec:
+          try:
+            local_helpers.post_json(
+              url.rstrip("/") + "/api/compare",
+              _compare_payload_from_spec(spec, open_browser_if_idle=not args.no_browser),
+            )
+          except Exception:
+            reused_ok = False
+        elif not args.no_browser and not meta.get("has_active_ui"):
+          threading.Thread(target=local_helpers.launch_browser, args=(url,), daemon=True).start()
+        if reused_ok:
+          print(f"local-diff-san running at {url} (reused existing server, mode={spec.mode})", flush=True)
+          return 0
 
   app = create_app(initial_spec=spec)
   local_helpers.kill_other_server_instances(
@@ -281,8 +393,13 @@ def main(argv: Sequence[str] | None = None) -> int:
   )
   port = local_helpers.find_free_port(args.port)
   url = f"http://127.0.0.1:{port}/"
+  app.state.holder.bound_url = url
+  local_helpers.register_running_server("local-diff-san", pid=os.getpid(), port=port, url=url)
   print(f"local-diff-san running at {url} (mode={spec.mode})", flush=True)
   if not args.no_browser:
     threading.Thread(target=local_helpers.launch_browser, args=(url,), daemon=True).start()
-  uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+  try:
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+  finally:
+    local_helpers.unregister_running_server("local-diff-san", pid=os.getpid())
   return 0

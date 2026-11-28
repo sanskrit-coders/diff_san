@@ -631,6 +631,7 @@ def build_diff_workspace(
   char_diff_mode: str = "word",
   normalize: str = "none",
   ignore_punct: bool = False,
+  allow_missing_committed: bool = False,
 ) -> dict[str, Any]:
   """Compute sidebar items and the active file diff payload for ``spec``."""
   diff_mode, norm_form = _validate_diff_options(char_diff_mode, normalize)
@@ -660,22 +661,32 @@ def build_diff_workspace(
     if not spec.paths:
       raise ValueError("At least one file path is required in Git vs revision mode")
     built_items: list[LocalDiffItem] = []
+    repo_fallback: str | None = None
     for idx, p in enumerate(spec.paths):
-      built_items.append(
-        compare_file_with_head(
-          p,
-          rev=clean_rev,
-          item_id=f"head:{idx}:{Path(p).name}",
-          char_diff_mode=diff_mode,
-          normalize=norm_form,
-          ignore_punct=bool(ignore_punct),
+      try:
+        built_items.append(
+          compare_file_with_head(
+            p,
+            rev=clean_rev,
+            item_id=f"head:{idx}:{Path(p).name}",
+            char_diff_mode=diff_mode,
+            normalize=norm_form,
+            ignore_punct=bool(ignore_punct),
+          )
         )
-      )
-    chosen = next((it for it in built_items if it.id == active_id), built_items[0])
-    chosen_dict = chosen.to_dict(include_hunks=True)
+      except FileNotFoundError:
+        if not allow_missing_committed:
+          raise
+        rr = find_git_root(p)
+        if rr is None:
+          raise
+        repo_fallback = repo_fallback or str(rr)
+    changed_items = [it for it in built_items if it.status != "unchanged"]
+    chosen = next((it for it in changed_items if it.id == active_id), changed_items[0] if changed_items else None)
+    chosen_dict = chosen.to_dict(include_hunks=True) if chosen else None
     item_summaries = [
-      chosen_dict if it.id == chosen.id else it.to_dict(include_hunks=False)
-      for it in built_items
+      chosen_dict if (chosen and it.id == chosen.id) else it.to_dict(include_hunks=False)
+      for it in changed_items
     ]
     git_cache: dict[str, tuple[dict[str, str], list[str], dict[str, str]]] = {}
     commit_files: list[dict[str, Any]] = []
@@ -693,23 +704,26 @@ def build_diff_workspace(
         continue
       seen_commit_paths.add(abs_f)
       xy = st_map.get(abs_f, "clean")
+      if xy == "clean":
+        continue
       commit_files.append({
-        "item_id": it.id,
+        "item_id": it.id if it.status != "unchanged" else None,
         "file_path": abs_f,
         "rel_path": it.rel_path,
         "old_rel_path": rename_sources.get(it.rel_path),
         "repo_root": it.repo_root,
         "git_xy": xy,
-        "dirty": xy != "clean",
+        "dirty": True,
         "status": it.status,
         "additions": it.additions,
         "deletions": it.deletions,
         "exists_on_disk": Path(abs_f).is_file(),
       })
-    commit_files.sort(key=lambda c: (not c["dirty"], c["rel_path"]))
+    commit_files.sort(key=lambda c: c["rel_path"])
+    root_out = chosen.repo_root if chosen else (built_items[0].repo_root if built_items else repo_fallback)
     return {
       "spec": spec.to_dict(),
-      "repo_root": chosen.repo_root,
+      "repo_root": root_out,
       "items": item_summaries,
       "active_item": chosen_dict,
       "commit_files": commit_files,

@@ -901,11 +901,15 @@ def test_review_gui_embedded_js_syntax(tmp_path: Path):
     "    { file_path: '/repo/b.md', rel_display: 'b.md', git_xy: '??', git_label: '??', dirty: true, marked: true, counts: { accepted: 0, rejected: 0, pending: 0, with_feedback: 0, total: 1 } },\n"
     "  ];\n"
     "  latestSummary = { total_items: 1, counts: { pending: 0, accept: 1, reject: 0, with_feedback: 0 }, marked_files: ['/repo/b.md'], files: dirtyFilesFixture };\n"
+    "  const beforeKeyTextA = fetchedCalls.length;\n"
+    "  listeners['keydown']({ key: 'a', code: 'KeyA', ctrlKey: true, altKey: false, metaKey: false, shiftKey: false, target: { tagName: 'TEXTAREA', id: 'commitMsg' }, preventDefault(){}, stopPropagation(){} });\n"
+    "  if (fetchedCalls.slice(beforeKeyTextA).some(c => c.url === '/api/file_mark')) throw new Error('Ctrl+A inside textarea must not hijack commit file selection');\n"
     "  const beforeSelAll = fetchedCalls.length;\n"
-    "  await selectAllCommitFiles();\n"
+    "  listeners['keydown']({ key: 'a', code: 'KeyA', ctrlKey: true, altKey: false, metaKey: false, shiftKey: false, target: { tagName: 'BODY' }, preventDefault(){}, stopPropagation(){} });\n"
+    "  await new Promise(r => setTimeout(r, 15));\n"
     "  const markAllCall = fetchedCalls.slice(beforeSelAll).find(c => c.url === '/api/file_mark');\n"
     "  if (!markAllCall || !markAllCall.body.includes('/repo/a.md') || !markAllCall.body.includes('/repo/b.md') || !markAllCall.body.includes('\"marked\":true')) {\n"
-    "    throw new Error('selectAllCommitFiles did not batch mark all dirty files: ' + JSON.stringify(markAllCall));\n"
+    "    throw new Error('Ctrl+A did not batch mark all dirty files: ' + JSON.stringify(markAllCall));\n"
     "  }\n"
     "  latestSummary = { total_items: 1, counts: { pending: 0, accept: 1, reject: 0, with_feedback: 0 }, marked_files: ['/repo/a.md', '/repo/b.md'], files: dirtyFilesFixture.map(f => ({ ...f, marked: true })) };\n"
     "  document.getElementById('commitMsg').value = 'Commit and push';\n"
@@ -942,7 +946,8 @@ def test_review_gui_embedded_js_syntax(tmp_path: Path):
     assert "font-size: var(--dev-font-size);" in review_gui._RENDERED_HTML.split(".collapse-correction {")[1].split("}")[0]
     assert "background: var(--accent-soft);" in review_gui._RENDERED_HTML
     shortcut_line = review_gui._RENDERED_HTML.split('id="shortcutFooter"')[1].split('</div>')[0]
-    assert "<strong>Alt+U</strong>" in shortcut_line and "<strong>Ctrl+R</strong>" in shortcut_line
+    assert "<strong>Alt+U</strong>" in shortcut_line and "<strong>Ctrl+R</strong>" in shortcut_line and "<strong>Ctrl+A</strong>" in shortcut_line
+    assert 'Select <u class="sc-key sc-ctrl">A</u>ll' in review_gui._RENDERED_HTML
     assert "#shortcutFooter strong" in review_gui._RENDERED_HTML
     assert "main::-webkit-scrollbar" in review_gui._RENDERED_HTML and ".pane-scroll::-webkit-scrollbar" in review_gui._RENDERED_HTML and "aside.commit-pane::-webkit-scrollbar" in review_gui._RENDERED_HTML and "scrollbar-gutter: stable" in review_gui._RENDERED_HTML
     assert 'id="fileList" class="pane-scroll"' in review_gui._RENDERED_HTML
@@ -1109,11 +1114,74 @@ def test_kill_other_pada_svara_servers_and_main_order(tmp_path: Path, monkeypatc
       proc.kill()
       proc.wait(timeout=2)
 
-  calls: list[str] = []
-  monkeypatch.setattr(review_gui, "_kill_other_pada_svara_servers", lambda: calls.append("kill") or [])
-  monkeypatch.setattr(review_gui, "_find_free_port", lambda p: calls.append("port") or p)
-  monkeypatch.setattr(review_gui.uvicorn, "run", lambda *a, **kw: calls.append("run"))
-  assert review_gui.main(["--no-browser", "--port", "8765"]) == 0
-  assert calls == ["kill", "port", "run"]
+  from fastapi.testclient import TestClient
+  import http.server
+  import json as _json
+  import threading as _threading
+
+  presets_data = TestClient(review_gui.create_app(cache_dir=str(tmp_path / "cache_presets"))).get("/api/presets").json()
+  assert presets_data["app"] == "pada_svara"
+  assert "scan_version" in presets_data and presets_data["has_active_ui"] is False
+
+  with monkeypatch.context() as mp:
+    mp.setenv("DIFF_SAN_SERVER_REGISTRY_DIR", str(tmp_path / "ps_reg_empty"))
+    mp.setattr(review_gui, "_probe_running_server", lambda *a, **kw: None)
+    calls: list[str] = []
+    mp.setattr(review_gui, "_kill_other_pada_svara_servers", lambda: calls.append("kill") or [])
+    mp.setattr(review_gui, "_find_free_port", lambda p: calls.append("port") or p)
+    mp.setattr(review_gui.uvicorn, "run", lambda *a, **kw: calls.append("run"))
+    assert review_gui.main(["--no-browser", "--port", "18765"]) == 0
+    assert calls == ["kill", "port", "run"]
+    calls.clear()
+    assert review_gui.main(["--restart", "--no-browser", "--port", "18765"]) == 0
+    assert calls == ["kill", "port", "run"]
+
+  captured_scans: list[dict] = []
+
+  class _MockPSHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+      if self.path == "/api/presets":
+        body = _json.dumps({"app": "pada_svara", "presets": [], "default_n": 3, "current_dir": "", "scan_version": 0, "has_active_ui": False}).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+        return
+      self.send_response(404)
+      self.end_headers()
+
+    def do_POST(self):
+      if self.path == "/api/scan":
+        n = int(self.headers.get("Content-Length") or "0")
+        captured_scans.append(_json.loads(self.rfile.read(n).decode("utf-8")))
+        body = _json.dumps({"dir_path": str(tmp_path), "total_items": 0, "scan_version": 1}).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+        return
+      self.send_response(404)
+      self.end_headers()
+
+    def log_message(self, *args):
+      return
+
+  ps_httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _MockPSHandler)
+  ps_th = _threading.Thread(target=ps_httpd.serve_forever, daemon=True)
+  ps_th.start()
+  try:
+    reuse_calls: list[str] = []
+    with monkeypatch.context() as mp:
+      mp.setenv("DIFF_SAN_SERVER_REGISTRY_DIR", str(tmp_path / "ps_reg_live"))
+      mp.setattr(review_gui, "_kill_other_pada_svara_servers", lambda: reuse_calls.append("kill") or [])
+      mp.setattr(review_gui.uvicorn, "run", lambda *a, **kw: reuse_calls.append("run"))
+      assert review_gui.main(["--dir", str(tmp_path), "--port", str(ps_httpd.server_address[1])]) == 0
+      assert reuse_calls == []
+      assert captured_scans == [{"dir_path": str(tmp_path.resolve()), "open_browser_if_idle": True}]
+  finally:
+    ps_httpd.shutdown()
+    ps_httpd.server_close()
 
 

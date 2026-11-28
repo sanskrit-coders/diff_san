@@ -8,6 +8,7 @@ Run from the command line::
 from __future__ import annotations
 
 import argparse
+from contextlib import asynccontextmanager
 import os
 from pathlib import Path
 import re
@@ -20,8 +21,8 @@ from typing import Any, Callable, Sequence, TypeVar
 from urllib.parse import urlparse
 import webbrowser
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 import requests
 import uvicorn
@@ -187,6 +188,9 @@ class _AppStore:
   def __init__(self, session: pr_review.PRReviewSession) -> None:
     self.lock = threading.RLock()
     self.session = session
+    self.state_version = 1
+    self.active_sse_clients = 0
+    self.shutdown_event = threading.Event()
 
   def run(self, fn: Callable[[], _T]) -> _T:
     try:
@@ -236,6 +240,8 @@ def _register_read_routes(
   @app.get("/api/meta")
   def api_meta() -> dict[str, Any]:
     return store.run(lambda: {
+      "app": "pull_requests_san",
+      "has_active_ui": store.active_sse_clients > 0,
       "default_owner": session.default_owner,
       "default_state": default_state,
       "default_repo": default_repo,
@@ -247,6 +253,28 @@ def _register_read_routes(
       "merge_methods": list(pr_review.VALID_MERGE_METHODS),
       "local_org_dir": session.client.local_org_dir,
     })
+
+  @app.get("/api/events")
+  async def api_events(request: Request) -> StreamingResponse:
+    def _inc() -> None:
+      with store.lock:
+        store.active_sse_clients += 1
+
+    def _dec() -> None:
+      with store.lock:
+        store.active_sse_clients = max(0, store.active_sse_clients - 1)
+
+    return StreamingResponse(
+      local_helpers.iter_version_sse_events(
+        request,
+        get_version=lambda: store.state_version,
+        shutdown_event=store.shutdown_event,
+        on_connect=_inc,
+        on_disconnect=_dec,
+      ),
+      media_type="text/event-stream",
+      headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
   @app.get("/api/prs")
   def api_prs(
@@ -570,7 +598,16 @@ def create_app(
     client = pr_review.GitHubClient(token=token, local_org_dir=local_org_dir)
     session = pr_review.PRReviewSession(client=client, default_owner=default_owner)
   store = _AppStore(session)
-  app = FastAPI(title="GitHub PR Character-Level Reviewer")
+
+  @asynccontextmanager
+  async def _lifespan(_app: FastAPI):
+    try:
+      yield
+    finally:
+      store.shutdown_event.set()
+
+  app = FastAPI(title="GitHub PR Character-Level Reviewer", lifespan=_lifespan)
+  app.state.store = store
   _register_read_routes(app, store, default_owner=default_owner, default_state=default_state, default_repo=default_repo)
   _register_mutation_routes(app, store)
   _register_local_routes(app, store)
@@ -603,6 +640,7 @@ def main(argv: Sequence[str] | None = None) -> int:
   p.add_argument("--local-org-dir", default=pr_review.DEFAULT_LOCAL_ORG_DIR, help="Optional local checkout root for opening files in IDEA.")
   p.add_argument("--port", type=int, default=8770, help="Port to bind on 127.0.0.1 (default: 8770 or next free port).")
   p.add_argument("--no-browser", action="store_true", help="Do not auto-open browser window.")
+  p.add_argument("--restart", action="store_true", help="Kill any existing pull_requests_san server and start a fresh instance.")
   p.add_argument("--export-static", default="", help="Write a self-contained pure-JS static PR viewer HTML page to FILE and exit.")
   args = p.parse_args(argv)
 
@@ -610,6 +648,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     out = export_static_html(args.export_static)
     print(f"Exported standalone static pull_requests_san page to {out}", flush=True)
     return 0
+
+  if not args.restart:
+    existing = local_helpers.probe_running_server("pull_requests_san", default_port=args.port, meta_path="/api/meta")
+    if existing:
+      url = existing["url"]
+      print(f"GitHub PR Reviewer running at {url} (reused existing server)", flush=True)
+      if not args.no_browser and not existing["meta"].get("has_active_ui"):
+        threading.Thread(target=_launch_browser, args=(url,), daemon=True).start()
+      return 0
 
   app = create_app(
     default_owner=args.owner,
@@ -621,10 +668,14 @@ def main(argv: Sequence[str] | None = None) -> int:
   _kill_other_server_instances()
   port = _find_free_port(args.port)
   url = f"http://127.0.0.1:{port}/"
+  local_helpers.register_running_server("pull_requests_san", pid=os.getpid(), port=port, url=url)
   print(f"GitHub PR Reviewer running at {url}", flush=True)
   if not args.no_browser:
     threading.Thread(target=_launch_browser, args=(url,), daemon=True).start()
-  uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+  try:
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+  finally:
+    local_helpers.unregister_running_server("pull_requests_san", pid=os.getpid())
   return 0
 
 

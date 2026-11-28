@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import atexit
+import json
 import os
 from pathlib import Path
 import re
@@ -11,9 +14,12 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import time
-from typing import Any, Callable, Sequence
+from typing import Any, AsyncIterator, Callable, Sequence
+import urllib.error
 from urllib.parse import urlparse
+import urllib.request
 import webbrowser
 
 from pydantic import BaseModel
@@ -425,3 +431,128 @@ def kill_other_server_instances(
   if killed and label:
     print(f"Stopped {len(killed)} previous {label} server(s): {', '.join(str(p) for p in killed)}", flush=True)
   return killed
+
+
+def server_registry_path(app_name: str) -> Path:
+  """Return the localhost discovery file path for ``app_name``."""
+  base = os.environ.get("DIFF_SAN_SERVER_REGISTRY_DIR", "").strip()
+  root = Path(base).expanduser() if base else (Path.home() / ".cache" / "diff_san" / "servers")
+  return root / f"{app_name}.json"
+
+
+def unregister_running_server(app_name: str, *, pid: int | None = None) -> None:
+  """Remove the server discovery file for ``app_name`` if it belongs to ``pid`` (default current process)."""
+  path = server_registry_path(app_name)
+  target_pid = int(pid or os.getpid())
+  try:
+    raw = path.read_text(encoding="utf-8")
+    data = json.loads(raw)
+    if isinstance(data, dict) and int(data.get("pid") or -1) == target_pid:
+      path.unlink(missing_ok=True)
+  except Exception:
+    pass
+
+
+def register_running_server(app_name: str, *, pid: int, port: int, url: str) -> Path:
+  """Atomically record the running localhost server ``url``/``pid``/``port`` and clean up on normal exit."""
+  path = server_registry_path(app_name)
+  path.parent.mkdir(parents=True, exist_ok=True)
+  payload = json.dumps({"app": app_name, "pid": int(pid), "port": int(port), "url": url})
+  tmp = tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=str(path.parent), delete=False)
+  try:
+    tmp.write(payload)
+    tmp.close()
+    os.replace(tmp.name, path)
+  except Exception:
+    if os.path.exists(tmp.name):
+      os.unlink(tmp.name)
+    raise
+  atexit.register(unregister_running_server, app_name, pid=int(pid))
+  return path
+
+
+def _fetch_json_url(url: str, *, timeout: float = 0.8) -> dict[str, Any] | None:
+  req = urllib.request.Request(url, method="GET", headers={"Accept": "application/json"})
+  try:
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+      if resp.status != 200:
+        return None
+      parsed = json.loads(resp.read().decode("utf-8", errors="replace"))
+      return parsed if isinstance(parsed, dict) else None
+  except Exception:
+    return None
+
+
+def post_json(url: str, payload: dict[str, Any], *, timeout: float = 5.0) -> dict[str, Any]:
+  """POST ``payload`` as JSON to a localhost server endpoint and return parsed JSON response."""
+  data = json.dumps(payload).encode("utf-8")
+  req = urllib.request.Request(
+    url,
+    data=data,
+    method="POST",
+    headers={"Content-Type": "application/json", "Accept": "application/json"},
+  )
+  with urllib.request.urlopen(req, timeout=timeout) as resp:
+    raw = resp.read().decode("utf-8", errors="replace")
+    parsed = json.loads(raw) if raw.strip() else {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def probe_running_server(
+  app_name: str,
+  *,
+  default_port: int,
+  meta_path: str = "/api/meta",
+  timeout: float = 0.8,
+) -> dict[str, Any] | None:
+  """Return ``{'url', 'meta'}`` if an instance of ``app_name`` already answers HTTP on registry or ``default_port``."""
+  candidates: list[str] = []
+  reg_path = server_registry_path(app_name)
+  try:
+    reg_data = json.loads(reg_path.read_text(encoding="utf-8"))
+    reg_url = str(reg_data.get("url") or "").strip() if isinstance(reg_data, dict) else ""
+    if reg_url:
+      candidates.append(reg_url)
+  except Exception:
+    pass
+  default_url = f"http://127.0.0.1:{int(default_port)}/"
+  if default_url not in candidates and default_url.rstrip("/") not in [c.rstrip("/") for c in candidates]:
+    candidates.append(default_url)
+
+  norm_path = "/" + meta_path.lstrip("/")
+  for base in candidates:
+    clean_base = base.rstrip("/") + "/"
+    meta = _fetch_json_url(clean_base.rstrip("/") + norm_path, timeout=timeout)
+    if isinstance(meta, dict) and meta.get("app") == app_name:
+      return {"url": clean_base, "meta": meta}
+  return None
+
+
+async def iter_version_sse_events(
+  request: Any,
+  *,
+  get_version: Callable[[], int],
+  shutdown_event: Any,
+  on_connect: Callable[[], None],
+  on_disconnect: Callable[[], None],
+  event_field: str = "version",
+  poll_interval: float = 0.25,
+) -> AsyncIterator[bytes]:
+  """Stream Server-Sent Events whenever ``get_version()`` advances, exiting promptly on disconnect or shutdown."""
+  on_connect()
+  try:
+    last_ver = get_version()
+    yield f"data: {json.dumps({event_field: last_ver})}\n\n".encode("utf-8")
+    while not shutdown_event.is_set():
+      try:
+        if await request.is_disconnected():
+          break
+      except Exception:
+        break
+      cur_ver = get_version()
+      if cur_ver != last_ver:
+        last_ver = cur_ver
+        yield f"data: {json.dumps({event_field: cur_ver})}\n\n".encode("utf-8")
+      await asyncio.sleep(poll_interval)
+  finally:
+    on_disconnect()

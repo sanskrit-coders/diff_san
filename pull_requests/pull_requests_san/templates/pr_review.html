@@ -748,6 +748,9 @@ async function init() {
     }
   }
   startPrIdleAutoRefreshTimer();
+  if (!IS_STATIC_HOST && typeof EventSource === "function") {
+    try { new EventSource("/api/events"); } catch (_) {}
+  }
 }
 
 async function loadPrList(forceRefresh = false, preferredRepo = null) {

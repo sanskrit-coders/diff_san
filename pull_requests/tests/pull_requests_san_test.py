@@ -2236,12 +2236,53 @@ def test_kill_other_server_instances_and_main_lifecycle(tmp_path: Path, monkeypa
         proc.kill()
       proc.wait(timeout=2)
 
-  # Verify pr_review_gui.main() kills previous instances before binding port or starting uvicorn (and skips on --export-static)
-  calls: list[str] = []
-  monkeypatch.setattr(pr_review_gui, "_kill_other_server_instances", lambda: calls.append("kill") or [])
-  monkeypatch.setattr(pr_review_gui, "_find_free_port", lambda p: calls.append("port") or p)
-  monkeypatch.setattr(pr_review_gui.uvicorn, "run", lambda *a, **kw: calls.append("run"))
-  assert pr_review_gui.main(["--export-static", str(tmp_path / "static_noop.html")]) == 0
-  assert calls == []
-  assert pr_review_gui.main(["--no-browser", "--port", "8770"]) == 0
-  assert calls == ["kill", "port", "run"]
+  # Verify pr_review_gui.main() reuses healthy server by default, and --restart forces kill -> port -> run
+  import http.server
+  import json as _json
+  import threading as _threading
+
+  with monkeypatch.context() as mp:
+    mp.setenv("DIFF_SAN_SERVER_REGISTRY_DIR", str(tmp_path / "pr_reg_empty"))
+    mp.setattr(pr_review_gui.local_helpers, "probe_running_server", lambda *a, **kw: None)
+    calls: list[str] = []
+    monkeypatch.setattr(pr_review_gui, "_kill_other_server_instances", lambda: calls.append("kill") or [])
+    monkeypatch.setattr(pr_review_gui, "_find_free_port", lambda p: calls.append("port") or p)
+    monkeypatch.setattr(pr_review_gui.uvicorn, "run", lambda *a, **kw: calls.append("run"))
+    assert pr_review_gui.main(["--export-static", str(tmp_path / "static_noop.html")]) == 0
+    assert calls == []
+    assert pr_review_gui.main(["--no-browser", "--port", "18770"]) == 0
+    assert calls == ["kill", "port", "run"]
+    calls.clear()
+    assert pr_review_gui.main(["--restart", "--no-browser", "--port", "18770"]) == 0
+    assert calls == ["kill", "port", "run"]
+
+  class _MockPRMetaHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+      if self.path == "/api/meta":
+        body = _json.dumps({"app": "pull_requests_san", "has_active_ui": True}).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+        return
+      self.send_response(404)
+      self.end_headers()
+
+    def log_message(self, *args):
+      return
+
+  httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _MockPRMetaHandler)
+  th = _threading.Thread(target=httpd.serve_forever, daemon=True)
+  th.start()
+  try:
+    reuse_calls: list[str] = []
+    with monkeypatch.context() as mp:
+      mp.setenv("DIFF_SAN_SERVER_REGISTRY_DIR", str(tmp_path / "pr_reg_live"))
+      mp.setattr(pr_review_gui, "_kill_other_server_instances", lambda: reuse_calls.append("kill") or [])
+      mp.setattr(pr_review_gui.uvicorn, "run", lambda *a, **kw: reuse_calls.append("run"))
+      assert pr_review_gui.main(["--no-browser", "--port", str(httpd.server_address[1])]) == 0
+      assert reuse_calls == []
+  finally:
+    httpd.shutdown()
+    httpd.server_close()

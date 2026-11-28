@@ -253,7 +253,7 @@
     <strong style="font-size:19px;">local-diff-san — Sanskrit Local &amp; Git Diff Viewer</strong>
     <button id="closeHelpBtn" class="small" type="button" onclick="closeHelpPane()">✕ Close</button>
   </div>
-  <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;"><strong>Shortcuts:</strong> <strong>Hold Alt/Ctrl</strong> Highlight button shortcut letters • <strong>Shift+Click</strong> / <strong>↑</strong>/<strong>↓</strong> Select line • <strong>Tab</strong> / <strong>Shift+Tab</strong> Step diffs • <strong>Ctrl+Space</strong> Checked until here • <strong>Click diff box</strong> Copy OLD➤➤NEW • <strong>Right-click</strong> Copy diff • <strong>Ctrl+F</strong> Find (supports ँ) • <strong>Ctrl+G</strong> / <strong>Ctrl+Shift+G</strong> Next/Prev find • <strong>Alt+W</strong> Word/Char diff • <strong>PgUp</strong>/<strong>PgDn</strong> Page &amp; select first line • <strong>Ctrl+PgUp</strong>/<strong>PgDn</strong> Prev/Next file in left pane • <strong>Alt+↑</strong>/<strong>↓</strong> Prev/Next diff line • <strong>Alt+Shift+↑</strong>/<strong>↓</strong> Prev/Next sandhi diff • <strong>Alt+S</strong> Single/2-Pane • <strong>Ctrl+R</strong> Refresh • <strong>j</strong>/<strong>k</strong> Navigate files • <strong>?</strong> About/Shortcuts • <strong>Esc</strong> Close bar/panel</div>
+  <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;"><strong>Shortcuts:</strong> <strong>Hold Alt/Ctrl</strong> Highlight button shortcut letters • <strong>Shift+Click</strong> / <strong>↑</strong>/<strong>↓</strong> Select line • <strong>Tab</strong> / <strong>Shift+Tab</strong> Step diffs • <strong>Ctrl+Space</strong> Checked until here • <strong>Ctrl+A</strong> Select all commit files • <strong>Click diff box</strong> Copy OLD➤➤NEW • <strong>Right-click</strong> Copy diff • <strong>Ctrl+F</strong> Find (supports ँ) • <strong>Ctrl+G</strong> / <strong>Ctrl+Shift+G</strong> Next/Prev find • <strong>Alt+W</strong> Word/Char diff • <strong>PgUp</strong>/<strong>PgDn</strong> Page &amp; select first line • <strong>Ctrl+PgUp</strong>/<strong>PgDn</strong> Prev/Next file in left pane • <strong>Alt+↑</strong>/<strong>↓</strong> Prev/Next diff line • <strong>Alt+Shift+↑</strong>/<strong>↓</strong> Prev/Next sandhi diff • <strong>Alt+S</strong> Single/2-Pane • <strong>Ctrl+R</strong> Refresh • <strong>j</strong>/<strong>k</strong> Navigate files • <strong>?</strong> About/Shortcuts • <strong>Esc</strong> Close bar/panel</div>
   <footer id="aboutFooter" class="about-footer">
     <div>
       <strong>diff_san</strong> (<a href="https://github.com/sanskrit-coders/diff_san" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) —
@@ -320,7 +320,7 @@
       <span class="commit-collapsed-label">Commit</span>
     </div>
     <div class="row commit-toolbar" style="gap:6px;">
-      <button id="selectAllCommitBtn" class="small" type="button" title="Select all dirty files for commit" onclick="selectAllCommitFiles()">☑ Select all</button>
+      <button id="selectAllCommitBtn" class="small" type="button" title="Select all dirty files for commit (Ctrl+A)" onclick="selectAllCommitFiles()">☑ Select <u class="sc-key sc-ctrl">A</u>ll</button>
       <button id="clearCommitSelBtn" class="small" type="button" title="Clear commit file selection" onclick="clearCommitSelection()">Clear</button>
     </div>
     <div class="commit-hint" style="font-size:12.5px; color:var(--muted);">
@@ -352,6 +352,7 @@ let staticInputsCollapsed = false;
 let staticDiffTimer = null;
 let renderedLocalRows = [];
 let selectedLocalRowKey = null;
+let loadedSpecVersion = 0;
 let commitPaneCollapsed = false;
 const selectedCommitPaths = new Set();
 const LOCAL_COMMIT_COLLAPSED_STORAGE_KEY = "local_diff_san_commit_collapsed";
@@ -1022,8 +1023,10 @@ async function commitSelectedFiles(pushAfter = false) {
       }
     }
     for (const fp of committedSet) selectedCommitPaths.delete(fp);
+    selectedLocalRowKey = null;
     if (data.workspace) {
       workspaceData = data.workspace;
+      if (workspaceData.spec_version != null) loadedSpecVersion = Number(workspaceData.spec_version) || loadedSpecVersion;
       selectedItemId = workspaceData.active_item?.id || null;
       clearExpandedGaps("local:");
       syncSpecInputs(workspaceData.spec);
@@ -1235,11 +1238,27 @@ async function init() {
 
   try {
     const meta = await apiJson("/api/meta", null, "Failed to load metadata");
+    if (meta.spec_version != null) loadedSpecVersion = Number(meta.spec_version) || loadedSpecVersion;
     syncSpecInputs(meta.spec);
   } catch (e) {
     showError(e.message);
   }
   await fetchDiff();
+  if (typeof EventSource === "function") {
+    try {
+      const evSrc = new EventSource("/api/events");
+      evSrc.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data || "{}");
+          const ver = Number(msg.spec_version || 0);
+          if (ver > loadedSpecVersion) {
+            loadedSpecVersion = ver;
+            fetchDiff();
+          }
+        } catch (_) {}
+      };
+    } catch (_) {}
+  }
 }
 
 document.addEventListener("keydown", (ev) => {
@@ -1255,6 +1274,13 @@ document.addEventListener("keydown", (ev) => {
   })) return;
   const target = ev.target;
   const tag = (target && target.tagName || "").toUpperCase();
+  if ((ev.key === "a" || ev.key === "A") && ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey) {
+    if (hasCommitPane() && !_isTextEditingTarget(target)) {
+      ev.preventDefault();
+      selectAllCommitFiles();
+      return;
+    }
+  }
   if ((ev.key === "r" || ev.key === "R") && ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey) {
     ev.preventDefault();
     refreshDiff();

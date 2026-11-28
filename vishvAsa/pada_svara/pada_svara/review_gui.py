@@ -10,6 +10,10 @@ from __future__ import annotations
 
 import argparse
 import ast
+import asyncio
+import atexit
+from contextlib import asynccontextmanager
+import json
 import os
 from pathlib import Path
 import re
@@ -18,13 +22,15 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
+import urllib.request
 import webbrowser
-from typing import Any, Sequence
+from typing import Any, AsyncIterator, Callable, Sequence
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 import uvicorn
 
@@ -81,6 +87,7 @@ def _suggest_dirs(query: str = "", vishvasa_root: Path | None = None, limit: int
 
 class _ScanRequest(BaseModel):
   dir_path: str
+  open_browser_if_idle: bool = False
 
 
 class _DecisionRequest(BaseModel):
@@ -140,6 +147,10 @@ class _SessionStore:
     self.scan_data: dict[str, Any] | None = None
     self.item_by_id: dict[str, review.ReviewItem] = {}
     self.state: dict[str, Any] = {"decisions": {}, "file_overrides": {}}
+    self.scan_version: int = 0
+    self.active_sse_clients: int = 0
+    self.bound_url: str | None = None
+    self.shutdown_event = threading.Event()
     if initial_dir and os.path.isdir(initial_dir):
       self.load_dir(initial_dir)
 
@@ -151,6 +162,7 @@ class _SessionStore:
       self.scan_data = data
       self.item_by_id = {it.item_id: it for it in data["items"]}
       self.state = st
+      self.scan_version += 1
     return data
 
   def refresh_git_statuses(self) -> None:
@@ -381,8 +393,17 @@ def create_app(
   cache_dir: str = review.DEFAULT_REVIEW_CACHE_DIR,
 ) -> FastAPI:
   """Create the FastAPI application for interactive accent suggestion review."""
-  app = FastAPI(title="Vedic Accent Fix Suggestion Reviewer")
   store = _SessionStore(initial_dir=initial_dir, default_n=default_n, cache_dir=cache_dir)
+
+  @asynccontextmanager
+  async def _lifespan(_app: FastAPI):
+    try:
+      yield
+    finally:
+      store.shutdown_event.set()
+
+  app = FastAPI(title="Vedic Accent Fix Suggestion Reviewer", lifespan=_lifespan)
+  app.state.store = store
 
   @app.get("/", response_class=HTMLResponse)
   def index() -> HTMLResponse:
@@ -393,7 +414,42 @@ def create_app(
     presets = _discover_vedah_dirs()
     with store.lock:
       cur_dir = store.scan_data["dir_path"] if store.scan_data else (initial_dir or "")
-    return {"presets": presets, "default_n": store.default_n, "current_dir": cur_dir}
+      scan_ver = store.scan_version
+      active_ui = store.active_sse_clients > 0
+    return {
+      "app": "pada_svara",
+      "presets": presets,
+      "default_n": store.default_n,
+      "current_dir": cur_dir,
+      "scan_version": scan_ver,
+      "has_active_ui": active_ui,
+    }
+
+  @app.get("/api/events")
+  async def api_events(request: Request) -> StreamingResponse:
+    def _on_connect() -> None:
+      with store.lock:
+        store.active_sse_clients += 1
+
+    def _on_disconnect() -> None:
+      with store.lock:
+        store.active_sse_clients = max(0, store.active_sse_clients - 1)
+
+    def _get_version() -> int:
+      with store.lock:
+        return store.scan_version
+
+    return StreamingResponse(
+      _iter_version_sse_events(
+        request,
+        get_version=_get_version,
+        shutdown_event=store.shutdown_event,
+        on_connect=_on_connect,
+        on_disconnect=_on_disconnect,
+      ),
+      media_type="text/event-stream",
+      headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
   @app.get("/api/dir_suggest")
   def api_dir_suggest(q: str = Query("")) -> dict[str, Any]:
@@ -413,7 +469,13 @@ def create_app(
     except FileNotFoundError as exc:
       raise HTTPException(status_code=404, detail=str(exc)) from exc
     with store.lock:
-      return store.summary_payload()
+      payload = store.summary_payload()
+      payload["scan_version"] = store.scan_version
+      should_open = bool(req.open_browser_if_idle and store.active_sse_clients <= 0 and store.bound_url)
+      open_url = store.bound_url
+    if should_open and open_url:
+      threading.Thread(target=_launch_browser, args=(open_url,), daemon=True).start()
+    return payload
 
   @app.get("/api/items")
   def api_items(
@@ -873,6 +935,162 @@ def _kill_other_pada_svara_servers(
   return killed
 
 
+def _server_registry_path(app_name: str = "pada_svara") -> Path:
+  """Return the localhost discovery file path for ``app_name``."""
+  try:
+    from pull_requests_san.local_helpers import server_registry_path
+    return server_registry_path(app_name)
+  except ImportError:
+    base = os.environ.get("DIFF_SAN_SERVER_REGISTRY_DIR", "").strip()
+    root = Path(base).expanduser() if base else (Path.home() / ".cache" / "diff_san" / "servers")
+    return root / f"{app_name}.json"
+
+
+def _unregister_running_server(app_name: str = "pada_svara", *, pid: int | None = None) -> None:
+  """Remove the server discovery file for ``app_name`` if it belongs to ``pid``."""
+  try:
+    from pull_requests_san.local_helpers import unregister_running_server
+    unregister_running_server(app_name, pid=pid)
+    return
+  except ImportError:
+    pass
+  path = _server_registry_path(app_name)
+  target_pid = int(pid or os.getpid())
+  try:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(data, dict) and int(data.get("pid") or -1) == target_pid:
+      path.unlink(missing_ok=True)
+  except Exception:
+    pass
+
+
+def _register_running_server(app_name: str, *, pid: int, port: int, url: str) -> Path:
+  """Atomically record the running localhost server URL/PID/port and clean up on exit."""
+  try:
+    from pull_requests_san.local_helpers import register_running_server
+    return register_running_server(app_name, pid=pid, port=port, url=url)
+  except ImportError:
+    pass
+  path = _server_registry_path(app_name)
+  path.parent.mkdir(parents=True, exist_ok=True)
+  payload = json.dumps({"app": app_name, "pid": int(pid), "port": int(port), "url": url})
+  tmp = tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=str(path.parent), delete=False)
+  try:
+    tmp.write(payload)
+    tmp.close()
+    os.replace(tmp.name, path)
+  except Exception:
+    if os.path.exists(tmp.name):
+      os.unlink(tmp.name)
+    raise
+  atexit.register(_unregister_running_server, app_name, pid=int(pid))
+  return path
+
+
+def _post_json(url: str, payload: dict[str, Any], *, timeout: float = 5.0) -> dict[str, Any]:
+  """POST JSON payload to a localhost server endpoint and return parsed JSON."""
+  try:
+    from pull_requests_san.local_helpers import post_json
+    return post_json(url, payload, timeout=timeout)
+  except ImportError:
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+      url,
+      data=data,
+      method="POST",
+      headers={"Content-Type": "application/json", "Accept": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+      raw = resp.read().decode("utf-8", errors="replace")
+      parsed = json.loads(raw) if raw.strip() else {}
+      return parsed if isinstance(parsed, dict) else {}
+
+
+def _probe_running_server(
+  app_name: str = "pada_svara",
+  *,
+  default_port: int = 8765,
+  meta_path: str = "/api/presets",
+  timeout: float = 0.8,
+) -> dict[str, Any] | None:
+  """Return {'url', 'meta'} if a healthy instance of ``app_name`` already responds."""
+  try:
+    from pull_requests_san.local_helpers import probe_running_server
+    return probe_running_server(app_name, default_port=default_port, meta_path=meta_path, timeout=timeout)
+  except ImportError:
+    pass
+  candidates: list[str] = []
+  try:
+    reg_data = json.loads(_server_registry_path(app_name).read_text(encoding="utf-8"))
+    reg_url = str(reg_data.get("url") or "").strip() if isinstance(reg_data, dict) else ""
+    if reg_url:
+      candidates.append(reg_url)
+  except Exception:
+    pass
+  default_url = f"http://127.0.0.1:{int(default_port)}/"
+  if default_url.rstrip("/") not in [c.rstrip("/") for c in candidates]:
+    candidates.append(default_url)
+  norm_path = "/" + meta_path.lstrip("/")
+  for base in candidates:
+    clean_base = base.rstrip("/") + "/"
+    req = urllib.request.Request(clean_base.rstrip("/") + norm_path, method="GET", headers={"Accept": "application/json"})
+    try:
+      with urllib.request.urlopen(req, timeout=timeout) as resp:
+        if resp.status != 200:
+          continue
+        meta = json.loads(resp.read().decode("utf-8", errors="replace"))
+      if isinstance(meta, dict) and meta.get("app") == app_name:
+        return {"url": clean_base, "meta": meta}
+    except Exception:
+      continue
+  return None
+
+
+async def _iter_version_sse_events(
+  request: Request,
+  *,
+  get_version: Callable[[], int],
+  shutdown_event: Any,
+  on_connect: Callable[[], None],
+  on_disconnect: Callable[[], None],
+  event_field: str = "version",
+  poll_interval: float = 0.25,
+) -> AsyncIterator[bytes]:
+  """Stream SSE updates whenever ``get_version()`` changes."""
+  try:
+    from pull_requests_san.local_helpers import iter_version_sse_events
+    async for chunk in iter_version_sse_events(
+      request,
+      get_version=get_version,
+      shutdown_event=shutdown_event,
+      on_connect=on_connect,
+      on_disconnect=on_disconnect,
+      event_field=event_field,
+      poll_interval=poll_interval,
+    ):
+      yield chunk
+    return
+  except ImportError:
+    pass
+  on_connect()
+  try:
+    last_ver = get_version()
+    yield f"data: {json.dumps({event_field: last_ver})}\n\n".encode("utf-8")
+    while not shutdown_event.is_set():
+      try:
+        if await request.is_disconnected():
+          break
+      except Exception:
+        break
+      cur_ver = get_version()
+      if cur_ver != last_ver:
+        last_ver = cur_ver
+        yield f"data: {json.dumps({event_field: cur_ver})}\n\n".encode("utf-8")
+      await asyncio.sleep(poll_interval)
+  finally:
+    on_disconnect()
+
+
 def main(argv: Sequence[str] | None = None) -> int:
   p = argparse.ArgumentParser(
     description="Launch the Vedic accent fix suggestion reviewer GUI."
@@ -881,16 +1099,49 @@ def main(argv: Sequence[str] | None = None) -> int:
   p.add_argument("-n", "--context-lines", type=int, default=3, help="Number of preceding/succeeding padapāṭha lines to show (default: 3).")
   p.add_argument("--port", type=int, default=8765, help="Port to bind on 127.0.0.1 (default: 8765 or next free port).")
   p.add_argument("--no-browser", action="store_true", help="Do not auto-open browser window.")
+  p.add_argument("--restart", action="store_true", help="Stop any running pada_svara server and start a fresh instance.")
   args = p.parse_args(argv)
+
+  if not args.restart:
+    existing = _probe_running_server("pada_svara", default_port=args.port, meta_path="/api/presets")
+    if existing is not None:
+      existing_url = existing["url"]
+      existing_meta = existing.get("meta") if isinstance(existing.get("meta"), dict) else {}
+      if args.dir:
+        abs_dir = os.path.abspath(os.path.expanduser(args.dir))
+        try:
+          _post_json(
+            existing_url.rstrip("/") + "/api/scan",
+            {"dir_path": abs_dir, "open_browser_if_idle": (not args.no_browser)},
+            timeout=60.0,
+          )
+          print(f"Loaded {abs_dir} in running pada_svara server at {existing_url}", flush=True)
+          return 0
+        except Exception as exc:
+          print(
+            f"Existing pada_svara server at {existing_url} failed to scan ({exc}); starting a new server.",
+            file=sys.stderr,
+            flush=True,
+          )
+      else:
+        print(f"Vedic Accent Fix Reviewer already running at {existing_url}", flush=True)
+        if not args.no_browser and not existing_meta.get("has_active_ui"):
+          _launch_browser(existing_url)
+        return 0
 
   app = create_app(initial_dir=args.dir, default_n=args.context_lines)
   _kill_other_pada_svara_servers()
   port = _find_free_port(args.port)
   url = f"http://127.0.0.1:{port}/"
+  app.state.store.bound_url = url
+  _register_running_server("pada_svara", pid=os.getpid(), port=port, url=url)
   print(f"Vedic Accent Fix Reviewer running at {url}", flush=True)
   if not args.no_browser:
     threading.Thread(target=_launch_browser, args=(url,), daemon=True).start()
-  uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+  try:
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+  finally:
+    _unregister_running_server("pada_svara")
   return 0
 
 
@@ -1771,7 +2022,7 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     <strong style="font-size:15px;">Vedic Accent Fix Reviewer (pada_svara)</strong>
     <button id="closeHelpBtn" class="small" type="button" onclick="closeHelpPane()">✕ Close</button>
   </div>
-  <div id="shortcutFooter" style="color:var(--muted); font-size:12px;"><strong>Shortcuts:</strong> <strong>Hold Alt/Ctrl</strong> Highlight button shortcut letters • <strong>Alt+U</strong> Pending • <strong>Alt+A</strong> Accepted • <strong>Alt+R</strong> Rejected • <strong>Alt+W</strong> With !! • <strong>Alt+L</strong>/<strong>0</strong> All • <strong>Alt+1</strong> Accept • <strong>Alt+2</strong> Reject • <strong>Alt+3</strong> Feedback • <strong>Enter</strong> Submit • <strong>Ctrl+Enter</strong> Accept+Submit • <strong>Ctrl+R</strong> Rescan • <strong>Ctrl+Z</strong> Undo • <strong>j</strong>/<strong>k</strong>/<strong>↑</strong>/<strong>↓</strong> navigate • <strong>←</strong>/<strong>→</strong> Collapse/Expand • <strong>Shift+PgUp</strong>/<strong>PgDn</strong> Prev/Next file group • <strong>Ctrl+PgUp</strong>/<strong>PgDn</strong> Prev/Next file • <strong>?</strong> About/Shortcuts • <strong>Esc</strong> Close help</div>
+  <div id="shortcutFooter" style="color:var(--muted); font-size:12px;"><strong>Shortcuts:</strong> <strong>Hold Alt/Ctrl</strong> Highlight button shortcut letters • <strong>Alt+U</strong> Pending • <strong>Alt+A</strong> Accepted • <strong>Alt+R</strong> Rejected • <strong>Alt+W</strong> With !! • <strong>Alt+L</strong>/<strong>0</strong> All • <strong>Alt+1</strong> Accept • <strong>Alt+2</strong> Reject • <strong>Alt+3</strong> Feedback • <strong>Enter</strong> Submit • <strong>Ctrl+Enter</strong> Accept+Submit • <strong>Ctrl+R</strong> Rescan • <strong>Ctrl+Z</strong> Undo • <strong>Ctrl+A</strong> Select all commit files • <strong>j</strong>/<strong>k</strong>/<strong>↑</strong>/<strong>↓</strong> navigate • <strong>←</strong>/<strong>→</strong> Collapse/Expand • <strong>Shift+PgUp</strong>/<strong>PgDn</strong> Prev/Next file group • <strong>Ctrl+PgUp</strong>/<strong>PgDn</strong> Prev/Next file • <strong>?</strong> About/Shortcuts • <strong>Esc</strong> Close help</div>
   <div id="aboutFooter" style="color:var(--muted); font-size:12px; border-top:1px solid var(--border); padding-top:8px;">
     <div><strong>pada_svara</strong> (<a href="https://github.com/sanskrit-coders/diff_san/tree/master/vishvAsa/pada_svara" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) — FastAPI review GUI and scanner for Vedic <code>पद-पाठः</code> and <code>विश्वास-प्रस्तुतिः</code> accent fix suggestions with scoped <code>git commit --only</code> support.</div>
   </div>
@@ -1818,7 +2069,7 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
       <span class="commit-collapsed-label">Commit</span>
     </div>
     <div class="row commit-toolbar" style="gap:6px;">
-      <button id="selectAllCommitBtn" class="small" type="button" title="Select all dirty files for commit" onclick="selectAllCommitFiles()">☑ Select all</button>
+      <button id="selectAllCommitBtn" class="small" type="button" title="Select all dirty files for commit (Ctrl+A)" onclick="selectAllCommitFiles()">☑ Select <u class="sc-key sc-ctrl">A</u>ll</button>
       <button id="clearCommitSelBtn" class="small" type="button" title="Clear commit file selection" onclick="clearCommitSelection()">Clear</button>
     </div>
     <div class="commit-hint" style="font-size:11px; color:var(--muted);">
@@ -1864,6 +2115,8 @@ let focusedIdx = -1;
 let searchTimer = null;
 let undoStack = [];
 let _recordingInFlight = 0;
+let loadedScanVersion = 0;
+let scanEventSource = null;
 let commitPaneCollapsed = false;
 const PADA_SVARA_COMMIT_COLLAPSED_KEY = "pada_svara_commit_collapsed";
 
@@ -2108,12 +2361,36 @@ async function init() {
   document.getElementById("nInput").value = data.default_n ?? 3;
   const presets = Array.isArray(data.presets) ? data.presets : [];
   dirPresetsList = presets;
+  loadedScanVersion = Number(data.scan_version || 0);
   const dirInp = document.getElementById("dirInput");
   if (data.current_dir) {
     if (dirInp) dirInp.value = data.current_dir;
     await loadItems(1);
   } else if (presets.length && dirInp) {
     dirInp.value = presets[0];
+  }
+  if (typeof EventSource === "function" && !scanEventSource) {
+    scanEventSource = new EventSource("/api/events");
+    scanEventSource.onmessage = async (ev) => {
+      try {
+        const msg = JSON.parse(ev.data || "{}");
+        const nextVer = Number(msg.version || 0);
+        if (!nextVer || nextVer === loadedScanVersion) return;
+        loadedScanVersion = nextVer;
+        const pResp = await fetch("/api/presets");
+        if (!pResp.ok) return;
+        const pData = await pResp.json();
+        const inp = document.getElementById("dirInput");
+        if (pData.current_dir && inp) {
+          inp.value = pData.current_dir;
+          selectedFile = "";
+          collapsedCards = {};
+          undoStack = [];
+          updateUndoButton();
+          await loadItems(1);
+        }
+      } catch (_) {}
+    };
   }
 }
 
@@ -2139,6 +2416,7 @@ async function _runScan(dirPath, { preserveView = false } = {}) {
       alert(data.detail || "Scan failed");
       return;
     }
+    if (data.scan_version) loadedScanVersion = Number(data.scan_version);
     if (!preserveView) {
       selectedFile = "";
       collapsedCards = {};
@@ -3422,6 +3700,15 @@ document.addEventListener("keydown", (ev) => {
     if (!isTextInput) {
       ev.preventDefault();
       toggleHelpPane();
+      return;
+    }
+  }
+
+  // Ctrl+A selects all dirty files in right commit pane (outside text fields so typing keeps native select-all)
+  if ((ev.key === "a" || ev.key === "A" || ev.code === "KeyA") && ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey) {
+    if (!_isTextEditingTarget(target)) {
+      ev.preventDefault();
+      selectAllCommitFiles();
       return;
     }
   }
