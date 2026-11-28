@@ -209,8 +209,10 @@ function renderSettingsPaneHtml() {
 }
 
 function isSettingsPaneOpen() {
-  const pane = document.getElementById("settingsPane");
-  return !!(pane && pane.style.display !== "none" && pane.style.display !== "");
+  const pane = typeof document !== "undefined" && typeof document.getElementById === "function"
+    ? document.getElementById("settingsPane")
+    : null;
+  return Boolean(pane && pane.style && pane.style.display && pane.style.display !== "none");
 }
 
 function toggleSettingsPane(forceOpen = null) {
@@ -243,7 +245,7 @@ function isHelpPaneOpen() {
   const pane = typeof document !== "undefined" && typeof document.getElementById === "function"
     ? document.getElementById("helpPane")
     : null;
-  return !!(pane && pane.style && pane.style.display !== "none" && pane.style.display !== "");
+  return Boolean(pane && pane.style && pane.style.display && pane.style.display !== "none");
 }
 
 function toggleHelpPane(forceOpen = null) {
@@ -1523,7 +1525,7 @@ function _ensureDiffFindBarEl() {
     bar.id = "diffFindBar";
     bar.className = "diff-find-bar";
     bar.innerHTML = `
-      <input id="diffFindInput" type="text" placeholder="Find (supports ँ, ᳓, spans)..." oninput="runDiffFind(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault(); stepDiffFind(event.shiftKey ? -1 : 1);}else if(event.key==='Escape'){event.preventDefault(); closeDiffFindBar();}" />
+      <input id="diffFindInput" type="text" placeholder="Find (supports ँ, ᳓, spans)..." oninput="runDiffFind(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault(); stepDiffFind(event.shiftKey ? -1 : 1);}else if(event.key==='Escape'){event.preventDefault(); event.stopPropagation(); closeDiffFindBar();}" />
       <span id="diffFindCount" class="diff-find-count"></span>
       <button id="diffFindPrevBtn" class="small" type="button" title="Previous match (Shift+Enter / Ctrl+Shift+G)" onclick="stepDiffFind(-1)">▲</button>
       <button id="diffFindNextBtn" class="small" type="button" title="Next match (Enter / Ctrl+G)" onclick="stepDiffFind(1)">▼</button>
@@ -1546,6 +1548,24 @@ function blurStrayUiFocus() {
   if (!active || active === document.body || typeof active.blur !== "function") return;
   if (active.closest && active.closest(".inline-composer, .thread-box, #diffFindBar, #settingsPane")) return;
   active.blur();
+}
+
+function focusMainPane() {
+  if (typeof document === "undefined") return false;
+  const mainEl = typeof document.getElementById === "function" ? document.getElementById("mainPane") : null;
+  const active = document.activeElement;
+  if (active && active !== document.body && active !== mainEl && typeof active.blur === "function") {
+    active.blur();
+  }
+  if (mainEl && typeof mainEl.focus === "function") {
+    try {
+      mainEl.focus({ preventScroll: true });
+    } catch (_) {
+      mainEl.focus();
+    }
+    return true;
+  }
+  return false;
 }
 
 function clearActiveDiffFocus() {
@@ -2134,6 +2154,16 @@ function handleSharedDiffKeydown(ev, navCtx = null) {
     if (isHelpPaneOpen()) {
       if (typeof ev.preventDefault === "function") ev.preventDefault();
       closeHelpPane();
+      return true;
+    }
+    if (typeof document !== "undefined" && typeof document.querySelector === "function" && document.querySelector("dialog[open]")) {
+      return false;
+    }
+    if (navCtx && typeof navCtx.hasOtherEscapeMeaning === "function" && navCtx.hasOtherEscapeMeaning()) {
+      return false;
+    }
+    if (!ev.altKey && !ev.ctrlKey && !ev.metaKey && focusMainPane()) {
+      if (typeof ev.preventDefault === "function") ev.preventDefault();
       return true;
     }
   }

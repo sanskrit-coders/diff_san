@@ -328,6 +328,15 @@ def test_vp_only_feedback_fallback_and_scoped_git_commit_via_fastapi(tmp_path: P
   assert client.get("/").status_code == 200
   presets = client.get("/api/presets").json()
   assert presets["default_n"] == 2
+  ved_root = tmp_path / "vishvAsa_root"
+  for rel in ("vedAH_Rk/static", "vedAH_Rk/content", "vedAH_yajuH/static", "other_repo/static"):
+    (ved_root / rel).mkdir(parents=True)
+  discovered = review_gui._discover_vedah_dirs(ved_root)
+  assert discovered == [
+    str(ved_root / "vedAH_Rk" / "static"),
+    str(ved_root / "vedAH_Rk" / "content"),
+    str(ved_root / "vedAH_yajuH" / "static"),
+  ]
 
   items_resp = client.get("/api/items", params={"n_context": 2, "page_size": 50}).json()
   assert items_resp["filtered_total"] == 3
@@ -612,7 +621,7 @@ def test_review_gui_embedded_js_syntax(tmp_path: Path):
       "      remove(...cs) { cs.forEach(c => classes.delete(c)); },\n"
       "      contains(c) { return classes.has(c); },\n"
       "    },\n"
-      "    querySelectorAll(){ return []; }, scrollIntoView(){}, focus(){ this.focused = true; }, blur(){},\n"
+      "    querySelectorAll(){ return []; }, scrollIntoView(){}, focus(){ this.focused = true; global.document.activeElement = this; }, blur(){ if (global.document.activeElement === this) global.document.activeElement = null; },\n"
       "  };\n"
       "}\n"
       "global.document = {\n"
@@ -626,7 +635,8 @@ def test_review_gui_embedded_js_syntax(tmp_path: Path):
       "global.window = { location: { reload() { reloadedCount += 1; } } };\n"
       "global.localStorage = { getItem(){ return null; }, setItem(){} };\n"
       "const fetchedCalls = [];\n"
-      "global.fetch = async (url, opts) => { fetchedCalls.push({ url, body: opts && opts.body }); return { ok: true, json: async () => ({ dir_path: '/tmp/ek', presets: [], default_n: 3, current_dir: '/tmp/ek', items: [], page: 1, total_pages: 1, filtered_total: 0, page_size: 25, item: null, summary: { total_items: 1, counts: { pending: 0, accept: 1, reject: 0, with_feedback: 0 }, files: [], marked_files: [] } }) }; };\n"
+      "let submitSeenStatus = '';\n"
+      "global.fetch = async (url, opts) => { if (url === '/api/submit') submitSeenStatus = elems['scanSpinner']?.textContent || ''; fetchedCalls.push({ url, body: opts && opts.body }); return { ok: true, json: async () => ({ dir_path: '/tmp/ek', presets: [], default_n: 3, current_dir: '/tmp/ek', items: [], page: 1, total_pages: 1, filtered_total: 0, page_size: 25, item: null, summary: { total_items: 1, counts: { pending: 0, accept: 1, reject: 0, with_feedback: 0 }, files: [], marked_files: [] } }) }; };\n"
       + js.replace("init();", "")
       + f"\nconst data = {json.dumps(sample_data)};\n"
       + "latestSummary = data.summary;\n"
@@ -669,6 +679,9 @@ def test_review_gui_embedded_js_syntax(tmp_path: Path):
       + '  await new Promise(r => setTimeout(r, 20));\n'
       + '  if (!fetchedCalls.length || fetchedCalls[0].url !== "/api/submit" || !fetchedCalls[0].body.includes(\'"decision":"accept"\')) {\n'
       + '    throw new Error("Ctrl+Enter did not Accept+Submit: " + JSON.stringify(fetchedCalls));\n'
+      + '  }\n'
+      + '  if (!submitSeenStatus.includes("Recording...") || (elems["scanSpinner"] && elems["scanSpinner"].textContent !== "")) {\n'
+      + '    throw new Error("Expected Recording... during /api/submit and clear afterwards: " + JSON.stringify({ submitSeenStatus, after: elems["scanSpinner"]?.textContent }));\n'
       + '  }\n'
       + '  if (!collapsedCards["abc123"] || !elems["card_0"].outerHTML.includes(" collapsed")) {\n'
       + '    throw new Error("Card did not collapse after submit");\n'
@@ -829,13 +842,27 @@ def test_review_gui_embedded_js_syntax(tmp_path: Path):
     "  if (!stepMainFileGroup(-1) || focusedIdx !== 0) throw new Error('Shift+PgUp did not jump back to 1.md group: ' + focusedIdx);\n"
     "  currentItems = [{ item_id: 'i1', vp_file: '/repo/a/b/1.md', rel_path: 'a/b/1.md' }];\n"
     "  if (stepMainFileGroup(1) !== false) throw new Error('stepMainFileGroup must return false when only 1 file shown');\n"
+    "  elems['searchInput'] = document.getElementById('searchInput');\n"
+    "  elems['mainPane'] = document.getElementById('mainPane');\n"
+    "  elems['searchInput'].focus();\n"
+    "  listeners['keydown']({ key: 'Escape', altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, target: elems['searchInput'], preventDefault(){}, stopPropagation(){} });\n"
+    "  if (global.document.activeElement !== elems['mainPane']) throw new Error('Escape did not return focus to mainPane');\n"
     "})().catch(err => { console.error(err); process.exit(1); });\n"
     )
     assert ".sutra-link {" in review_gui._RENDERED_HTML
-    n_idx = review_gui._RENDERED_HTML.index('id="nInput"')
-    ref_idx = review_gui._RENDERED_HTML.index('id="refreshBtn"')
-    font_idx = review_gui._RENDERED_HTML.index('id="fontPxInput"')
+    assert "presetSelect" not in review_gui._RENDERED_HTML
+    assert 'list="dirPresets"' in review_gui._RENDERED_HTML and '<datalist id="dirPresets">' in review_gui._RENDERED_HTML
+    hdr_html = review_gui._RENDERED_HTML.split("<header>", 1)[1].split("</header>", 1)[0]
+    row1_html, row2_html = hdr_html.split("</div>\n  <div class=\"row\">", 1)
+    for pid in ('id="dirInput"', 'id="statTotal"', 'id="statPending"', 'id="statAccept"', 'id="statReject"', 'id="statHold"'):
+      assert pid in row1_html, f"Expected {pid} in header row 1"
+    for pid in ('id="nInput"', 'id="refreshBtn"', 'id="fontPxInput"', 'id="scanSpinner"'):
+      assert pid in row2_html, f"Expected {pid} in header row 2"
+    n_idx = row2_html.index('id="nInput"')
+    ref_idx = row2_html.index('id="refreshBtn"')
+    font_idx = row2_html.index('id="fontPxInput"')
     assert n_idx < ref_idx < font_idx
+    assert '<main id="mainPane" tabindex="-1">' in review_gui._RENDERED_HTML
     assert '<option value="pending" selected>' in review_gui._RENDERED_HTML
     assert "Alt+P" not in review_gui._RENDERED_HTML and "KeyP" not in review_gui._RENDERED_HTML
     assert 'id="statPending"' in review_gui._RENDERED_HTML and "setStatusFilter('pending')" in review_gui._RENDERED_HTML

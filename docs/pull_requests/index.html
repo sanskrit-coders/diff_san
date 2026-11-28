@@ -179,8 +179,11 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    padding: 10px 6px 10px 10px;
+    padding: 10px 0 10px 10px;
     gap: 6px;
+  }
+  .sidebar-section > .pane-title {
+    padding-right: 10px;
   }
   .scroll-list {
     overflow-y: scroll;
@@ -322,6 +325,7 @@
     flex-direction: column;
     gap: 14px;
   }
+  main:focus { outline: none; }
   main::-webkit-scrollbar,
   .scroll-list::-webkit-scrollbar {
     width: 14px;
@@ -1308,7 +1312,7 @@
     </div>
   </aside>
 
-  <main id="mainPane">
+  <main id="mainPane" tabindex="-1">
     <div id="errorBanner" class="error-banner"></div>
     <div id="prContainer">
       <div class="card">Loading pull requests...</div>
@@ -3142,8 +3146,10 @@ function renderSettingsPaneHtml() {
 }
 
 function isSettingsPaneOpen() {
-  const pane = document.getElementById("settingsPane");
-  return !!(pane && pane.style.display !== "none" && pane.style.display !== "");
+  const pane = typeof document !== "undefined" && typeof document.getElementById === "function"
+    ? document.getElementById("settingsPane")
+    : null;
+  return Boolean(pane && pane.style && pane.style.display && pane.style.display !== "none");
 }
 
 function toggleSettingsPane(forceOpen = null) {
@@ -3176,7 +3182,7 @@ function isHelpPaneOpen() {
   const pane = typeof document !== "undefined" && typeof document.getElementById === "function"
     ? document.getElementById("helpPane")
     : null;
-  return !!(pane && pane.style && pane.style.display !== "none" && pane.style.display !== "");
+  return Boolean(pane && pane.style && pane.style.display && pane.style.display !== "none");
 }
 
 function toggleHelpPane(forceOpen = null) {
@@ -4456,7 +4462,7 @@ function _ensureDiffFindBarEl() {
     bar.id = "diffFindBar";
     bar.className = "diff-find-bar";
     bar.innerHTML = `
-      <input id="diffFindInput" type="text" placeholder="Find (supports ँ, ᳓, spans)..." oninput="runDiffFind(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault(); stepDiffFind(event.shiftKey ? -1 : 1);}else if(event.key==='Escape'){event.preventDefault(); closeDiffFindBar();}" />
+      <input id="diffFindInput" type="text" placeholder="Find (supports ँ, ᳓, spans)..." oninput="runDiffFind(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault(); stepDiffFind(event.shiftKey ? -1 : 1);}else if(event.key==='Escape'){event.preventDefault(); event.stopPropagation(); closeDiffFindBar();}" />
       <span id="diffFindCount" class="diff-find-count"></span>
       <button id="diffFindPrevBtn" class="small" type="button" title="Previous match (Shift+Enter / Ctrl+Shift+G)" onclick="stepDiffFind(-1)">▲</button>
       <button id="diffFindNextBtn" class="small" type="button" title="Next match (Enter / Ctrl+G)" onclick="stepDiffFind(1)">▼</button>
@@ -4479,6 +4485,24 @@ function blurStrayUiFocus() {
   if (!active || active === document.body || typeof active.blur !== "function") return;
   if (active.closest && active.closest(".inline-composer, .thread-box, #diffFindBar, #settingsPane")) return;
   active.blur();
+}
+
+function focusMainPane() {
+  if (typeof document === "undefined") return false;
+  const mainEl = typeof document.getElementById === "function" ? document.getElementById("mainPane") : null;
+  const active = document.activeElement;
+  if (active && active !== document.body && active !== mainEl && typeof active.blur === "function") {
+    active.blur();
+  }
+  if (mainEl && typeof mainEl.focus === "function") {
+    try {
+      mainEl.focus({ preventScroll: true });
+    } catch (_) {
+      mainEl.focus();
+    }
+    return true;
+  }
+  return false;
 }
 
 function clearActiveDiffFocus() {
@@ -5067,6 +5091,16 @@ function handleSharedDiffKeydown(ev, navCtx = null) {
     if (isHelpPaneOpen()) {
       if (typeof ev.preventDefault === "function") ev.preventDefault();
       closeHelpPane();
+      return true;
+    }
+    if (typeof document !== "undefined" && typeof document.querySelector === "function" && document.querySelector("dialog[open]")) {
+      return false;
+    }
+    if (navCtx && typeof navCtx.hasOtherEscapeMeaning === "function" && navCtx.hasOtherEscapeMeaning()) {
+      return false;
+    }
+    if (!ev.altKey && !ev.ctrlKey && !ev.metaKey && focusMainPane()) {
+      if (typeof ev.preventDefault === "function") ev.preventDefault();
       return true;
     }
   }
@@ -6213,6 +6247,15 @@ let prExpandedHunkWindows = {};
 let renderedDiffRows = [];
 let selectedDiffRowKey = null;
 let pendingPrDeepLink = null;
+const PR_AUTO_REFRESH_IDLE_MS = 5 * 60 * 1000;
+const PR_AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+const PR_AUTO_REFRESH_TICK_MS = 15 * 1000;
+let _prBackendReady = false;
+let _lastUserActivityAt = Date.now();
+let _lastGithubRefreshAt = Date.now();
+let _autoRefreshInFlight = false;
+let _autoRefreshTimerId = null;
+let _activityListenersBound = false;
 const DIFF_SAN_STATIC_PR_VIEWER_URL = "https://sanskrit-coders.github.io/diff_san/pull_requests/";
 
 function parsePrDeepLinkTargetFromLocation() {
@@ -6543,6 +6586,7 @@ async function init() {
   } catch (e) {
     showError(e.message);
   }
+  _prBackendReady = true;
   await loadPrList(false, metaInfo.default_repo || "");
   if (pendingPrDeepLink?.owner && pendingPrDeepLink?.repo && pendingPrDeepLink?.number) {
     const alreadyOpen = activePrKey
@@ -6553,6 +6597,7 @@ async function init() {
       await openPr(pendingPrDeepLink.owner, pendingPrDeepLink.repo, pendingPrDeepLink.number, false);
     }
   }
+  startPrIdleAutoRefreshTimer();
 }
 
 async function loadPrList(forceRefresh = false, preferredRepo = null) {
@@ -6589,9 +6634,11 @@ async function loadPrList(forceRefresh = false, preferredRepo = null) {
       renderActivePr();
     }
     setStatus(forceRefresh ? "Refreshed" : "", 2000);
+    _lastGithubRefreshAt = Date.now();
   } catch (e) {
     showError(e.message);
     setStatus("");
+    _lastGithubRefreshAt = Date.now();
   }
 }
 
@@ -6923,7 +6970,80 @@ async function selectChangelist(sha) {
   }
 }
 
-async function refreshAll() {
+function markPrUserActivity(now = Date.now()) {
+  _lastUserActivityAt = now;
+}
+
+function bindPrIdleActivityListeners() {
+  if (_activityListenersBound || typeof window === "undefined" || typeof window.addEventListener !== "function") return;
+  _activityListenersBound = true;
+  const onAct = () => markPrUserActivity();
+  for (const evt of ["pointerdown", "mousedown", "mousemove", "keydown", "input", "change", "wheel", "touchstart"]) {
+    window.addEventListener(evt, onAct, { passive: true, capture: true });
+  }
+}
+
+function isPrUserEditing() {
+  if (openComposer || activeCommentEdit) return true;
+  if (typeof document !== "undefined") {
+    const active = document.activeElement;
+    const tag = (active && active.tagName || "").toUpperCase();
+    const isEditableFocused = tag === "TEXTAREA" || tag === "SELECT"
+      || (tag === "INPUT" && active.type !== "button" && active.type !== "checkbox" && active.type !== "radio")
+      || Boolean(active?.isContentEditable);
+    if (isEditableFocused) return true;
+    if (typeof document.querySelectorAll === "function") {
+      const hasTypedReply = Array.from(document.querySelectorAll("textarea.reply-input, #compBody")).some(
+        el => Boolean((el.value || "").trim())
+      );
+      if (hasTypedReply) return true;
+    }
+  }
+  return false;
+}
+
+function shouldAutoRefreshPrFromGithub(now = Date.now()) {
+  if (!_prBackendReady || _autoRefreshInFlight) return false;
+  if (isPrUserEditing()) return false;
+  const ownerEl = typeof document !== "undefined" ? document.getElementById("ownerInput") : null;
+  const owner = normalizeOwnerInput(ownerEl ? ownerEl.value : "");
+  if (!owner) return false;
+  if ((now - _lastUserActivityAt) < PR_AUTO_REFRESH_IDLE_MS) return false;
+  if ((now - _lastGithubRefreshAt) < PR_AUTO_REFRESH_INTERVAL_MS) return false;
+  return true;
+}
+
+async function maybeAutoRefreshFromGithub(now = Date.now()) {
+  if (!shouldAutoRefreshPrFromGithub(now)) return false;
+  _autoRefreshInFlight = true;
+  _lastGithubRefreshAt = now;
+  try {
+    await refreshAll({ isAuto: true });
+    return true;
+  } finally {
+    _autoRefreshInFlight = false;
+  }
+}
+
+function startPrIdleAutoRefreshTimer() {
+  bindPrIdleActivityListeners();
+  if (_autoRefreshTimerId !== null || typeof setInterval !== "function") return;
+  _autoRefreshTimerId = setInterval(() => {
+    maybeAutoRefreshFromGithub();
+  }, PR_AUTO_REFRESH_TICK_MS);
+  if (_autoRefreshTimerId && typeof _autoRefreshTimerId.unref === "function") {
+    _autoRefreshTimerId.unref();
+  }
+}
+
+function stopPrIdleAutoRefreshTimer() {
+  if (_autoRefreshTimerId !== null && typeof clearInterval === "function") {
+    clearInterval(_autoRefreshTimerId);
+  }
+  _autoRefreshTimerId = null;
+}
+
+async function refreshAll({ isAuto = false } = {}) {
   showError("");
   const owner = normalizeOwnerInput(document.getElementById("ownerInput").value);
   const state = document.getElementById("stateSelect").value || "open";
@@ -6936,8 +7056,10 @@ async function refreshAll() {
     selectedChangelistSha = "";
     activeChangelistData = null;
   }
+  const mainPaneEl = typeof document !== "undefined" ? document.getElementById("mainPane") : null;
+  const prevMainScrollTop = isAuto && mainPaneEl ? mainPaneEl.scrollTop : null;
   const reqId = ++prListReqSeq;
-  setStatus("Refreshing from GitHub...");
+  setStatus(isAuto ? "Auto-refreshing from GitHub..." : "Refreshing from GitHub...");
   try {
     const payload = {
       owner,
@@ -6968,8 +7090,13 @@ async function refreshAll() {
       activePrData = null;
       renderActivePr();
     }
-    setStatus("Refreshed", 2500);
+    if (isAuto && mainPaneEl && prevMainScrollTop !== null) {
+      mainPaneEl.scrollTop = prevMainScrollTop;
+    }
+    _lastGithubRefreshAt = Date.now();
+    setStatus(isAuto ? "Auto-refreshed" : "Refreshed", 2500);
   } catch (e) {
+    _lastGithubRefreshAt = Date.now();
     showError(e.message);
     setStatus("");
   }
@@ -9161,6 +9288,7 @@ document.addEventListener("keydown", (ev) => {
     checkedStorageKey: PR_CHECKED_UNTIL_STORAGE_KEY,
     stepSidebar: stepPrSidebarItem,
     stepMainFile: delta => stepPrMainFile(delta, { requireMultiple: true, scrollBlock: "start" }),
+    hasOtherEscapeMeaning: () => isSettingsPaneOpen() || Boolean(activeCommentEdit) || Boolean(openComposer),
   })) return;
   const target = ev.target;
   const id = (target && target.id) || "";

@@ -619,6 +619,15 @@ def test_pure_js_diff_engine_parity_and_static_export_with_gap_expand(tmp_path: 
     "  if (!document.body.classList.contains('mod-alt-down')) throw new Error('local_diff Alt modifier tracking failed');\n"
     "  _syncModifierClasses({ type: 'keydown', key: 'Control', altKey: false, ctrlKey: true });\n"
     "  if (!document.body.classList.contains('mod-ctrl-down') || document.body.classList.contains('mod-alt-down')) throw new Error('local_diff Ctrl modifier tracking failed');\n"
+    "  const ldMainEl = document.getElementById('mainPane');\n"
+    "  const ldGitInp = document.getElementById('gitPathInput');\n"
+    "  ldMainEl.focus = () => { global.document.activeElement = ldMainEl; };\n"
+    "  global.document.activeElement = ldGitInp;\n"
+    "  // First Escape closes open diffFindBar rather than moving focus away; second Escape focuses #mainPane\n"
+    "  listeners['keydown']({ key: 'Escape', altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, target: ldGitInp, preventDefault(){}, stopPropagation(){} });\n"
+    "  if (elems['diffFindBar'].style.display !== 'none' || global.document.activeElement === ldMainEl) throw new Error('First Escape should close diffFindBar only');\n"
+    "  listeners['keydown']({ key: 'Escape', altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, target: ldGitInp, preventDefault(){}, stopPropagation(){} });\n"
+    "  if (global.document.activeElement !== ldMainEl) throw new Error('local_diff Escape did not focus #mainPane');\n"
     "})().catch(err => { console.error(err); process.exit(1); });\n"
   )
   assert '<u class="sc-key sc-ctrl">R</u>efresh' in static_html

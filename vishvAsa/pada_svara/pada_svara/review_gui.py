@@ -28,16 +28,20 @@ import uvicorn
 
 from pada_svara import review
 
-_PRESET_CANDIDATES = [
-  "/home/vvasuki/gitland/vishvAsa/vedAH_yajuH/content/maitrAyaNIyam/saMhitA/sarva-prastutiH",
-  "/home/vvasuki/gitland/vishvAsa/vedAH_yajuH/content/kAThakam/kaTha-kapiShTalAH/saMhitA/sarva-prastutiH",
-  "/home/vvasuki/gitland/vishvAsa/vedAH_yajuH/content/taittirIyam/sArasvata-vibhAgaH/AraNyakam/sarva-prastutiH",
-  "/home/vvasuki/gitland/vishvAsa/vedAH_yajuH/content/taittirIyam/sUtram/ApastambaH/gRhyam/ekAgnikANDam/sarva-prastutiH",
-  "/home/vvasuki/gitland/vishvAsa/vedAH_yajuH/static/taittirIyam/sUtram/ApastambaH/gRhyam/ekAgnikANDam",
-  "/home/vvasuki/gitland/vishvAsa/vedAH_yajuH/content/vAjasaneyam/mAdhyandinam/shatapatha-brAhmaNam/sarva-prastutiH",
-  "/home/vvasuki/gitland/vishvAsa/vedAH_yajuH/content/vAjasaneyam/kANvam/shatapatha-brAhmaNam/sarva-prastutiH",
-  "/home/vvasuki/gitland/vishvAsa/vedAH_yajuH/static/vAjasaneyam/mAdhyandinam/shatapatha-brAhmaNam",
-]
+def _discover_vedah_dirs(vishvasa_root: Path | None = None) -> list[str]:
+  """Return existing ``vedAH*/static`` and ``vedAH*/content`` directory paths."""
+  root = vishvasa_root or (Path.home() / "gitland" / "vishvAsa")
+  if not root.is_dir():
+    return []
+  found: list[str] = []
+  for repo in sorted(root.glob("vedAH*")):
+    if not repo.is_dir():
+      continue
+    for sub in ("static", "content"):
+      cand = repo / sub
+      if cand.is_dir():
+        found.append(str(cand))
+  return found
 
 
 class _ScanRequest(BaseModel):
@@ -349,7 +353,7 @@ def create_app(
 
   @app.get("/api/presets")
   def api_presets() -> dict[str, Any]:
-    presets = [p for p in _PRESET_CANDIDATES if os.path.isdir(p)]
+    presets = _discover_vedah_dirs()
     with store.lock:
       cur_dir = store.scan_data["dir_path"] if store.scan_data else (initial_dir or "")
     return {"presets": presets, "default_n": store.default_n, "current_dir": cur_dir}
@@ -766,8 +770,7 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     font-size: 12px;
     border-radius: 5px;
   }
-  #dirInput { flex: 1; min-width: 180px; font-family: monospace; }
-  #presetSelect { max-width: 220px; }
+  #dirInput { flex: 1; min-width: 220px; font-family: monospace; }
   button {
     padding: 6px 12px;
     border: 1px solid var(--border);
@@ -862,10 +865,14 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     border-right: 1px solid var(--border);
     min-height: 0;
     overflow: hidden;
-    padding: 10px 6px 10px 10px;
+    padding: 10px 0 10px 10px;
     display: flex;
     flex-direction: column;
     gap: 8px;
+  }
+  aside.sidebar > :not(.pane-scroll),
+  aside.commit-pane > :not(.pane-scroll) {
+    margin-right: 10px;
   }
   aside.commit-pane {
     border-right: none;
@@ -892,6 +899,7 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     flex-direction: column;
     gap: 14px;
   }
+  main:focus { outline: none; }
   main::-webkit-scrollbar,
   .pane-scroll::-webkit-scrollbar,
   aside.commit-pane::-webkit-scrollbar {
@@ -1427,11 +1435,15 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
 <body>
 <header>
   <div class="row">
-    <select id="presetSelect" title="Quick preset directories"></select>
-    <input id="dirInput" type="text" placeholder="/path/to/vedAH_yajuH/content/..." />
+    <input id="dirInput" type="text" list="dirPresets" placeholder="/home/vvasuki/gitland/vishvAsa/vedAH_yajuH/static" />
+    <datalist id="dirPresets"></datalist>
     <button onclick="browseDir()">Browse</button>
     <button class="primary" onclick="scanDirectory()">Scan</button>
-    <span id="scanSpinner" style="color:var(--muted); font-size:11.5px;"></span>
+    <button type="button" class="stat-pill filter-pill" id="statTotal" data-status-filter="all" title="Show all matching suggestions (Alt+L / Alt+0)" onclick="setStatusFilter('all')">A<u class="sc-key sc-alt">l</u>l: 0 <span class="kbd-hint">Alt+L</span></button>
+    <button type="button" class="stat-pill filter-pill pill-pending active" id="statPending" data-status-filter="pending" title="Show only pending suggestions without !! (Alt+U)" onclick="setStatusFilter('pending')">Pend: 0 <span class="kbd-hint">Alt+U</span></button>
+    <button type="button" class="stat-pill filter-pill pill-accept" id="statAccept" data-status-filter="accept" title="Show only accepted suggestions (Alt+A)" onclick="setStatusFilter('accept')"><u class="sc-key sc-alt">A</u>cc: 0 <span class="kbd-hint">Alt+A</span></button>
+    <button type="button" class="stat-pill filter-pill" id="statReject" data-status-filter="reject" title="Show only rejected suggestions (Alt+R)" style="background:var(--red-soft); color:var(--red); border-color:#f5b7b1;" onclick="setStatusFilter('reject')"><u class="sc-key sc-alt">R</u>ej: 0 <span class="kbd-hint">Alt+R</span></button>
+    <button type="button" class="stat-pill filter-pill pill-hold" id="statHold" data-status-filter="has_feedback" title="Show only suggestions with !! comments (Alt+W)" onclick="setStatusFilter('has_feedback')">!!: 0 <span class="kbd-hint">Alt+W</span></button>
   </div>
   <div class="row">
     <label title="Context lines (n)">Ctx: <input id="nInput" type="number" min="0" max="30" value="3" style="width:46px" onchange="loadItems(1)" /></label>
@@ -1462,12 +1474,8 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     </label>
     <input id="searchInput" type="text" placeholder="Filter..." style="width:100px;" oninput="debouncedSearch()" />
     <button id="undoBtn" class="small" title="Undo last review action (Ctrl+Z)" onclick="undoLastAction()" disabled>↶ Undo</button>
-    <button type="button" class="stat-pill filter-pill" id="statTotal" data-status-filter="all" title="Show all matching suggestions (Alt+L / Alt+0)" onclick="setStatusFilter('all')">A<u class="sc-key sc-alt">l</u>l: 0 <span class="kbd-hint">Alt+L</span></button>
-    <button type="button" class="stat-pill filter-pill pill-pending active" id="statPending" data-status-filter="pending" title="Show only pending suggestions without !! (Alt+U)" onclick="setStatusFilter('pending')">Pend: 0 <span class="kbd-hint">Alt+U</span></button>
-    <button type="button" class="stat-pill filter-pill pill-accept" id="statAccept" data-status-filter="accept" title="Show only accepted suggestions (Alt+A)" onclick="setStatusFilter('accept')"><u class="sc-key sc-alt">A</u>cc: 0 <span class="kbd-hint">Alt+A</span></button>
-    <button type="button" class="stat-pill filter-pill" id="statReject" data-status-filter="reject" title="Show only rejected suggestions (Alt+R)" style="background:var(--red-soft); color:var(--red); border-color:#f5b7b1;" onclick="setStatusFilter('reject')"><u class="sc-key sc-alt">R</u>ej: 0 <span class="kbd-hint">Alt+R</span></button>
-    <button type="button" class="stat-pill filter-pill pill-hold" id="statHold" data-status-filter="has_feedback" title="Show only suggestions with !! comments (Alt+W)" onclick="setStatusFilter('has_feedback')">!!: 0 <span class="kbd-hint">Alt+W</span></button>
     <button id="helpBtn" class="small" type="button" title="About &amp; keyboard shortcuts (?)" onclick="toggleHelpPane()">?</button>
+    <span id="scanSpinner" style="color:var(--muted); font-size:11.5px;"></span>
   </div>
 </header>
 <div id="helpPane" class="help-drawer" style="display:none;">
@@ -1490,7 +1498,7 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     <div id="fileList" class="pane-scroll"></div>
   </aside>
 
-  <main id="mainPane">
+  <main id="mainPane" tabindex="-1">
     <div class="pager">
       <div id="pageInfo" style="color:var(--muted); font-size:12px;">Enter a directory above and click Scan.</div>
       <div class="row">
@@ -1553,6 +1561,7 @@ let latestSummary = null;
 let focusedIdx = -1;
 let searchTimer = null;
 let undoStack = [];
+let _recordingInFlight = 0;
 
 function updateUndoButton() {
   const btn = document.getElementById("undoBtn");
@@ -1562,12 +1571,52 @@ function updateUndoButton() {
   btn.title = top ? `Undo ${top.label || "last action"} (Ctrl+Z)` : "Undo last review action (Ctrl+Z)";
 }
 
+function setStatus(msg) {
+  const sp = typeof document !== "undefined" ? document.getElementById("scanSpinner") : null;
+  if (!sp) return;
+  sp.textContent = msg || "";
+  sp.title = msg || "";
+}
+
 function flashStatus(msg) {
-  const sp = document.getElementById("scanSpinner");
-  if (!sp || !msg) return;
-  sp.textContent = msg;
-  sp.title = msg;
-  setTimeout(() => { if (sp.textContent === msg) { sp.textContent = ""; sp.title = ""; } }, 2500);
+  if (!msg) return;
+  setStatus(msg);
+  setTimeout(() => {
+    const sp = typeof document !== "undefined" ? document.getElementById("scanSpinner") : null;
+    if (sp && sp.textContent === msg) setStatus("");
+  }, 2500);
+}
+
+async function _withRecordingStatus(fn) {
+  _recordingInFlight += 1;
+  setStatus("⏳ Recording...");
+  try {
+    return await fn();
+  } finally {
+    _recordingInFlight = Math.max(0, _recordingInFlight - 1);
+    if (_recordingInFlight === 0) {
+      const sp = typeof document !== "undefined" ? document.getElementById("scanSpinner") : null;
+      if (sp && sp.textContent === "⏳ Recording...") setStatus("");
+    }
+  }
+}
+
+function focusMainPane() {
+  if (typeof document === "undefined") return false;
+  const mainEl = typeof document.getElementById === "function" ? document.getElementById("mainPane") : null;
+  const active = document.activeElement;
+  if (active && active !== document.body && active !== mainEl && typeof active.blur === "function") {
+    active.blur();
+  }
+  if (mainEl && typeof mainEl.focus === "function") {
+    try {
+      mainEl.focus({ preventScroll: true });
+    } catch (_) {
+      mainEl.focus();
+    }
+    return true;
+  }
+  return false;
 }
 
 function esc(s) {
@@ -1600,18 +1649,17 @@ async function init() {
   const resp = await fetch("/api/presets");
   const data = await resp.json();
   document.getElementById("nInput").value = data.default_n ?? 3;
-  const sel = document.getElementById("presetSelect");
-  sel.innerHTML = `<option value="">-- Preset directories --</option>` +
-    data.presets.map(p => `<option value="${esc(p)}">${esc(p.split("/").slice(-3).join("/"))}</option>`).join("");
-  sel.onchange = () => {
-    if (sel.value) {
-      document.getElementById("dirInput").value = sel.value;
-      scanDirectory();
-    }
-  };
+  const dl = document.getElementById("dirPresets");
+  const presets = Array.isArray(data.presets) ? data.presets : [];
+  if (dl) {
+    dl.innerHTML = presets.map(p => `<option value="${esc(p)}"></option>`).join("");
+  }
+  const dirInp = document.getElementById("dirInput");
   if (data.current_dir) {
-    document.getElementById("dirInput").value = data.current_dir;
+    if (dirInp) dirInp.value = data.current_dir;
     await loadItems(1);
+  } else if (presets.length && dirInp) {
+    dirInp.value = presets[0];
   }
 }
 
@@ -1625,8 +1673,7 @@ async function browseDir() {
 }
 
 async function _runScan(dirPath, { preserveView = false } = {}) {
-  const sp = document.getElementById("scanSpinner");
-  if (sp) sp.textContent = "Scanning...";
+  setStatus("⏳ Scanning...");
   try {
     const resp = await fetch("/api/scan", {
       method: "POST",
@@ -1648,7 +1695,8 @@ async function _runScan(dirPath, { preserveView = false } = {}) {
     await loadItems(preserveView ? currentPage : 1);
     if (preserveView) flashStatus("Refreshed");
   } finally {
-    if (sp && sp.textContent === "Scanning...") sp.textContent = "";
+    const sp = typeof document !== "undefined" ? document.getElementById("scanSpinner") : null;
+    if (sp && sp.textContent === "⏳ Scanning...") setStatus("");
   }
 }
 
@@ -2400,65 +2448,67 @@ async function submitCard(idx, collapseOnDone = true, recordUndo = true) {
     label: it.vp_sug_old || it.pp_line_core || it.rel_path || itemId,
   };
 
-  const resp = await fetch("/api/submit", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      item_id: itemId,
-      decision,
-      feedback_text: txt,
-      target_mode: targetMode,
-      sync_prefills: syncPrefills,
-    }),
-  });
-  const data = await resp.json();
-  if (!resp.ok) return alert(data.detail || "Submit failed");
+  await _withRecordingStatus(async () => {
+    const resp = await fetch("/api/submit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        item_id: itemId,
+        decision,
+        feedback_text: txt,
+        target_mode: targetMode,
+        sync_prefills: syncPrefills,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) return alert(data.detail || "Submit failed");
 
-  if (recordUndo && (decision !== undoSnap.prevDecision || txt.trim() !== undoSnap.prevFeedback.trim())) {
-    undoStack.push(undoSnap);
-    updateUndoButton();
-  }
-
-  const activeEl = document.activeElement;
-  if (activeEl && activeEl.id === `fbInput_${itemId}`) activeEl.blur();
-
-  if (data.item) {
-    currentItems[idx] = data.item;
-    draftDecisions[itemId] = data.item.decision || "pending";
-  } else {
-    currentItems[idx] = { ...it, decision, existing_feedback: data.existing_feedback ?? txt };
-  }
-  if (collapseOnDone) collapsedCards[itemId] = true;
-  else delete collapsedCards[itemId];
-  renderSummary(data.summary);
-
-  if (document.getElementById("statusFilter").value !== "all") {
-    await loadItems(currentPage);
-    return;
-  }
-
-  // Refresh the whole page cards when VP text changed in case sibling cards share the same VP block offsets
-  const pageOffset = (currentPage - 1) * lastPageSize;
-  const cardEl = document.getElementById(`card_${idx}`);
-  if (cardEl) {
-    const itemObj = data.item || currentItems[idx];
-    cardEl.outerHTML = renderOneCardHtml(itemObj, idx, pageOffset);
-    const st = document.getElementById(`fbStatus_${itemId}`);
-    if (st) {
-      const parts = [];
-      if (decision !== "pending") parts.push(decision === "accept" ? "Saved Accept ✓" : "Saved Reject ✗");
-      if (data.comment) parts.push(`Saved ${data.comment}`);
-      st.textContent = parts.join(" · ") || "Saved";
+    if (recordUndo && (decision !== undoSnap.prevDecision || txt.trim() !== undoSnap.prevFeedback.trim())) {
+      undoStack.push(undoSnap);
+      updateUndoButton();
     }
-  }
-  // If sibling card on this page shares the same VP block, refresh its raw snapshot too
-  if (data.item) {
-    await refreshSamePageSiblings(idx, data.item);
-  }
-  if (idx + 1 < currentItems.length) {
-    setFocused(idx + 1);
-    document.getElementById(`card_${idx + 1}`)?.scrollIntoView({ block: "nearest" });
-  }
+
+    const activeEl = document.activeElement;
+    if (activeEl && activeEl.id === `fbInput_${itemId}`) activeEl.blur();
+
+    if (data.item) {
+      currentItems[idx] = data.item;
+      draftDecisions[itemId] = data.item.decision || "pending";
+    } else {
+      currentItems[idx] = { ...it, decision, existing_feedback: data.existing_feedback ?? txt };
+    }
+    if (collapseOnDone) collapsedCards[itemId] = true;
+    else delete collapsedCards[itemId];
+    renderSummary(data.summary);
+
+    if (document.getElementById("statusFilter").value !== "all") {
+      await loadItems(currentPage);
+      return;
+    }
+
+    // Refresh the whole page cards when VP text changed in case sibling cards share the same VP block offsets
+    const pageOffset = (currentPage - 1) * lastPageSize;
+    const cardEl = document.getElementById(`card_${idx}`);
+    if (cardEl) {
+      const itemObj = data.item || currentItems[idx];
+      cardEl.outerHTML = renderOneCardHtml(itemObj, idx, pageOffset);
+      const st = document.getElementById(`fbStatus_${itemId}`);
+      if (st) {
+        const parts = [];
+        if (decision !== "pending") parts.push(decision === "accept" ? "Saved Accept ✓" : "Saved Reject ✗");
+        if (data.comment) parts.push(`Saved ${data.comment}`);
+        st.textContent = parts.join(" · ") || "Saved";
+      }
+    }
+    // If sibling card on this page shares the same VP block, refresh its raw snapshot too
+    if (data.item) {
+      await refreshSamePageSiblings(idx, data.item);
+    }
+    if (idx + 1 < currentItems.length) {
+      setFocused(idx + 1);
+      document.getElementById(`card_${idx + 1}`)?.scrollIntoView({ block: "nearest" });
+    }
+  });
 }
 
 async function refreshSamePageSiblings(submittedIdx, updatedItem) {
@@ -2496,25 +2546,27 @@ async function resetCard(idx) {
 }
 
 async function acceptAllInFile(fp) {
-  const syncPrefills = document.getElementById("syncPrefillsChk").checked;
-  const resp = await fetch("/api/file_accept_all", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ file_path: fp, decision: "accept", sync_prefills: syncPrefills }),
-  });
-  const data = await resp.json();
-  if (!resp.ok) return alert(data.detail || "Failed");
-  const changed = (data.previous_states || []).filter(s => s.decision !== "accept");
-  if (changed.length) {
-    undoStack.push({
-      type: "batch_decisions",
-      prevStates: changed,
-      syncPrefills,
-      label: `Accept all (${changed.length})`,
+  await _withRecordingStatus(async () => {
+    const syncPrefills = document.getElementById("syncPrefillsChk").checked;
+    const resp = await fetch("/api/file_accept_all", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file_path: fp, decision: "accept", sync_prefills: syncPrefills }),
     });
-    updateUndoButton();
-  }
-  await loadItems(currentPage);
+    const data = await resp.json();
+    if (!resp.ok) return alert(data.detail || "Failed");
+    const changed = (data.previous_states || []).filter(s => s.decision !== "accept");
+    if (changed.length) {
+      undoStack.push({
+        type: "batch_decisions",
+        prevStates: changed,
+        syncPrefills,
+        label: `Accept all (${changed.length})`,
+      });
+      updateUndoButton();
+    }
+    await loadItems(currentPage);
+  });
 }
 
 async function undoLastAction() {
@@ -2523,50 +2575,58 @@ async function undoLastAction() {
   updateUndoButton();
   const syncPrefills = document.getElementById("syncPrefillsChk").checked;
   if (snap.type === "submit") {
-    const resp = await fetch("/api/submit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        item_id: snap.itemId,
-        decision: snap.prevDecision,
-        feedback_text: snap.prevFeedback,
-        target_mode: snap.prevTargetMode,
-        sync_prefills: syncPrefills,
-      }),
-    });
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-      undoStack.push(snap);
-      updateUndoButton();
-      return alert(data.detail || "Undo failed");
-    }
-    if (snap.prevCollapsed) collapsedCards[snap.itemId] = true;
-    else delete collapsedCards[snap.itemId];
-    await loadItems(currentPage);
-    const restoredIdx = currentItems.findIndex(x => x.item_id === snap.itemId);
-    if (restoredIdx >= 0) {
-      setFocused(restoredIdx);
-      document.getElementById(`card_${restoredIdx}`)?.scrollIntoView({ block: "nearest" });
-    }
-    flashStatus(`Undone: ${snap.label}`);
-  } else if (snap.type === "batch_decisions") {
-    for (const prev of (snap.prevStates || [])) {
-      const resp = await fetch("/api/decision", {
+    const ok = await _withRecordingStatus(async () => {
+      const resp = await fetch("/api/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          item_id: prev.item_id,
-          decision: prev.decision,
-          sync_prefills: snap.syncPrefills ?? syncPrefills,
+          item_id: snap.itemId,
+          decision: snap.prevDecision,
+          feedback_text: snap.prevFeedback,
+          target_mode: snap.prevTargetMode,
+          sync_prefills: syncPrefills,
         }),
       });
+      const data = await resp.json().catch(() => ({}));
       if (!resp.ok) {
-        const data = await resp.json().catch(() => ({}));
-        return alert(data.detail || "Batch undo failed");
+        undoStack.push(snap);
+        updateUndoButton();
+        alert(data.detail || "Undo failed");
+        return false;
       }
-    }
-    await loadItems(currentPage);
-    flashStatus(`Undone: ${snap.label}`);
+      if (snap.prevCollapsed) collapsedCards[snap.itemId] = true;
+      else delete collapsedCards[snap.itemId];
+      await loadItems(currentPage);
+      const restoredIdx = currentItems.findIndex(x => x.item_id === snap.itemId);
+      if (restoredIdx >= 0) {
+        setFocused(restoredIdx);
+        document.getElementById(`card_${restoredIdx}`)?.scrollIntoView({ block: "nearest" });
+      }
+      return true;
+    });
+    if (ok) flashStatus(`Undone: ${snap.label}`);
+  } else if (snap.type === "batch_decisions") {
+    const ok = await _withRecordingStatus(async () => {
+      for (const prev of (snap.prevStates || [])) {
+        const resp = await fetch("/api/decision", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            item_id: prev.item_id,
+            decision: prev.decision,
+            sync_prefills: snap.syncPrefills ?? syncPrefills,
+          }),
+        });
+        if (!resp.ok) {
+          const data = await resp.json().catch(() => ({}));
+          alert(data.detail || "Batch undo failed");
+          return false;
+        }
+      }
+      await loadItems(currentPage);
+      return true;
+    });
+    if (ok) flashStatus(`Undone: ${snap.label}`);
   }
 }
 
@@ -2601,11 +2661,7 @@ async function openInGoldenDict(word, itemId) {
   const msg = `Looked up ${data.word || word} in GoldenDict`;
   const cardSt = itemId ? document.getElementById(`saveStatus_${itemId}`) : null;
   if (cardSt) cardSt.textContent = msg;
-  const sp = document.getElementById("scanSpinner");
-  if (sp) {
-    sp.textContent = msg;
-    setTimeout(() => { if (sp.textContent === msg) sp.textContent = ""; }, 2500);
-  }
+  flashStatus(msg);
 }
 
 const EDITOR_TARGETS = {
@@ -2637,11 +2693,7 @@ async function openInEditor(editor, filePath, needleOrLine, itemId) {
   if (cardSt) {
     cardSt.textContent = msg;
   }
-  const sp = document.getElementById("scanSpinner");
-  if (sp) {
-    sp.textContent = msg;
-    setTimeout(() => { if (sp.textContent === msg) sp.textContent = ""; }, 2500);
-  }
+  flashStatus(msg);
 }
 
 function openInIdea(filePath, needleOrLine, itemId) {
@@ -2681,7 +2733,7 @@ function isHelpPaneOpen() {
   const pane = typeof document !== "undefined" && typeof document.getElementById === "function"
     ? document.getElementById("helpPane")
     : null;
-  return !!(pane && pane.style && pane.style.display !== "none" && pane.style.display !== "");
+  return Boolean(pane && pane.style && pane.style.display && pane.style.display !== "none");
 }
 
 function toggleHelpPane(forceOpen = null) {
@@ -2801,10 +2853,23 @@ document.addEventListener("keydown", (ev) => {
   const id = (target && target.id) || "";
   const tag = (target && target.tagName || "").toUpperCase();
 
-  if (ev.key === "Escape" && isHelpPaneOpen()) {
-    ev.preventDefault();
-    closeHelpPane();
-    return;
+  if (ev.key === "Escape") {
+    if (isHelpPaneOpen()) {
+      ev.preventDefault();
+      closeHelpPane();
+      return;
+    }
+    const diffDlg = typeof document !== "undefined" && typeof document.getElementById === "function"
+      ? document.getElementById("diffDialog")
+      : null;
+    if (diffDlg && diffDlg.open) {
+      return;
+    }
+    if (!ev.altKey && !ev.ctrlKey && !ev.metaKey) {
+      ev.preventDefault();
+      focusMainPane();
+      return;
+    }
   }
   if (ev.key === "?" && !ev.ctrlKey && !ev.altKey && !ev.metaKey) {
     const isTextInput = tag === "TEXTAREA" || tag === "SELECT"
