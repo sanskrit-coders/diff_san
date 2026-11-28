@@ -655,7 +655,7 @@ def main(argv: Sequence[str] | None = None) -> int:
       url = existing["url"]
       print(f"GitHub PR Reviewer running at {url} (reused existing server)", flush=True)
       if not args.no_browser and not existing["meta"].get("has_active_ui"):
-        threading.Thread(target=_launch_browser, args=(url,), daemon=True).start()
+        _launch_browser(url)
       return 0
 
   app = create_app(

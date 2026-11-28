@@ -379,7 +379,7 @@ def main(argv: Sequence[str] | None = None) -> int:
           except Exception:
             reused_ok = False
         elif not args.no_browser and not meta.get("has_active_ui"):
-          threading.Thread(target=local_helpers.launch_browser, args=(url,), daemon=True).start()
+          local_helpers.launch_browser(url)
         if reused_ok:
           print(f"local-diff-san running at {url} (reused existing server, mode={spec.mode})", flush=True)
           return 0
