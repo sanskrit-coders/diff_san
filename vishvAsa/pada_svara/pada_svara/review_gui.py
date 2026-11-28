@@ -860,8 +860,9 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
   aside.sidebar, aside.commit-pane {
     background: var(--surface);
     border-right: 1px solid var(--border);
-    overflow-y: auto;
-    padding: 10px;
+    min-height: 0;
+    overflow: hidden;
+    padding: 10px 6px 10px 10px;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -869,6 +870,17 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
   aside.commit-pane {
     border-right: none;
     border-left: 1px solid var(--border);
+    overflow-y: auto;
+  }
+  .pane-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: scroll;
+    scrollbar-gutter: stable;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-right: 4px;
   }
   main {
     min-width: 0;
@@ -880,28 +892,40 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     flex-direction: column;
     gap: 14px;
   }
-  main::-webkit-scrollbar {
+  main::-webkit-scrollbar,
+  .pane-scroll::-webkit-scrollbar,
+  aside.commit-pane::-webkit-scrollbar {
     width: 14px;
     height: 14px;
   }
-  main::-webkit-scrollbar-track {
+  main::-webkit-scrollbar-track,
+  .pane-scroll::-webkit-scrollbar-track,
+  aside.commit-pane::-webkit-scrollbar-track {
     background: var(--surface-2);
     border-left: 1px solid var(--border);
   }
-  main::-webkit-scrollbar-thumb {
+  main::-webkit-scrollbar-thumb,
+  .pane-scroll::-webkit-scrollbar-thumb,
+  aside.commit-pane::-webkit-scrollbar-thumb {
     background: #a58f74;
     border-radius: 7px;
     border: 2px solid var(--surface-2);
     min-height: 36px;
   }
-  main::-webkit-scrollbar-thumb:hover {
+  main::-webkit-scrollbar-thumb:hover,
+  .pane-scroll::-webkit-scrollbar-thumb:hover,
+  aside.commit-pane::-webkit-scrollbar-thumb:hover {
     background: var(--accent);
   }
-  main::-webkit-scrollbar-thumb:active {
+  main::-webkit-scrollbar-thumb:active,
+  .pane-scroll::-webkit-scrollbar-thumb:active,
+  aside.commit-pane::-webkit-scrollbar-thumb:active {
     background: #6c340d;
   }
   @supports not selector(::-webkit-scrollbar) {
-    main {
+    main,
+    .pane-scroll,
+    aside.commit-pane {
       scrollbar-width: auto;
       scrollbar-color: #a58f74 var(--surface-2);
     }
@@ -1463,7 +1487,7 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
       <span>Files (<span id="fileCount">0</span>)</span>
       <button class="small" onclick="selectFileFilter('')">Show All</button>
     </div>
-    <div id="fileList"></div>
+    <div id="fileList" class="pane-scroll"></div>
   </aside>
 
   <main id="mainPane">
@@ -1493,7 +1517,7 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     <div style="font-size:11px; color:var(--muted);">
       Accepting suggestions marks uncommitted files below (only checked dirty files are committed via scoped <code>git commit --only</code>).
     </div>
-    <div id="markedFilesList" style="display:flex; flex-direction:column; gap:6px; flex:1; overflow-y:auto;"></div>
+    <div id="markedFilesList" class="pane-scroll" style="gap:6px; min-height:80px;"></div>
     <div class="commit-box">
       <label style="font-size:12px; font-weight:600;">Commit message:
         <textarea id="commitMsg">Review accepted accent fix suggestions</textarea>

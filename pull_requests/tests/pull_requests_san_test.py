@@ -2091,4 +2091,4 @@ def test_static_pr_export_and_github_rest_adapter(tmp_path: Path):
   shortcut_line = static_html.split('id="shortcutFooter"')[1].split('</div>')[0]
   assert "<strong>Ctrl+F</strong>" in shortcut_line and "<strong>Shift+PgUp</strong>" in shortcut_line
   assert "#shortcutFooter strong" in static_html
-  assert "main::-webkit-scrollbar" in static_html and "scrollbar-gutter: stable" in static_html
+  assert "main::-webkit-scrollbar" in static_html and ".scroll-list::-webkit-scrollbar" in static_html and "scrollbar-gutter: stable" in static_html

@@ -172,16 +172,18 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    padding: 10px;
+    padding: 10px 6px 10px 10px;
     gap: 6px;
   }
   .scroll-list {
-    overflow-y: auto;
+    overflow-y: scroll;
+    scrollbar-gutter: stable;
     display: flex;
     flex-direction: column;
     gap: 5px;
     min-height: 0;
     flex: 1;
+    padding-right: 4px;
   }
   .pane-title {
     font-size: 16px;
@@ -313,28 +315,34 @@
     flex-direction: column;
     gap: 14px;
   }
-  main::-webkit-scrollbar {
+  main::-webkit-scrollbar,
+  .scroll-list::-webkit-scrollbar {
     width: 14px;
     height: 14px;
   }
-  main::-webkit-scrollbar-track {
+  main::-webkit-scrollbar-track,
+  .scroll-list::-webkit-scrollbar-track {
     background: var(--surface-2);
     border-left: 1px solid var(--border);
   }
-  main::-webkit-scrollbar-thumb {
+  main::-webkit-scrollbar-thumb,
+  .scroll-list::-webkit-scrollbar-thumb {
     background: #a58f74;
     border-radius: 7px;
     border: 2px solid var(--surface-2);
     min-height: 36px;
   }
-  main::-webkit-scrollbar-thumb:hover {
+  main::-webkit-scrollbar-thumb:hover,
+  .scroll-list::-webkit-scrollbar-thumb:hover {
     background: var(--accent);
   }
-  main::-webkit-scrollbar-thumb:active {
+  main::-webkit-scrollbar-thumb:active,
+  .scroll-list::-webkit-scrollbar-thumb:active {
     background: #6c340d;
   }
   @supports not selector(::-webkit-scrollbar) {
-    main {
+    main,
+    .scroll-list {
       scrollbar-width: auto;
       scrollbar-color: #a58f74 var(--surface-2);
     }

@@ -627,7 +627,7 @@ def test_pure_js_diff_engine_parity_and_static_export_with_gap_expand(tmp_path: 
   shortcut_line = static_html.split('id="shortcutFooter"')[1].split('</div>')[0]
   assert "<strong>Ctrl+F</strong>" in shortcut_line and "<strong>Alt+S</strong>" in shortcut_line
   assert "#shortcutFooter strong" in static_html
-  assert "main::-webkit-scrollbar" in static_html and "scrollbar-gutter: stable" in static_html
+  assert "main::-webkit-scrollbar" in static_html and ".scroll-list::-webkit-scrollbar" in static_html and "scrollbar-gutter: stable" in static_html
   s_js = tmp_path / "static_test.js"
   s_js.write_text(static_harness, encoding="utf-8")
   subprocess.check_call(["node", str(s_js)])
