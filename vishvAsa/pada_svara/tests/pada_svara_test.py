@@ -419,6 +419,35 @@ def test_vp_only_feedback_fallback_and_scoped_git_commit_via_fastapi(tmp_path: P
   assert not any("01_accepted.md" in ln or "03_untracked_new.md" in ln for ln in status_lines)
   assert commit_resp["summary"]["marked_files"] == []
 
+  # Batch select-all / clear via /api/file_mark and Commit + Push via /api/commit(push=True)
+  bare_remote = tmp_path / "remote.git"
+  _git(tmp_path, "init", "--bare", str(bare_remote))
+  branch_name = _git(repo, "branch", "--show-current").strip()
+  _git(repo, "remote", "add", "origin", str(bare_remote))
+  _git(repo, "push", "-u", "origin", branch_name)
+
+  mark_all = client.post(
+    "/api/file_mark",
+    json={"file_paths": [str(vp_only_file), str(unrelated_dirty)], "marked": True},
+  ).json()
+  assert set(mark_all["summary"]["marked_files"]) == {str(vp_only_file.resolve())}
+  clr_all = client.post(
+    "/api/file_mark",
+    json={"file_paths": [str(vp_only_file)], "marked": False},
+  ).json()
+  assert clr_all["summary"]["marked_files"] == []
+
+  vp_only_file.write_text(vp_only_file.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+  push_resp = client.post(
+    "/api/commit",
+    json={"file_paths": [str(vp_only_file)], "commit_message": "Commit and push vp_only", "push": True},
+  ).json()
+  assert push_resp["push_ok"] is True
+  assert push_resp["results"][0]["pushed"] is True
+  remote_heads = _git(bare_remote, "show", "--name-only", "--format=", f"refs/heads/{branch_name}").splitlines()
+  assert str(vp_only_file.relative_to(repo)) in remote_heads
+  assert _git(repo, "diff", "--cached", "--name-only").strip() == "content/unrelated_staged.md"
+
 
 def test_submit_accept_reject_only_alters_prastuti_and_handles_siblings(tmp_path: Path):
   site = tmp_path / "vedAH_yajuH"
@@ -861,11 +890,36 @@ def test_review_gui_embedded_js_syntax(tmp_path: Path):
     "  elems['searchInput'].focus();\n"
     "  listeners['keydown']({ key: 'Escape', altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, target: elems['searchInput'], preventDefault(){}, stopPropagation(){} });\n"
     "  if (global.document.activeElement !== elems['mainPane']) throw new Error('Escape did not return focus to mainPane');\n"
+    "  // Right commit pane collapse toggle, Select all, Clear, and Commit + Push\n"
+    "  global.alert = (msg) => { throw new Error('Unexpected alert: ' + msg); };\n"
+    "  toggleCommitPane(true);\n"
+    "  if (!elems['workspaceEl'].classList.contains('commit-collapsed') || elems['toggleCommitPaneBtn'].textContent !== '«') throw new Error('pada_svara toggleCommitPane(true) failed');\n"
+    "  toggleCommitPane(false);\n"
+    "  if (elems['workspaceEl'].classList.contains('commit-collapsed') || elems['toggleCommitPaneBtn'].textContent !== '»') throw new Error('pada_svara toggleCommitPane(false) failed');\n"
+    "  const dirtyFilesFixture = [\n"
+    "    { file_path: '/repo/a.md', rel_display: 'a.md', git_xy: ' M', git_label: 'M', dirty: true, marked: false, counts: { accepted: 1, rejected: 0, pending: 0, with_feedback: 0, total: 1 } },\n"
+    "    { file_path: '/repo/b.md', rel_display: 'b.md', git_xy: '??', git_label: '??', dirty: true, marked: true, counts: { accepted: 0, rejected: 0, pending: 0, with_feedback: 0, total: 1 } },\n"
+    "  ];\n"
+    "  latestSummary = { total_items: 1, counts: { pending: 0, accept: 1, reject: 0, with_feedback: 0 }, marked_files: ['/repo/b.md'], files: dirtyFilesFixture };\n"
+    "  const beforeSelAll = fetchedCalls.length;\n"
+    "  await selectAllCommitFiles();\n"
+    "  const markAllCall = fetchedCalls.slice(beforeSelAll).find(c => c.url === '/api/file_mark');\n"
+    "  if (!markAllCall || !markAllCall.body.includes('/repo/a.md') || !markAllCall.body.includes('/repo/b.md') || !markAllCall.body.includes('\"marked\":true')) {\n"
+    "    throw new Error('selectAllCommitFiles did not batch mark all dirty files: ' + JSON.stringify(markAllCall));\n"
+    "  }\n"
+    "  latestSummary = { total_items: 1, counts: { pending: 0, accept: 1, reject: 0, with_feedback: 0 }, marked_files: ['/repo/a.md', '/repo/b.md'], files: dirtyFilesFixture.map(f => ({ ...f, marked: true })) };\n"
+    "  document.getElementById('commitMsg').value = 'Commit and push';\n"
+    "  const beforePush = fetchedCalls.length;\n"
+    "  await commitMarked(true);\n"
+    "  const pushCall = fetchedCalls.slice(beforePush).find(c => c.url === '/api/commit');\n"
+    "  if (!pushCall || !pushCall.body.includes('\"push\":true')) throw new Error('commitMarked(true) did not pass push=true: ' + JSON.stringify(pushCall));\n"
     "})().catch(err => { console.error(err); process.exit(1); });\n"
     )
     assert ".sutra-link {" in review_gui._RENDERED_HTML
     assert "presetSelect" not in review_gui._RENDERED_HTML
     assert 'list="dirPresets"' in review_gui._RENDERED_HTML and '<datalist id="dirPresets">' in review_gui._RENDERED_HTML
+    for cid in ('id="commitPaneEl"', 'id="toggleCommitPaneBtn"', 'id="commitCollapsedRail"', 'id="selectAllCommitBtn"', 'id="clearCommitSelBtn"', 'id="commitBtn"', 'id="commitPushBtn"'):
+      assert cid in review_gui._RENDERED_HTML, f"Missing {cid} in pada_svara GUI HTML"
     hdr_html = review_gui._RENDERED_HTML.split("<header>", 1)[1].split("</header>", 1)[0]
     row1_html, row2_html = hdr_html.split("</div>\n  <div class=\"row\">", 1)
     for pid in ('id="dirInput"', 'id="statTotal"', 'id="statPending"', 'id="statAccept"', 'id="statReject"', 'id="statHold"'):

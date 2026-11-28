@@ -11,6 +11,7 @@ import os
 import pathlib
 import re
 import subprocess
+import tempfile
 from typing import Any, Iterable, Sequence
 
 from doc_curation.md.content_processor.include import seeker as include_seeker
@@ -275,27 +276,52 @@ def find_git_root(file_or_dir: str, _cache: dict[str, str | None] | None = None)
   return res
 
 
-def get_git_status_map(repo_root: str) -> tuple[dict[str, str], list[str]]:
-  """Return ``({abs_path: porcelain_xy}, staged_rel_paths)`` for all dirty/untracked files in ``repo_root``."""
-  st = subprocess.check_output(
-    ["git", "-C", repo_root, "status", "--porcelain", "-uall"],
-    text=True,
+def _get_git_status_details(repo_root: str) -> tuple[dict[str, str], list[str], dict[str, str]]:
+  """Return ``({abs_path: porcelain_xy}, staged_rel_paths, {rel_path: orig_rel_path})`` for ``repo_root``."""
+  st_proc = subprocess.run(
+    ["git", "-c", "core.quotePath=false", "-C", repo_root, "status", "--porcelain=v1", "-z", "-uall"],
+    capture_output=True,
+    check=False,
   )
+  if st_proc.returncode != 0:
+    err = (st_proc.stderr or st_proc.stdout).decode("utf-8", errors="replace").strip()
+    raise RuntimeError(err or f"git status failed in {repo_root}")
   status_map: dict[str, str] = {}
-  for ln in st.splitlines():
-    if len(ln) < 4:
+  rename_sources: dict[str, str] = {}
+  parts = st_proc.stdout.split(b"\x00")
+  i = 0
+  while i < len(parts):
+    tok = parts[i]
+    i += 1
+    if not tok or len(tok) < 4:
       continue
-    xy = ln[:2]
-    rel = ln[3:].split(" -> ")[-1].strip()
-    if rel.startswith('"') and rel.endswith('"'):
-      rel = rel[1:-1]
+    decoded = tok.decode("utf-8", errors="replace")
+    xy = decoded[:2]
+    rel = decoded[3:]
     abs_f = os.path.normpath(os.path.join(repo_root, rel))
     status_map[abs_f] = xy
-  cached = subprocess.check_output(
-    ["git", "-C", repo_root, "diff", "--cached", "--name-only"],
-    text=True,
+    if (xy[0] in ("R", "C") or xy[1] in ("R", "C")) and i < len(parts):
+      orig_rel = parts[i].decode("utf-8", errors="replace")
+      i += 1
+      if orig_rel:
+        rename_sources[rel] = orig_rel
+
+  cached_proc = subprocess.run(
+    ["git", "-c", "core.quotePath=false", "-C", repo_root, "diff", "--cached", "--name-only", "-z"],
+    capture_output=True,
+    check=False,
   )
-  staged = [s for s in cached.splitlines() if s.strip()]
+  staged = [
+    p.decode("utf-8", errors="replace")
+    for p in cached_proc.stdout.split(b"\x00")
+    if p
+  ] if cached_proc.returncode == 0 else []
+  return status_map, staged, rename_sources
+
+
+def get_git_status_map(repo_root: str) -> tuple[dict[str, str], list[str]]:
+  """Return ``({abs_path: porcelain_xy}, staged_rel_paths)`` for all dirty/untracked files in ``repo_root``."""
+  status_map, staged, _ = _get_git_status_details(repo_root)
   return status_map, staged
 
 
@@ -2048,8 +2074,10 @@ def _strip_feedback_for_compare(s: str) -> str:
 def commit_marked_files(
   file_paths: Sequence[str],
   commit_message: str,
+  *,
+  push: bool = False,
 ) -> list[dict[str, Any]]:
-  """Safely stage (untracked only if needed) and ``git commit --only`` marked files per enclosing git repository."""
+  """Safely stage (untracked only if needed), run ``git commit --only``, and optionally push per enclosing repo."""
   msg = commit_message.strip() or "Review accepted accent fix suggestions"
   git_cache: dict[str, str | None] = {}
   by_repo: dict[str, list[str]] = {}
@@ -2058,20 +2086,29 @@ def commit_marked_files(
     rr = find_git_root(abs_f, git_cache)
     if not rr:
       raise ValueError(f"File is not inside a git repository: {fp}")
-    by_repo.setdefault(rr, []).append(os.path.relpath(abs_f, rr))
+    by_repo.setdefault(rr, []).append(pathlib.Path(abs_f).relative_to(pathlib.Path(rr)).as_posix())
 
   results: list[dict[str, Any]] = []
   for repo_root, rels in sorted(by_repo.items()):
     unique_rels = list(dict.fromkeys(rels))
-    st_map, pre_staged = get_git_status_map(repo_root)
-    dirty_rels = []
-    untracked_rels = []
+    st_map, pre_staged, rename_sources = _get_git_status_details(repo_root)
+    dirty_rels: list[str] = []
+    untracked_rels: list[str] = []
+    pathspec_rels: list[str] = []
+    seen_ps: set[str] = set()
     for rel in unique_rels:
       abs_f = os.path.normpath(os.path.join(repo_root, rel))
       xy = st_map.get(abs_f, "clean")
       if xy == "clean":
         continue
       dirty_rels.append(rel)
+      if rel not in seen_ps:
+        seen_ps.add(rel)
+        pathspec_rels.append(rel)
+      orig_rel = rename_sources.get(rel)
+      if orig_rel and orig_rel not in seen_ps:
+        seen_ps.add(orig_rel)
+        pathspec_rels.append(orig_rel)
       if xy == "??":
         untracked_rels.append(rel)
 
@@ -2080,6 +2117,7 @@ def commit_marked_files(
         "repo_root": repo_root,
         "committed": [],
         "sha": None,
+        "pushed": False,
         "note": "No uncommitted changes among selected files.",
       })
       continue
@@ -2088,29 +2126,55 @@ def commit_marked_files(
       # Use `--intent-to-add` (`git add -N`) when unrelated pre-staged files exist so `git commit --only` keeps them untouched.
       flag = ["-N", "--"] if pre_staged else ["--"]
       for i in range(0, len(untracked_rels), 200):
-        subprocess.check_call(["git", "-C", repo_root, "add", *flag, *untracked_rels[i : i + 200]])
+        add_proc = subprocess.run(
+          ["git", "-c", "core.quotePath=false", "-C", repo_root, "add", *flag, *untracked_rels[i : i + 200]],
+          capture_output=True,
+          check=False,
+        )
+        if add_proc.returncode != 0:
+          err_txt = (add_proc.stderr or add_proc.stdout).decode("utf-8", errors="replace").strip()
+          raise ValueError(err_txt or f"git add failed in {repo_root}")
 
-    pathspec_file = os.path.join(repo_root, ".git", "accent_review_commit_paths.txt")
-    with open(pathspec_file, "w", encoding="utf-8") as fh:
-      fh.write("\n".join(dirty_rels) + "\n")
+    tmp_fh = tempfile.NamedTemporaryFile("wb", delete=False)
     try:
-      out = subprocess.check_output(
-        ["git", "-C", repo_root, "commit", "--only", f"--pathspec-from-file={pathspec_file}", "-m", msg],
-        stderr=subprocess.STDOUT,
-        text=True,
+      tmp_fh.write(b"\x00".join(p.encode("utf-8") for p in pathspec_rels) + b"\x00")
+      tmp_fh.close()
+      commit_proc = subprocess.run(
+        ["git", "-c", "core.quotePath=false", "-C", repo_root, "commit", "--only", f"--pathspec-from-file={tmp_fh.name}", "--pathspec-file-nul", "-m", msg],
+        capture_output=True,
+        check=False,
       )
     finally:
-      if os.path.exists(pathspec_file):
-        os.remove(pathspec_file)
+      if os.path.exists(tmp_fh.name):
+        os.remove(tmp_fh.name)
+
+    out = (commit_proc.stdout + b"\n" + commit_proc.stderr).decode("utf-8", errors="replace").strip()
+    if commit_proc.returncode != 0:
+      raise ValueError(out or f"git commit failed in {repo_root}")
 
     sha = subprocess.check_output(["git", "-C", repo_root, "rev-parse", "--short", "HEAD"], text=True).strip()
-    results.append({
+    entry: dict[str, Any] = {
       "repo_root": repo_root,
       "committed": dirty_rels,
       "sha": sha,
-      "output": out.strip(),
+      "output": out,
       "preserved_pre_staged": len(pre_staged),
-    })
+      "pushed": False,
+    }
+    if push:
+      push_proc = subprocess.run(
+        ["git", "-c", "core.quotePath=false", "-C", repo_root, "push"],
+        capture_output=True,
+        check=False,
+      )
+      push_out = (push_proc.stdout + b"\n" + push_proc.stderr).decode("utf-8", errors="replace").strip()
+      if push_proc.returncode == 0:
+        entry["pushed"] = True
+        entry["push_output"] = push_out
+      else:
+        entry["pushed"] = False
+        entry["push_error"] = push_out or f"git push exited with code {push_proc.returncode}"
+    results.append(entry)
   return results
 
 

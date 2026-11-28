@@ -1015,6 +1015,114 @@
   .workspace.static-no-sidebar {
     grid-template-columns: minmax(0, 1fr);
   }
+  .workspace.has-commit-pane {
+    grid-template-columns: 310px minmax(0, 1fr) 300px;
+  }
+  .workspace.has-commit-pane.commit-collapsed {
+    grid-template-columns: 310px minmax(0, 1fr) 34px;
+  }
+  aside.commit-pane {
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    min-height: 0;
+    overflow: hidden;
+    padding: 10px 0 10px 10px;
+  }
+  .workspace.has-commit-pane aside.commit-pane {
+    display: flex;
+  }
+  aside.commit-pane > :not(.scroll-list):not(.commit-collapsed-rail) {
+    margin-right: 10px;
+  }
+  .workspace.commit-collapsed aside.commit-pane {
+    padding: 8px 3px;
+    align-items: center;
+    cursor: pointer;
+  }
+  .workspace.commit-collapsed aside.commit-pane .commit-pane-hdr {
+    margin-right: 0;
+    width: 100%;
+    justify-content: center;
+  }
+  .workspace.commit-collapsed aside.commit-pane .commit-pane-title-wrap,
+  .workspace.commit-collapsed aside.commit-pane .commit-toolbar,
+  .workspace.commit-collapsed aside.commit-pane .commit-hint,
+  .workspace.commit-collapsed aside.commit-pane #commitFilesList,
+  .workspace.commit-collapsed aside.commit-pane .commit-box {
+    display: none !important;
+  }
+  .commit-collapsed-rail {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    width: 100%;
+    padding-top: 4px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .workspace.commit-collapsed aside.commit-pane .commit-collapsed-rail {
+    display: flex;
+  }
+  .commit-collapsed-label {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+  .commit-collapse-btn {
+    padding: 1px 6px;
+    font-size: 14px;
+    line-height: 1.2;
+  }
+  .commit-file-row {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background: var(--surface-2);
+  }
+  .commit-file-row.marked {
+    background: var(--green-soft);
+    border-color: #a9dfbf;
+  }
+  .commit-file-meta {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .pill-dirty { background: #fef5e7; color: #b9770e; border-color: #f5cba7; }
+  .pill-clean { background: #f4f6f7; color: #7f8c8d; border-color: #d5dbdb; }
+  .commit-box {
+    margin-top: auto;
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  textarea#commitMsg {
+    width: 100%;
+    min-height: 54px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 14px;
+    resize: vertical;
+  }
   table.local-single col.col-num { width: 56px; }
   table.local-single col.col-single-code { width: calc(100% - 112px); }
   table.local-two col.col-num { width: 58px; }
@@ -1154,6 +1262,38 @@
       <div class="card">Loading diff...</div>
     </div>
   </main>
+
+  <aside id="commitPaneEl" class="commit-pane">
+    <div class="pane-title commit-pane-hdr">
+      <span class="commit-pane-title-wrap" style="display:flex; align-items:center; gap:6px;">
+        <span>Commit</span>
+        <span class="pill pill-green" id="commitCountPill" style="font-size:12px; padding:1px 7px;">0</span>
+      </span>
+      <button id="toggleCommitPaneBtn" class="small commit-collapse-btn" type="button" title="Collapse commit pane" onclick="event.stopPropagation(); toggleCommitPane()">»</button>
+    </div>
+    <div id="commitCollapsedRail" class="commit-collapsed-rail" style="display:none;" title="Expand commit pane" onclick="toggleCommitPane(false)">
+      <span class="pill pill-green" id="commitCollapsedCount" style="font-size:11.5px; padding:1px 5px;">0</span>
+      <span class="commit-collapsed-label">Commit</span>
+    </div>
+    <div class="row commit-toolbar" style="gap:6px;">
+      <button id="selectAllCommitBtn" class="small" type="button" title="Select all dirty files for commit" onclick="selectAllCommitFiles()">☑ Select all</button>
+      <button id="clearCommitSelBtn" class="small" type="button" title="Clear commit file selection" onclick="clearCommitSelection()">Clear</button>
+    </div>
+    <div class="commit-hint" style="font-size:12.5px; color:var(--muted);">
+      Checked dirty files are committed via scoped <code>git commit --only</code>.
+    </div>
+    <div id="commitFilesList" class="scroll-list" style="gap:6px; min-height:60px;"></div>
+    <div class="commit-box">
+      <label style="font-size:13.5px; font-weight:600;">Commit message:
+        <textarea id="commitMsg" placeholder="Optional commit message..."></textarea>
+      </label>
+      <div class="row commit-actions" style="gap:6px;">
+        <button id="commitBtn" class="green small" type="button" style="flex:1; font-size:14px;" onclick="commitSelectedFiles(false)">Commit</button>
+        <button id="commitPushBtn" class="primary small" type="button" style="flex:1; font-size:14px;" onclick="commitSelectedFiles(true)">Commit + Push</button>
+      </div>
+      <div id="commitResult" style="font-size:13px; white-space:pre-wrap;"></div>
+    </div>
+  </aside>
 </div>
 
 <script>
@@ -4994,6 +5134,37 @@ let staticInputsCollapsed = false;
 let staticDiffTimer = null;
 let renderedLocalRows = [];
 let selectedLocalRowKey = null;
+let commitPaneCollapsed = false;
+const selectedCommitPaths = new Set();
+const LOCAL_COMMIT_COLLAPSED_STORAGE_KEY = "local_diff_san_commit_collapsed";
+
+function hasCommitPane() {
+  if (isClientTextMode() || !workspaceData) return false;
+  const specMode = workspaceData.spec?.mode || "";
+  return specMode === "git_dir" || specMode === "git_head" || (workspaceData.commit_files || []).length > 0;
+}
+
+function applyCommitPaneCollapsedUi() {
+  const showPane = hasCommitPane();
+  const wsEl = document.getElementById("workspaceEl");
+  const pane = document.getElementById("commitPaneEl");
+  const rail = document.getElementById("commitCollapsedRail");
+  const btn = document.getElementById("toggleCommitPaneBtn");
+  const isCollapsed = showPane && !!commitPaneCollapsed;
+  if (wsEl && wsEl.classList) wsEl.classList.toggle("commit-collapsed", isCollapsed);
+  if (pane && pane.classList) pane.classList.toggle("collapsed", isCollapsed);
+  if (rail && rail.style) rail.style.display = isCollapsed ? "flex" : "none";
+  if (btn) {
+    btn.textContent = isCollapsed ? "«" : "»";
+    btn.title = isCollapsed ? "Expand commit pane" : "Collapse commit pane";
+  }
+}
+
+function toggleCommitPane(forceCollapse = null) {
+  commitPaneCollapsed = forceCollapse === null ? !commitPaneCollapsed : !!forceCollapse;
+  try { localStorage.setItem(LOCAL_COMMIT_COLLAPSED_STORAGE_KEY, commitPaneCollapsed ? "true" : "false"); } catch (_) {}
+  applyCommitPaneCollapsedUi();
+}
 
 function onToggleSandhiHighlight() {
   setSandhiHighlightEnabled(!isSandhiHighlightEnabled(), true);
@@ -5133,6 +5304,8 @@ function applyModeLayoutUi() {
   const compareBtn = document.getElementById("compareBtn");
   const gdBtn = document.getElementById("gdSelectionBtn");
   const modeWrap = document.getElementById("modeSelectWrap");
+  const paneEl = document.getElementById("commitPaneEl");
+  const showCommit = hasCommitPane();
 
   if (IS_STATIC_HOST) {
     if (modeWrap) modeWrap.style.display = "none";
@@ -5144,7 +5317,12 @@ function applyModeLayoutUi() {
   if (staticPanel) staticPanel.style.display = (isTexts && !staticInputsCollapsed) ? "flex" : "none";
   if (compareBtn) compareBtn.style.display = isTexts ? "none" : "inline-block";
   if (sidebarEl) sidebarEl.style.display = isTexts ? "none" : "flex";
-  if (wsEl && wsEl.classList) wsEl.classList.toggle("static-no-sidebar", isTexts);
+  if (paneEl && paneEl.style) paneEl.style.display = showCommit ? "flex" : "none";
+  if (wsEl && wsEl.classList) {
+    wsEl.classList.toggle("static-no-sidebar", isTexts);
+    wsEl.classList.toggle("has-commit-pane", showCommit);
+  }
+  applyCommitPaneCollapsedUi();
 }
 
 function syncSpecInputs(spec) {
@@ -5489,9 +5667,177 @@ function renderDiffItemHtml(item) {
   </div>`;
 }
 
+function renderCommitPane() {
+  const files = workspaceData?.commit_files || [];
+  const validDirty = new Set(files.filter(f => f.dirty).map(f => f.file_path));
+  for (const fp of Array.from(selectedCommitPaths)) {
+    if (!validDirty.has(fp)) selectedCommitPaths.delete(fp);
+  }
+  const selCount = files.filter(f => f.dirty && selectedCommitPaths.has(f.file_path)).length;
+  const dirtyCount = validDirty.size;
+
+  const cntPill = document.getElementById("commitCountPill");
+  if (cntPill) cntPill.textContent = dirtyCount ? `${selCount} / ${dirtyCount}` : "0";
+  const railCnt = document.getElementById("commitCollapsedCount");
+  if (railCnt) railCnt.textContent = String(dirtyCount ? selCount : 0);
+
+  const selAllBtn = document.getElementById("selectAllCommitBtn");
+  if (selAllBtn) selAllBtn.disabled = dirtyCount === 0;
+  const clrBtn = document.getElementById("clearCommitSelBtn");
+  if (clrBtn) clrBtn.disabled = selCount === 0;
+
+  const listEl = document.getElementById("commitFilesList");
+  if (!listEl) return;
+  if (!hasCommitPane()) {
+    listEl.innerHTML = "";
+    return;
+  }
+  if (!files.length) {
+    listEl.innerHTML = `<div style="color:var(--muted); font-size:13.5px;">No uncommitted changes.</div>`;
+    return;
+  }
+  listEl.innerHTML = files.map((f, idx) => {
+    const isChecked = f.dirty && selectedCommitPaths.has(f.file_path);
+    const chkAttr = isChecked ? "checked" : "";
+    const disAttr = f.dirty ? "" : "disabled";
+    const rowCls = isChecked ? "marked" : "";
+    const gitBadge = f.dirty
+      ? `<span class="pill pill-dirty" style="padding:0 5px; font-size:12px;">${esc(f.git_xy)}</span>`
+      : `<span class="pill pill-clean" style="padding:0 5px; font-size:12px;">clean</span>`;
+    const nameHtml = f.item_id
+      ? `<a href="#" class="file-title-link mono" style="font-size:13px; word-break:break-all;" title="View diff for ${esc(f.rel_path)}" onclick="event.preventDefault(); selectCommitItem(${idx});">${esc(f.rel_path)}</a>`
+      : `<span class="mono" style="font-size:13px; word-break:break-all;">${esc(f.rel_path)}</span>`;
+    const editorLinks = (f.exists_on_disk && !IS_STATIC_HOST)
+      ? `<a href="#" class="vscode-link" style="font-size:12px;" title="Open ${esc(f.file_path)} in VS Code" onclick="event.stopPropagation(); event.preventDefault(); openCommitFileInEditor(${idx}, 'vscode')">[V]</a> <a href="#" class="file-idea-link" style="font-size:12px;" title="Open ${esc(f.file_path)} in IntelliJ IDEA" onclick="event.stopPropagation(); event.preventDefault(); openCommitFileInEditor(${idx}, 'idea')">[I]</a>`
+      : "";
+    return `<div class="commit-file-row ${rowCls}">
+      <div style="display:flex; gap:6px; align-items:flex-start;">
+        <input type="checkbox" ${chkAttr} ${disAttr} style="cursor:pointer; margin-top:3px;" onchange="toggleCommitFileIdx(${idx}, this.checked)" />
+        <div style="flex:1; min-width:0;">${nameHtml} ${editorLinks}</div>
+      </div>
+      <div class="commit-file-meta">
+        ${gitBadge}
+        <span style="color:var(--green); font-weight:600;">+${f.additions || 0}</span>
+        <span style="color:var(--red); font-weight:600;">-${f.deletions || 0}</span>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function toggleCommitFileIdx(idx, checked) {
+  const f = workspaceData?.commit_files?.[idx];
+  if (!f || !f.dirty) return;
+  if (checked) selectedCommitPaths.add(f.file_path);
+  else selectedCommitPaths.delete(f.file_path);
+  renderCommitPane();
+}
+
+function selectAllCommitFiles() {
+  const files = workspaceData?.commit_files || [];
+  for (const f of files) {
+    if (f.dirty) selectedCommitPaths.add(f.file_path);
+  }
+  renderCommitPane();
+}
+
+function clearCommitSelection() {
+  selectedCommitPaths.clear();
+  renderCommitPane();
+}
+
+function selectCommitItem(idx) {
+  const f = workspaceData?.commit_files?.[idx];
+  if (f && f.item_id) selectItem(f.item_id);
+}
+
+function openCommitFileInEditor(idx, editor) {
+  const f = workspaceData?.commit_files?.[idx];
+  if (!f || !f.file_path) return;
+  if (editor === "idea") openPathInIdea(f.file_path, null);
+  else openPathInVscode(f.file_path, null);
+}
+
+async function commitSelectedFiles(pushAfter = false) {
+  showError("");
+  const files = (workspaceData?.commit_files || []).filter(f => f.dirty && selectedCommitPaths.has(f.file_path));
+  if (!files.length) {
+    setStatus("No dirty files selected to commit.", 2500);
+    return;
+  }
+  const toCommit = files.map(f => f.file_path);
+  const msg = document.getElementById("commitMsg")?.value?.trim() || "";
+  const opts = getDiffOptions();
+  const cBtn = document.getElementById("commitBtn");
+  const cpBtn = document.getElementById("commitPushBtn");
+  if (cBtn) cBtn.disabled = true;
+  if (cpBtn) cpBtn.disabled = true;
+  setStatus(pushAfter ? "⏳ Committing & pushing..." : "⏳ Committing...");
+  try {
+    const data = await apiJson("/api/commit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        file_paths: toCommit,
+        commit_message: msg,
+        push: !!pushAfter,
+        active_id: selectedItemId,
+        ...opts,
+      }),
+    }, pushAfter ? "Commit & push failed" : "Commit failed");
+    const lines = (data.results || []).map(r => {
+      const repoLbl = (r.repo_root || "").split("/").filter(Boolean).pop() || r.repo_root;
+      const base = `${repoLbl}: ${r.sha || "no-op"} (${(r.committed || []).length} file${(r.committed || []).length === 1 ? "" : "s"})`;
+      if (r.pushed) return `${base} • pushed`;
+      if (r.push_error) return `${base} • PUSH FAILED: ${r.push_error}`;
+      return base;
+    });
+    const resEl = document.getElementById("commitResult");
+    if (resEl) {
+      resEl.textContent = lines.join("\n");
+      if (resEl.style) resEl.style.color = data.push_ok === false ? "var(--red)" : "var(--green)";
+    }
+    const committedSet = new Set();
+    for (const r of (data.results || [])) {
+      for (const rel of (r.committed || [])) {
+        const match = files.find(f => f.repo_root === r.repo_root && f.rel_path === rel);
+        if (match) committedSet.add(match.file_path);
+      }
+    }
+    for (const fp of committedSet) selectedCommitPaths.delete(fp);
+    if (data.workspace) {
+      workspaceData = data.workspace;
+      selectedItemId = workspaceData.active_item?.id || null;
+      clearExpandedGaps("local:");
+      syncSpecInputs(workspaceData.spec);
+      renderWorkspace();
+    } else {
+      await fetchDiff(selectedItemId);
+    }
+    if (data.push_ok === false) {
+      const errMsgs = (data.results || []).filter(r => r.push_error).map(r => r.push_error);
+      showError(`Committed locally, but git push failed: ${errMsgs.join("; ")}`);
+      setStatus("Committed (push failed)", 3500);
+    } else {
+      setStatus(pushAfter ? "Committed & pushed" : "Committed", 2500);
+    }
+  } catch (e) {
+    showError(e.message);
+    const resEl = document.getElementById("commitResult");
+    if (resEl) {
+      resEl.textContent = e.message;
+      if (resEl.style) resEl.style.color = "var(--red)";
+    }
+    setStatus("");
+  } finally {
+    if (cBtn) cBtn.disabled = false;
+    if (cpBtn) cpBtn.disabled = false;
+  }
+}
+
 function renderWorkspace() {
   applyModeLayoutUi();
   renderSidebar();
+  renderCommitPane();
   const container = document.getElementById("diffContainer");
   if (!container) return;
   container.innerHTML = renderDiffItemHtml(workspaceData?.active_item || null);
@@ -5657,6 +6003,8 @@ async function init() {
     const savedIp = localStorage.getItem("local_diff_san_ignore_punct");
     const ipChk = document.getElementById("ignorePunctChk");
     if (ipChk && (savedIp === "true" || savedIp === "false")) ipChk.checked = savedIp === "true";
+    commitPaneCollapsed = localStorage.getItem(LOCAL_COMMIT_COLLAPSED_STORAGE_KEY) === "true";
+    applyCommitPaneCollapsedUi();
   } catch (_) {}
 
   if (IS_STATIC_HOST) {
@@ -5677,7 +6025,8 @@ async function init() {
 }
 
 document.addEventListener("keydown", (ev) => {
-  if (typeof handleSharedDiffKeydown === "function" && handleSharedDiffKeydown(ev, {
+  const skipSharedTab = ev && ev.key === "Tab" && ev.target && typeof ev.target.closest === "function" && !!ev.target.closest("aside.commit-pane");
+  if (!skipSharedTab && typeof handleSharedDiffKeydown === "function" && handleSharedDiffKeydown(ev, {
     getRows: () => renderedLocalRows,
     getSelectedRowKey: () => selectedLocalRowKey,
     selectRow: (rowKey, opts) => selectLocalRow(rowKey, opts),

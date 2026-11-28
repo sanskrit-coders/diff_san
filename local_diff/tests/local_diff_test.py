@@ -167,6 +167,50 @@ def test_local_diff_fastapi_endpoints_and_cli_errors(tmp_path: Path, monkeypatch
   assert diff_res["active_item"]["left_label"] == "HEAD"
   assert diff_res["active_item"]["right_label"] == "WORKING"
   assert diff_res["active_item"]["right_path"] == str(f1.resolve())
+  assert len(diff_res["commit_files"]) == 1
+  assert diff_res["commit_files"][0]["dirty"] is True and diff_res["commit_files"][0]["git_xy"].strip() == "M"
+
+  # Scoped /api/commit in git_dir mode commits only selected dirty files while preserving pre-staged ones, and push=True pushes to remote
+  bare_remote = tmp_path / "remote.git"
+  subprocess.check_call(["git", "init", "--bare", str(bare_remote)], stdout=subprocess.DEVNULL)
+  branch_name = subprocess.check_output(["git", "-C", str(repo), "branch", "--show-current"], text=True).strip()
+  _git(repo, "remote", "add", "origin", str(bare_remote))
+  _git(repo, "push", "-u", "origin", branch_name)
+  other_staged = repo / "other_staged.md"
+  other_staged.write_text("keep staged\n", encoding="utf-8")
+  _git(repo, "add", "other_staged.md")
+  new_doc = repo / "new_doc.md"
+  new_doc.write_text("नवम्\n", encoding="utf-8")
+
+  dir_app = server.create_app(initial_spec=core.resolve_spec_from_paths([str(repo)]))
+  dtc = TestClient(dir_app)
+  dir_ws = dtc.get("/api/diff").json()
+  by_rel = {cf["rel_path"]: cf for cf in dir_ws["commit_files"]}
+  assert by_rel["doc.md"]["dirty"] is True and by_rel["new_doc.md"]["git_xy"] == "??"
+
+  commit_res = dtc.post(
+    "/api/commit",
+    json={"file_paths": [str(f1), str(new_doc)], "commit_message": "Commit selected diff files", "push": True},
+  )
+  assert commit_res.status_code == 200
+  cbody = commit_res.json()
+  assert cbody["push_ok"] is True
+  assert len(cbody["results"]) == 1 and cbody["results"][0]["pushed"] is True
+  assert set(cbody["results"][0]["committed"]) == {"doc.md", "new_doc.md"}
+  assert subprocess.check_output(["git", "-C", str(repo), "diff", "--cached", "--name-only"], text=True).strip() == "other_staged.md"
+  remote_heads = subprocess.check_output(["git", "--git-dir", str(bare_remote), "show", "--name-only", "--format=", f"refs/heads/{branch_name}"], text=True).splitlines()
+  assert set(remote_heads) == {"doc.md", "new_doc.md"}
+
+  # Commit with push=True on a repo without remote succeeds locally and reports push_ok=False with push_error
+  (tmp_path / "no_rem").mkdir()
+  no_rem_repo = _init_git_repo(tmp_path / "no_rem")
+  nf = no_rem_repo / "solo.md"
+  nf.write_text("v1\n", encoding="utf-8")
+  _git(no_rem_repo, "add", ".")
+  _git(no_rem_repo, "commit", "-m", "init")
+  nf.write_text("v2\n", encoding="utf-8")
+  no_rem_res = core.commit_files([nf], "", push=True)
+  assert len(no_rem_res) == 1 and no_rem_res[0]["sha"] and no_rem_res[0]["pushed"] is False and no_rem_res[0]["push_error"]
 
   # Dynamically switch server workspace to 2-file mode via /api/compare
   cmp_res = tc.post(
@@ -217,6 +261,9 @@ def test_local_diff_frontend_js_renders_settings_and_diff(tmp_path: Path):
   assert "header button {" in html_src and "font-size: 12.5px;" in html_src
   assert '<option value="word" selected>Word</option>' in html_src
   assert "> Wrap\n" in html_src and "> Wrap long lines\n" not in html_src
+  assert 'id="commitPaneEl"' in html_src and 'id="toggleCommitPaneBtn"' in html_src
+  assert 'id="selectAllCommitBtn"' in html_src and 'id="commitBtn"' in html_src and 'id="commitPushBtn"' in html_src
+  assert 'id="commitFilesList" class="scroll-list"' in html_src
 
   m = re.search(r"<script>\n(.*?)\n</script>", html_src, re.S)
   assert m is not None
@@ -359,6 +406,46 @@ def test_local_diff_frontend_js_renders_settings_and_diff(tmp_path: Path):
     "  listeners['keydown']({ key: 'PageUp', code: 'PageUp', ctrlKey: true, altKey: false, metaKey: false, shiftKey: false, target: { tagName: 'BODY' }, preventDefault(){}, stopPropagation(){} });\n"
     "  await new Promise(r => setTimeout(r, 15));\n"
     "  if (selectedItemId !== 'pair:0') throw new Error('Ctrl+PageUp did not select previous sidebar item: ' + selectedItemId);\n"
+    "  // Git mode shows collapsible commit pane with Select all + Commit / Commit + Push\n"
+    "  const gitWs = Object.assign({}, sampleWs, {\n"
+    "    spec: { mode: 'git_dir', paths: ['/repo'], rev: 'HEAD' },\n"
+    "    repo_root: '/repo',\n"
+    "    commit_files: [\n"
+    "      { item_id: 'head:a.md', file_path: '/repo/a.md', rel_path: 'a.md', repo_root: '/repo', git_xy: ' M', dirty: true, additions: 1, deletions: 1, exists_on_disk: true },\n"
+    "      { item_id: 'head:b.md', file_path: '/repo/b.md', rel_path: 'b.md', repo_root: '/repo', git_xy: '??', dirty: true, additions: 2, deletions: 0, exists_on_disk: true },\n"
+    "    ],\n"
+    "  });\n"
+    "  mockRespWs = gitWs;\n"
+    "  workspaceData = gitWs;\n"
+    "  renderWorkspace();\n"
+    "  if (!elems['workspaceEl'].classList.contains('has-commit-pane') || !elems['commitFilesList'].innerHTML.includes('a.md') || !elems['commitFilesList'].innerHTML.includes('b.md')) {\n"
+    "    throw new Error('local_diff commit pane did not render git_dir commit files');\n"
+    "  }\n"
+    "  toggleCommitPane(true);\n"
+    "  if (!elems['workspaceEl'].classList.contains('commit-collapsed') || elems['toggleCommitPaneBtn'].textContent !== '«') {\n"
+    "    throw new Error('local_diff toggleCommitPane(true) failed');\n"
+    "  }\n"
+    "  toggleCommitPane(false);\n"
+    "  if (elems['workspaceEl'].classList.contains('commit-collapsed') || elems['toggleCommitPaneBtn'].textContent !== '»') {\n"
+    "    throw new Error('local_diff toggleCommitPane(false) failed');\n"
+    "  }\n"
+    "  selectAllCommitFiles();\n"
+    "  if (selectedCommitPaths.size !== 2 || elems['commitCountPill'].textContent !== '2 / 2') {\n"
+    "    throw new Error('local_diff selectAllCommitFiles failed: size=' + selectedCommitPaths.size);\n"
+    "  }\n"
+    "  elems['commitMsg'] = document.getElementById('commitMsg');\n"
+    "  elems['commitMsg'].value = 'Push test';\n"
+    "  mockRespWs = Object.assign({}, gitWs, { items: [], active_item: null, commit_files: [] });\n"
+    "  global.fetch = async (url, opts) => {\n"
+    "    fetched.push({ url, opts });\n"
+    "    if (url === '/api/commit') return { ok: true, json: async () => ({ push_ok: true, results: [{ repo_root: '/repo', committed: ['a.md', 'b.md'], sha: 'abc1234', pushed: true }], workspace: mockRespWs }) };\n"
+    "    return { ok: true, json: async () => mockRespWs };\n"
+    "  };\n"
+    "  await commitSelectedFiles(true);\n"
+    "  const cCall = fetched.find(c => c.url === '/api/commit');\n"
+    "  if (!cCall || !String(cCall.opts?.body || '').includes('\"push\":true') || !elems['commitResult'].textContent.includes('pushed')) {\n"
+    "    throw new Error('local_diff commitSelectedFiles(true) failed: ' + JSON.stringify(fetched));\n"
+    "  }\n"
     "})().catch(err => { console.error(err); process.exit(1); });\n"
   )
   js_file = tmp_path / "test_local_diff_gui.js"

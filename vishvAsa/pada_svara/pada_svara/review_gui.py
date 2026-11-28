@@ -94,7 +94,8 @@ class _FileAcceptRequest(BaseModel):
 
 
 class _FileMarkRequest(BaseModel):
-  file_path: str
+  file_path: str | None = None
+  file_paths: list[str] | None = None
   marked: bool | None = None
 
 
@@ -116,6 +117,7 @@ class _SubmitRequest(BaseModel):
 class _CommitRequest(BaseModel):
   file_paths: list[str]
   commit_message: str = "Review accepted accent fix suggestions"
+  push: bool = False
 
 
 class _OpenIdeaRequest(BaseModel):
@@ -593,14 +595,18 @@ def create_app(
 
   @app.post("/api/file_mark")
   def api_file_mark(req: _FileMarkRequest) -> dict[str, Any]:
-    norm_f = os.path.normpath(req.file_path)
+    raw_paths = list(req.file_paths) if req.file_paths else ([req.file_path] if req.file_path else [])
+    if not raw_paths:
+      raise HTTPException(status_code=400, detail="No file_path or file_paths provided")
     with store.lock:
       if store.scan_data is None:
         raise HTTPException(status_code=400, detail="No directory loaded")
-      if req.marked is None:
-        store.state["file_overrides"].pop(norm_f, None)
-      else:
-        store.state["file_overrides"][norm_f] = bool(req.marked)
+      for fp in raw_paths:
+        norm_f = os.path.normpath(fp)
+        if req.marked is None:
+          store.state["file_overrides"].pop(norm_f, None)
+        else:
+          store.state["file_overrides"][norm_f] = bool(req.marked)
       review.save_review_state(store.scan_data["dir_path"], store.state, cache_dir=store.cache_dir)
       return {"summary": store.summary_payload()}
 
@@ -674,14 +680,15 @@ def create_app(
       if store.scan_data is None:
         raise HTTPException(status_code=400, detail="No directory loaded")
       try:
-        results = review.commit_marked_files(req.file_paths, req.commit_message)
+        results = review.commit_marked_files(req.file_paths, req.commit_message, push=req.push)
       except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
       store.refresh_git_statuses()
       for fp in req.file_paths:
         store.state["file_overrides"].pop(os.path.normpath(fp), None)
       review.save_review_state(store.scan_data["dir_path"], store.state, cache_dir=store.cache_dir)
-      return {"results": results, "summary": store.summary_payload()}
+      push_ok = all(r.get("pushed", False) for r in results if r.get("committed")) if req.push else True
+      return {"results": results, "push_ok": push_ok, "summary": store.summary_payload()}
 
   return app
 
@@ -937,6 +944,9 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     flex: 1;
     min-height: 0;
   }
+  .workspace.commit-collapsed {
+    grid-template-columns: 290px minmax(0, 1fr) 34px;
+  }
   aside.sidebar, aside.commit-pane {
     background: var(--surface);
     border-right: 1px solid var(--border);
@@ -947,14 +957,58 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     flex-direction: column;
     gap: 8px;
   }
-  aside.sidebar > :not(.pane-scroll),
-  aside.commit-pane > :not(.pane-scroll) {
+  aside.sidebar > :not(.pane-scroll):not(.commit-collapsed-rail),
+  aside.commit-pane > :not(.pane-scroll):not(.commit-collapsed-rail) {
     margin-right: 10px;
   }
   aside.commit-pane {
     border-right: none;
     border-left: 1px solid var(--border);
-    overflow-y: auto;
+  }
+  .workspace.commit-collapsed aside.commit-pane {
+    padding: 8px 3px;
+    align-items: center;
+    cursor: pointer;
+  }
+  .workspace.commit-collapsed aside.commit-pane .commit-pane-hdr {
+    margin-right: 0;
+    width: 100%;
+    justify-content: center;
+  }
+  .workspace.commit-collapsed aside.commit-pane .commit-pane-title-wrap,
+  .workspace.commit-collapsed aside.commit-pane .commit-toolbar,
+  .workspace.commit-collapsed aside.commit-pane .commit-hint,
+  .workspace.commit-collapsed aside.commit-pane #markedFilesList,
+  .workspace.commit-collapsed aside.commit-pane .commit-box {
+    display: none !important;
+  }
+  .commit-collapsed-rail {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    width: 100%;
+    padding-top: 4px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .workspace.commit-collapsed aside.commit-pane .commit-collapsed-rail {
+    display: flex;
+  }
+  .commit-collapsed-label {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+  .commit-collapse-btn {
+    padding: 1px 6px;
+    font-size: 12px;
+    line-height: 1.2;
   }
   .pane-scroll {
     flex: 1;
@@ -1570,7 +1624,7 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
   </div>
 </div>
 
-<div class="workspace">
+<div id="workspaceEl" class="workspace">
   <aside class="sidebar">
     <div class="pane-title">
       <span>Files (<span id="fileCount">0</span>)</span>
@@ -1598,12 +1652,23 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     </div>
   </main>
 
-  <aside class="commit-pane">
-    <div class="pane-title">
-      <span>Relevant Files for Commit</span>
-      <span class="stat-pill pill-accept" id="markedCountPill">0 marked</span>
+  <aside id="commitPaneEl" class="commit-pane">
+    <div class="pane-title commit-pane-hdr">
+      <span class="commit-pane-title-wrap" style="display:flex; align-items:center; gap:6px;">
+        <span>Commit Files</span>
+        <span class="stat-pill pill-accept" id="markedCountPill">0 marked</span>
+      </span>
+      <button id="toggleCommitPaneBtn" class="small commit-collapse-btn" type="button" title="Collapse commit pane" onclick="event.stopPropagation(); toggleCommitPane()">»</button>
     </div>
-    <div style="font-size:11px; color:var(--muted);">
+    <div id="commitCollapsedRail" class="commit-collapsed-rail" style="display:none;" title="Expand commit pane" onclick="toggleCommitPane(false)">
+      <span class="stat-pill pill-accept" id="commitCollapsedCount" style="padding:1px 5px;">0</span>
+      <span class="commit-collapsed-label">Commit</span>
+    </div>
+    <div class="row commit-toolbar" style="gap:6px;">
+      <button id="selectAllCommitBtn" class="small" type="button" title="Select all dirty files for commit" onclick="selectAllCommitFiles()">☑ Select all</button>
+      <button id="clearCommitSelBtn" class="small" type="button" title="Clear commit file selection" onclick="clearCommitSelection()">Clear</button>
+    </div>
+    <div class="commit-hint" style="font-size:11px; color:var(--muted);">
       Accepting suggestions marks uncommitted files below (only checked dirty files are committed via scoped <code>git commit --only</code>).
     </div>
     <div id="markedFilesList" class="pane-scroll" style="gap:6px; min-height:80px;"></div>
@@ -1614,7 +1679,10 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
       <label style="font-size:12px; display:flex; align-items:center; gap:6px;">
         <input type="checkbox" id="syncPrefillsChk" checked /> Refresh prefilled js_includes on edit
       </label>
-      <button class="green" onclick="commitMarked()">Commit Marked Files</button>
+      <div class="row commit-actions" style="gap:6px;">
+        <button id="commitBtn" class="green" type="button" style="flex:1;" onclick="commitMarked(false)">Commit</button>
+        <button id="commitPushBtn" class="primary" type="button" style="flex:1;" onclick="commitMarked(true)">Commit + Push</button>
+      </div>
       <div id="commitResult" style="font-size:12px; white-space:pre-wrap;"></div>
     </div>
   </aside>
@@ -1643,6 +1711,29 @@ let focusedIdx = -1;
 let searchTimer = null;
 let undoStack = [];
 let _recordingInFlight = 0;
+let commitPaneCollapsed = false;
+const PADA_SVARA_COMMIT_COLLAPSED_KEY = "pada_svara_commit_collapsed";
+
+function applyCommitPaneCollapsedUi() {
+  const wsEl = typeof document !== "undefined" ? document.getElementById("workspaceEl") : null;
+  const pane = typeof document !== "undefined" ? document.getElementById("commitPaneEl") : null;
+  const rail = typeof document !== "undefined" ? document.getElementById("commitCollapsedRail") : null;
+  const btn = typeof document !== "undefined" ? document.getElementById("toggleCommitPaneBtn") : null;
+  const isCollapsed = !!commitPaneCollapsed;
+  if (wsEl && wsEl.classList) wsEl.classList.toggle("commit-collapsed", isCollapsed);
+  if (pane && pane.classList) pane.classList.toggle("collapsed", isCollapsed);
+  if (rail && rail.style) rail.style.display = isCollapsed ? "flex" : "none";
+  if (btn) {
+    btn.textContent = isCollapsed ? "«" : "»";
+    btn.title = isCollapsed ? "Expand commit pane" : "Collapse commit pane";
+  }
+}
+
+function toggleCommitPane(forceCollapse = null) {
+  commitPaneCollapsed = forceCollapse === null ? !commitPaneCollapsed : !!forceCollapse;
+  try { localStorage.setItem(PADA_SVARA_COMMIT_COLLAPSED_KEY, commitPaneCollapsed ? "true" : "false"); } catch (_) {}
+  applyCommitPaneCollapsedUi();
+}
 
 function updateUndoButton() {
   const btn = document.getElementById("undoBtn");
@@ -1856,6 +1947,8 @@ async function init() {
   try {
     const savedPx = localStorage.getItem("accent_review_font_px");
     if (savedPx) applyEditorFont(savedPx);
+    commitPaneCollapsed = localStorage.getItem(PADA_SVARA_COMMIT_COLLAPSED_KEY) === "true";
+    applyCommitPaneCollapsedUi();
   } catch (_) {}
   const resp = await fetch("/api/presets");
   const data = await resp.json();
@@ -2156,9 +2249,17 @@ function renderSummary(sum) {
   document.getElementById("statReject").innerHTML = `<u class="sc-key sc-alt">R</u>ej: ${sum.counts.reject || 0} <span class="kbd-hint">Alt+R</span>`;
   document.getElementById("statHold").innerHTML = `!!: ${sum.counts.with_feedback || 0} <span class="kbd-hint">Alt+W</span>`;
   updateStatusFilterPills();
-  document.getElementById("markedCountPill").textContent = `${sum.marked_files.length} marked`;
+  const markedCnt = (sum.marked_files || []).length;
+  document.getElementById("markedCountPill").textContent = `${markedCnt} marked`;
+  const railCnt = document.getElementById("commitCollapsedCount");
+  if (railCnt) railCnt.textContent = String(markedCnt);
 
   const files = sum.files || [];
+  const hasDirtyFiles = files.some(f => f.dirty);
+  const selAllBtn = document.getElementById("selectAllCommitBtn");
+  if (selAllBtn) selAllBtn.disabled = !hasDirtyFiles;
+  const clrBtn = document.getElementById("clearCommitSelBtn");
+  if (clrBtn) clrBtn.disabled = markedCnt === 0;
   document.getElementById("fileCount").textContent = files.length;
   const activeSidebarPath = getActiveSidebarFilePath();
   document.getElementById("fileList").innerHTML = renderPadaSvaraFileTreeHtml(files, activeSidebarPath);
@@ -2840,13 +2941,60 @@ async function undoLastAction() {
 }
 
 async function toggleFileMark(fp, marked) {
-  const resp = await fetch("/api/file_mark", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ file_path: fp, marked }),
+  return _withRecordingStatus(async () => {
+    const resp = await fetch("/api/file_mark", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file_path: fp, marked }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      alert(data.detail || "Failed to update file mark");
+      return;
+    }
+    latestSummary = data.summary;
+    renderSummary(data.summary);
   });
-  const data = await resp.json();
-  renderSummary(data.summary);
+}
+
+async function selectAllCommitFiles() {
+  if (!latestSummary) return;
+  const dirtyPaths = (latestSummary.files || []).filter(f => f.dirty).map(f => f.file_path);
+  if (!dirtyPaths.length) return;
+  return _withRecordingStatus(async () => {
+    const resp = await fetch("/api/file_mark", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file_paths: dirtyPaths, marked: true }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      alert(data.detail || "Failed to select all files");
+      return;
+    }
+    latestSummary = data.summary;
+    renderSummary(data.summary);
+  });
+}
+
+async function clearCommitSelection() {
+  if (!latestSummary) return;
+  const targetPaths = (latestSummary.files || []).filter(f => f.dirty || f.marked).map(f => f.file_path);
+  if (!targetPaths.length) return;
+  return _withRecordingStatus(async () => {
+    const resp = await fetch("/api/file_mark", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file_paths: targetPaths, marked: false }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      alert(data.detail || "Failed to clear selection");
+      return;
+    }
+    latestSummary = data.summary;
+    renderSummary(data.summary);
+  });
 }
 
 async function viewDiff(fp) {
@@ -2913,7 +3061,7 @@ function openInVscode(filePath, needleOrLine, itemId) {
   return openInEditor("vscode", filePath, needleOrLine, itemId);
 }
 
-async function commitMarked() {
+async function commitMarked(pushAfter = false) {
   if (!latestSummary) return;
   const toCommit = (latestSummary.files || []).filter(f => f.marked && f.dirty).map(f => f.file_path);
   if (!toCommit.length) {
@@ -2921,16 +3069,45 @@ async function commitMarked() {
     return;
   }
   const msg = document.getElementById("commitMsg").value.trim() || "Review accepted accent fix suggestions";
-  const resp = await fetch("/api/commit", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ file_paths: toCommit, commit_message: msg }),
-  });
-  const data = await resp.json();
-  if (!resp.ok) return alert(data.detail || "Commit failed");
-  document.getElementById("commitResult").textContent = (data.results || [])
-    .map(r => `${r.repo_root}: ${r.sha || "no-op"} (${r.committed.length} files)`).join("\n");
-  await loadItems(currentPage);
+  const cBtn = document.getElementById("commitBtn");
+  const cpBtn = document.getElementById("commitPushBtn");
+  if (cBtn) cBtn.disabled = true;
+  if (cpBtn) cpBtn.disabled = true;
+  setStatus(pushAfter ? "⏳ Committing & pushing..." : "⏳ Committing...");
+  try {
+    const resp = await fetch("/api/commit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file_paths: toCommit, commit_message: msg, push: !!pushAfter }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      alert(data.detail || (pushAfter ? "Commit & push failed" : "Commit failed"));
+      return;
+    }
+    const resEl = document.getElementById("commitResult");
+    if (resEl) {
+      resEl.textContent = (data.results || []).map(r => {
+        const base = `${r.repo_root}: ${r.sha || "no-op"} (${r.committed.length} files)`;
+        if (r.pushed) return `${base} • pushed`;
+        if (r.push_error) return `${base} • PUSH FAILED: ${r.push_error}`;
+        return base;
+      }).join("\n");
+      if (resEl.style) resEl.style.color = data.push_ok === false ? "var(--red)" : "var(--green)";
+    }
+    await loadItems(currentPage);
+    if (data.push_ok === false) {
+      const errMsgs = (data.results || []).filter(r => r.push_error).map(r => r.push_error);
+      alert(`Committed locally, but git push failed:\n${errMsgs.join("\n")}`);
+    } else {
+      flashStatus(pushAfter ? "Committed & pushed" : "Committed");
+    }
+  } finally {
+    if (cBtn) cBtn.disabled = false;
+    if (cpBtn) cpBtn.disabled = false;
+    const sp = typeof document !== "undefined" ? document.getElementById("scanSpinner") : null;
+    if (sp && (sp.textContent === "⏳ Committing..." || sp.textContent === "⏳ Committing & pushing...")) setStatus("");
+  }
 }
 
 function changePage(delta) {

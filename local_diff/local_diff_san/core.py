@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+import os
 from pathlib import Path
 import subprocess
+import tempfile
 from typing import Any, Sequence
 
 from pull_requests_san.diff import (
@@ -116,6 +118,154 @@ def find_git_root(path: str | Path) -> Path | None:
 def _git_has_rev(repo_root: Path, rev: str) -> bool:
   proc = _run_git_bytes(repo_root, ["rev-parse", "--verify", "--quiet", f"{rev}^{{tree}}"])
   return proc.returncode == 0
+
+
+def _parse_git_status_z(raw: bytes) -> tuple[dict[str, str], dict[str, str]]:
+  """Parse ``git status --porcelain -z`` into ``(rel_path -> xy, rel_path -> orig_rel_path)``."""
+  rel_status: dict[str, str] = {}
+  rename_sources: dict[str, str] = {}
+  parts = raw.split(b"\x00")
+  i = 0
+  while i < len(parts):
+    tok = parts[i]
+    i += 1
+    if not tok or len(tok) < 4:
+      continue
+    decoded = tok.decode("utf-8", errors="replace")
+    xy = decoded[:2]
+    rel_p = decoded[3:]
+    rel_status[rel_p] = xy
+    if (xy[0] in ("R", "C") or xy[1] in ("R", "C")) and i < len(parts):
+      orig_p = parts[i].decode("utf-8", errors="replace")
+      i += 1
+      if orig_p:
+        rename_sources[rel_p] = orig_p
+  return rel_status, rename_sources
+
+
+def get_git_status_map(repo_root: str | Path) -> tuple[dict[str, str], list[str], dict[str, str]]:
+  """Return ``({abs_path: porcelain_xy}, staged_rel_paths, {rel_path: orig_rel_path})`` for ``repo_root``."""
+  root = Path(repo_root).expanduser().resolve()
+  st_proc = _run_git_bytes(root, ["status", "--porcelain=v1", "-z", "-uall"])
+  if st_proc.returncode != 0:
+    msg = (st_proc.stderr or st_proc.stdout).decode("utf-8", errors="replace").strip()
+    raise ValueError(msg or f"git status failed in {root}")
+  rel_status, rename_sources = _parse_git_status_z(st_proc.stdout)
+  abs_status = {os.path.normpath(root / rel_p): xy for rel_p, xy in rel_status.items()}
+
+  cached_proc = _run_git_bytes(root, ["diff", "--cached", "--name-only", "-z"])
+  staged: list[str] = []
+  if cached_proc.returncode == 0:
+    staged = [
+      p.decode("utf-8", errors="replace")
+      for p in cached_proc.stdout.split(b"\x00")
+      if p
+    ]
+  return abs_status, staged, rename_sources
+
+
+def commit_files(
+  file_paths: Sequence[str | Path],
+  commit_message: str = "",
+  *,
+  push: bool = False,
+) -> list[dict[str, Any]]:
+  """Safely stage untracked paths if needed, run scoped ``git commit --only``, and optionally push per repo."""
+  if not file_paths:
+    raise ValueError("No files selected for committing")
+
+  by_repo: dict[Path, list[str]] = {}
+  for fp in file_paths:
+    p = Path(fp).expanduser()
+    abs_f = Path(os.path.normpath(p.resolve() if p.exists() else p.absolute()))
+    rr = find_git_root(abs_f)
+    if rr is None:
+      raise ValueError(f"File is not inside a git repository: {fp}")
+    by_repo.setdefault(rr, []).append(abs_f.relative_to(rr).as_posix())
+
+  results: list[dict[str, Any]] = []
+  for repo_root, rels in sorted(by_repo.items(), key=lambda kv: str(kv[0])):
+    unique_rels = list(dict.fromkeys(rels))
+    st_map, pre_staged, rename_sources = get_git_status_map(repo_root)
+    dirty_rels: list[str] = []
+    untracked_rels: list[str] = []
+    pathspec_rels: list[str] = []
+    seen_pathspec: set[str] = set()
+    for rel in unique_rels:
+      abs_f = os.path.normpath(repo_root / rel)
+      xy = st_map.get(abs_f, "clean")
+      if xy == "clean":
+        continue
+      dirty_rels.append(rel)
+      if rel not in seen_pathspec:
+        seen_pathspec.add(rel)
+        pathspec_rels.append(rel)
+      orig_rel = rename_sources.get(rel)
+      if orig_rel and orig_rel not in seen_pathspec:
+        seen_pathspec.add(orig_rel)
+        pathspec_rels.append(orig_rel)
+      if xy == "??":
+        untracked_rels.append(rel)
+
+    if not dirty_rels:
+      results.append({
+        "repo_root": str(repo_root),
+        "committed": [],
+        "sha": None,
+        "pushed": False,
+        "note": "No uncommitted changes among selected files.",
+      })
+      continue
+
+    default_msg = f"Update {dirty_rels[0]}" if len(dirty_rels) == 1 else f"Update {len(dirty_rels)} files"
+    msg = (commit_message or "").strip() or default_msg
+
+    if untracked_rels:
+      # Use `--intent-to-add` (`git add -N`) when unrelated pre-staged files exist so `git commit --only` keeps them untouched.
+      flag = ["-N", "--"] if pre_staged else ["--"]
+      for i in range(0, len(untracked_rels), 200):
+        add_proc = _run_git_bytes(repo_root, ["add", *flag, *untracked_rels[i : i + 200]])
+        if add_proc.returncode != 0:
+          err_txt = (add_proc.stderr or add_proc.stdout).decode("utf-8", errors="replace").strip()
+          raise ValueError(err_txt or f"git add failed in {repo_root}")
+
+    tmp_fh = tempfile.NamedTemporaryFile("wb", delete=False)
+    try:
+      tmp_fh.write(b"\x00".join(p.encode("utf-8") for p in pathspec_rels) + b"\x00")
+      tmp_fh.close()
+      commit_proc = _run_git_bytes(
+        repo_root,
+        ["commit", "--only", f"--pathspec-from-file={tmp_fh.name}", "--pathspec-file-nul", "-m", msg],
+      )
+    finally:
+      if os.path.exists(tmp_fh.name):
+        os.remove(tmp_fh.name)
+
+    commit_out = (commit_proc.stdout + b"\n" + commit_proc.stderr).decode("utf-8", errors="replace").strip()
+    if commit_proc.returncode != 0:
+      raise ValueError(commit_out or f"git commit failed in {repo_root}")
+
+    sha_proc = _run_git_bytes(repo_root, ["rev-parse", "--short", "HEAD"])
+    sha = sha_proc.stdout.decode("utf-8", errors="replace").strip() if sha_proc.returncode == 0 else None
+    entry: dict[str, Any] = {
+      "repo_root": str(repo_root),
+      "committed": dirty_rels,
+      "sha": sha,
+      "output": commit_out,
+      "preserved_pre_staged": len(pre_staged),
+      "pushed": False,
+    }
+    if push:
+      push_proc = _run_git_bytes(repo_root, ["push"])
+      push_out = (push_proc.stdout + b"\n" + push_proc.stderr).decode("utf-8", errors="replace").strip()
+      if push_proc.returncode == 0:
+        entry["pushed"] = True
+        entry["push_output"] = push_out
+      else:
+        entry["pushed"] = False
+        entry["push_error"] = push_out or f"git push exited with code {push_proc.returncode}"
+    results.append(entry)
+  return results
 
 
 def read_git_blob(repo_root: Path, rel_path: str, rev: str = DEFAULT_REV) -> bytes | None:
@@ -502,6 +652,8 @@ def build_diff_workspace(
       "repo_root": None,
       "items": [payload],
       "active_item": payload,
+      "commit_files": [],
+      "repo_staged": {},
     }
 
   if spec.mode == "git_head":
@@ -525,11 +677,43 @@ def build_diff_workspace(
       chosen_dict if it.id == chosen.id else it.to_dict(include_hunks=False)
       for it in built_items
     ]
+    git_cache: dict[str, tuple[dict[str, str], list[str], dict[str, str]]] = {}
+    commit_files: list[dict[str, Any]] = []
+    repo_staged: dict[str, list[str]] = {}
+    seen_commit_paths: set[str] = set()
+    for it in built_items:
+      if not it.repo_root or not it.rel_path:
+        continue
+      if it.repo_root not in git_cache:
+        git_cache[it.repo_root] = get_git_status_map(it.repo_root)
+        repo_staged[it.repo_root] = git_cache[it.repo_root][1]
+      st_map, _, rename_sources = git_cache[it.repo_root]
+      abs_f = os.path.normpath(Path(it.repo_root) / it.rel_path)
+      if abs_f in seen_commit_paths:
+        continue
+      seen_commit_paths.add(abs_f)
+      xy = st_map.get(abs_f, "clean")
+      commit_files.append({
+        "item_id": it.id,
+        "file_path": abs_f,
+        "rel_path": it.rel_path,
+        "old_rel_path": rename_sources.get(it.rel_path),
+        "repo_root": it.repo_root,
+        "git_xy": xy,
+        "dirty": xy != "clean",
+        "status": it.status,
+        "additions": it.additions,
+        "deletions": it.deletions,
+        "exists_on_disk": Path(abs_f).is_file(),
+      })
+    commit_files.sort(key=lambda c: (not c["dirty"], c["rel_path"]))
     return {
       "spec": spec.to_dict(),
       "repo_root": chosen.repo_root,
       "items": item_summaries,
       "active_item": chosen_dict,
+      "commit_files": commit_files,
+      "repo_staged": repo_staged,
     }
 
   # spec.mode == "git_dir"
@@ -537,21 +721,29 @@ def build_diff_workspace(
   if not dir_path.is_dir():
     raise FileNotFoundError(f"Directory not found: {dir_path}")
   repo_root, entries = discover_git_dir_entries(dir_path, rev=clean_rev)
-  if repo_root is None or not entries:
+  if repo_root is None:
     return {
       "spec": spec.to_dict(),
-      "repo_root": str(repo_root) if repo_root else None,
+      "repo_root": None,
       "items": [],
       "active_item": None,
+      "commit_files": [],
+      "repo_staged": {},
     }
+
+  st_map, pre_staged, rename_sources = get_git_status_map(repo_root)
+  repo_staged = {str(repo_root): pre_staged}
+  commit_files_by_rel: dict[str, dict[str, Any]] = {}
 
   summary_items: list[dict[str, Any]] = []
   by_id: dict[str, dict[str, Any]] = {}
   for ent in entries:
     rel_p = ent["rel_path"]
-    old_rp = ent.get("old_rel_path")
+    old_rp = rename_sources.get(rel_p) or ent.get("old_rel_path")
     iid = f"head:{rel_p}"
     disk_p = repo_root / rel_p
+    abs_f = os.path.normpath(disk_p)
+    xy = st_map.get(abs_f, "clean")
     summary = LocalDiffItem(
       id=iid,
       title=rel_p,
@@ -569,6 +761,53 @@ def build_diff_workspace(
     ).to_dict(include_hunks=False)
     summary_items.append(summary)
     by_id[iid] = ent
+    commit_files_by_rel[rel_p] = {
+      "item_id": iid,
+      "file_path": abs_f,
+      "rel_path": rel_p,
+      "old_rel_path": old_rp,
+      "repo_root": str(repo_root),
+      "git_xy": xy,
+      "dirty": xy != "clean",
+      "status": ent["status"],
+      "additions": ent["additions"],
+      "deletions": ent["deletions"],
+      "exists_on_disk": disk_p.is_file(),
+    }
+
+  rel_scope = dir_path.relative_to(repo_root).as_posix()
+  scope_prefix = "" if rel_scope in ("", ".") else f"{rel_scope}/"
+  for abs_f, xy in sorted(st_map.items()):
+    rel_p = Path(abs_f).relative_to(repo_root).as_posix()
+    if scope_prefix and rel_p != rel_scope and not rel_p.startswith(scope_prefix):
+      continue
+    if rel_p in commit_files_by_rel:
+      continue
+    commit_files_by_rel[rel_p] = {
+      "item_id": None,
+      "file_path": abs_f,
+      "rel_path": rel_p,
+      "old_rel_path": rename_sources.get(rel_p),
+      "repo_root": str(repo_root),
+      "git_xy": xy,
+      "dirty": xy != "clean",
+      "status": "untracked" if xy == "??" else ("deleted" if "D" in xy else "modified"),
+      "additions": 0,
+      "deletions": 0,
+      "exists_on_disk": Path(abs_f).is_file(),
+    }
+
+  commit_files = sorted(commit_files_by_rel.values(), key=lambda c: (not c["dirty"], c["rel_path"]))
+
+  if not summary_items:
+    return {
+      "spec": spec.to_dict(),
+      "repo_root": str(repo_root),
+      "items": [],
+      "active_item": None,
+      "commit_files": commit_files,
+      "repo_staged": repo_staged,
+    }
 
   target_id = active_id if (active_id and active_id in by_id) else summary_items[0]["id"]
   chosen_ent = by_id[target_id]
@@ -587,4 +826,6 @@ def build_diff_workspace(
     "repo_root": str(repo_root),
     "items": items_out,
     "active_item": active_obj,
+    "commit_files": commit_files,
+    "repo_staged": repo_staged,
   }

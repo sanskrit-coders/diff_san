@@ -69,6 +69,16 @@ class _CompareRequest(BaseModel):
   ignore_punct: bool = False
 
 
+class _CommitRequest(BaseModel):
+  file_paths: list[str]
+  commit_message: str = ""
+  push: bool = False
+  active_id: str | None = None
+  diff_mode: str = "word"
+  normalize: str = "none"
+  ignore_punct: bool = False
+
+
 class _StateHolder:
   def __init__(self, initial_spec: core.LocalDiffSpec) -> None:
     self.lock = threading.RLock()
@@ -205,6 +215,27 @@ def create_app(*, initial_spec: core.LocalDiffSpec | None = None) -> FastAPI:
         gd_resolver=_resolve_goldendict_binary,
         popen_fn=subprocess.Popen,
       )
+    except ValueError as exc:
+      raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+      raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+  @app.post("/api/commit")
+  def api_commit(req: _CommitRequest) -> dict[str, Any]:
+    try:
+      with holder.lock:
+        results = core.commit_files(req.file_paths, req.commit_message, push=req.push)
+        workspace = core.build_diff_workspace(
+          holder.spec,
+          active_id=req.active_id,
+          char_diff_mode=req.diff_mode,
+          normalize=req.normalize,
+          ignore_punct=req.ignore_punct,
+        )
+        push_ok = all(r.get("pushed", False) for r in results if r.get("committed")) if req.push else True
+        return {"results": results, "push_ok": push_ok, "workspace": workspace}
+    except FileNotFoundError as exc:
+      raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
       raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
