@@ -318,13 +318,16 @@ def compare_file_with_head(
   else:
     status = "modified"
 
+  is_renamed = bool(old_rel_path and old_rel_path != rel_path)
+  left_lbl = (f"{clean_rev}:{blob_rel}" if is_renamed else clean_rev) if head_bytes is not None else f"(absent in {clean_rev})"
+  right_lbl = (f"WORKING:{rel_path}" if is_renamed else "WORKING") if work_bytes is not None else "(deleted on disk)"
   return _compute_item_from_bytes(
     item_id=item_id or f"head:{rel_path}",
     title=rel_path,
     mode="git_head",
     status=status,
-    left_label=f"{clean_rev}:{blob_rel}" if head_bytes is not None else f"(absent in {clean_rev})",
-    right_label=f"WORKING:{rel_path}" if work_bytes is not None else f"(deleted on disk)",
+    left_label=left_lbl,
+    right_label=right_lbl,
     left_bytes=head_bytes,
     right_bytes=work_bytes,
     left_path=None,

@@ -97,8 +97,8 @@ def test_compare_git_head_directory_discovery_and_rev(tmp_path: Path):
   # Single file vs HEAD
   head_item = core.compare_file_with_head(f_deva, rev="HEAD", char_diff_mode="word")
   assert head_item.status == "modified"
-  assert head_item.left_label == "HEAD:sub/ऋक् 01.md"
-  assert head_item.right_label == "WORKING:sub/ऋक् 01.md"
+  assert head_item.left_label == "HEAD"
+  assert head_item.right_label == "WORKING"
   assert head_item.left_path is None
   assert head_item.right_path == str(f_deva.resolve())
   assert any(s["op"] == "ins" and "पा॰" in s["text"] for s in head_item.hunks[0].inline_rows[0]["segments"])
@@ -154,12 +154,18 @@ def test_local_diff_fastapi_endpoints_and_cli_errors(tmp_path: Path, monkeypatch
   tc = TestClient(app)
 
   assert tc.get("/").status_code == 200
+  idx_html = tc.get("/").text
+  hdr_top = idx_html.split("<header>", 1)[1].split("</div>", 1)[0]
+  assert "local-diff-san" not in hdr_top
+  assert 'id="helpBtn"' in idx_html and 'id="helpPane"' in idx_html
   meta = tc.get("/api/meta").json()
   assert meta["spec"]["mode"] == "git_head"
   assert "word" in meta["diff_modes"]
 
   diff_res = tc.get("/api/diff?diff_mode=word").json()
   assert diff_res["active_item"]["status"] == "modified"
+  assert diff_res["active_item"]["left_label"] == "HEAD"
+  assert diff_res["active_item"]["right_label"] == "WORKING"
   assert diff_res["active_item"]["right_path"] == str(f1.resolve())
 
   # Dynamically switch server workspace to 2-file mode via /api/compare
@@ -173,16 +179,25 @@ def test_local_diff_fastapi_endpoints_and_cli_errors(tmp_path: Path, monkeypatch
   assert body["active_item"]["left_path"] == str(f1.resolve())
   assert body["active_item"]["right_path"] == str(f2.resolve())
 
-  # IDEA and GoldenDict desktop helpers reuse pull_requests_san.local_helpers
+  # IDEA, VS Code, and GoldenDict desktop helpers reuse pull_requests_san.local_helpers
   launched: list[list[str]] = []
   with monkeypatch.context() as mp:
     mp.setattr(server, "_resolve_idea_binary", lambda: "/usr/bin/idea-mock")
+    mp.setattr(server, "_resolve_vscode_binary", lambda: "/usr/bin/code-mock")
     mp.setattr(server, "_resolve_goldendict_binary", lambda: "/usr/bin/gd-mock")
     mp.setattr(server.subprocess, "Popen", lambda cmd, **kw: launched.append(list(cmd)))
 
     r_idea = tc.post("/api/open_in_idea", json={"path": str(f1), "line": 3})
     assert r_idea.status_code == 200
     assert launched[-1] == ["/usr/bin/idea-mock", "--line", "3", str(f1.resolve())]
+
+    r_code = tc.post("/api/open_in_vscode", json={"path": str(f1), "line": 3})
+    assert r_code.status_code == 200
+    assert launched[-1] == ["/usr/bin/code-mock", "--goto", f"{f1.resolve()}:3"]
+
+    r_code_nol = tc.post("/api/open_in_vscode", json={"path": str(f1)})
+    assert r_code_nol.status_code == 200
+    assert launched[-1] == ["/usr/bin/code-mock", str(f1.resolve())]
 
     r_gd = tc.post("/api/open_in_goldendict", json={"word": "सुपेश᳓सा"})
     assert r_gd.status_code == 200
@@ -277,6 +292,7 @@ def test_local_diff_frontend_js_renders_settings_and_diff(tmp_path: Path):
     "elems['changedOnlyChk'] = Object.assign(makeEl('changedOnlyChk'), { checked: false });\n"
     "elems['wrapLinesChk'] = Object.assign(makeEl('wrapLinesChk'), { checked: true });\n"
     "elems['settingsPane'] = Object.assign(makeEl('settingsPane'), { style: { display: 'none' } });\n"
+    "elems['helpPane'] = Object.assign(makeEl('helpPane'), { style: { display: 'none' } });\n"
     "global.localStorage = { getItem(k){ return Object.prototype.hasOwnProperty.call(lsStore, k) ? lsStore[k] : null; }, setItem(k, v){ lsStore[k] = String(v); } };\n"
     "global.window = { location: { reload(){} }, getSelection(){ return { toString(){ return ''; } }; } };\n"
     "global.window.DiffSanEngine = global.DiffSanEngine;\n"
@@ -291,9 +307,27 @@ def test_local_diff_frontend_js_renders_settings_and_diff(tmp_path: Path):
     + "\n(async () => {\n"
     "  await init();\n"
     "  const html = elems['diffContainer'].innerHTML;\n"
-    "  if (!html.includes('diff-table-single') || !html.includes('class=\"ch-sub\">०</span>') || !html.includes('Open Left in IDEA')) {\n"
-    "    throw new Error('Local diff UI failed to render word-flow sub_segments / IDEA buttons: ' + html);\n"
+    "  if (!html.includes('diff-table-single') || !html.includes('class=\"ch-sub\">०</span>') || !html.includes('id=\"fileTitleVscodeLink\"') || !html.includes('openPathInVscode') || !html.includes('id=\"fileTitleIdeaLink\"') || !html.includes('>[I]</a>')) {\n"
+    "    throw new Error('Local diff UI failed to render word-flow sub_segments / VS Code title link / [I] IDEA link: ' + html);\n"
     "  }\n"
+    "  if (!html.includes('<strong>Left:</strong>') || !html.includes('<strong>Right:</strong>') || html.includes('Old / Left:')) {\n"
+    "    throw new Error('Local diff label chips did not shorten to Left:/Right:: ' + html);\n"
+    "  }\n"
+    "  const headHtml = renderDiffItemHtml({\n"
+    "    id: 'head:sub/foo.md', title: 'sub/foo.md', mode: 'git_head', status: 'modified',\n"
+    "    left_label: 'HEAD', right_label: 'WORKING', left_path: null, right_path: '/repo/sub/foo.md',\n"
+    "    additions: 1, deletions: 1, is_binary: false, hunks: sampleWs.active_item.hunks,\n"
+    "  });\n"
+    "  if (!headHtml.includes('<strong>Left:</strong> HEAD') || !headHtml.includes('<strong>Right:</strong> WORKING') || headHtml.includes('HEAD:sub/foo.md') || headHtml.includes('WORKING:sub/foo.md')) {\n"
+    "    throw new Error('HEAD diff repeated filename in Left:/Right: labels: ' + headHtml);\n"
+    "  }\n"
+    "  if (!headHtml.includes('id=\"fileTitleVscodeLink\"') || !headHtml.includes('>[I]</a>')) {\n"
+    "    throw new Error('HEAD diff missing VS Code file title link or [I] IDEA link');\n"
+    "  }\n"
+    "  listeners['keydown']({ key: '?', altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
+    "  if (!isHelpPaneOpen()) throw new Error('? key did not open helpPane');\n"
+    "  listeners['keydown']({ key: 'Escape', altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
+    "  if (isHelpPaneOpen()) throw new Error('Escape did not close helpPane');\n"
     "  listeners['keydown']({ key: 's', code: 'KeyS', altKey: true, ctrlKey: false, metaKey: false, shiftKey: false, target: { tagName: 'BODY' }, preventDefault(){} });\n"
     "  if (!elems['diffContainer'].innerHTML.includes('lhs-cell')) throw new Error('Alt+S failed to switch to 2-pane mode');\n"
     "  toggleSettingsPane(true);\n"

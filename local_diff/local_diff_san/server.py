@@ -49,6 +49,10 @@ def _resolve_idea_binary() -> str | None:
   return local_helpers.resolve_idea_binary()
 
 
+def _resolve_vscode_binary() -> str | None:
+  return local_helpers.resolve_vscode_binary()
+
+
 def _resolve_goldendict_binary() -> str | None:
   return local_helpers.resolve_goldendict_binary()
 
@@ -168,6 +172,22 @@ def create_app(*, initial_spec: core.LocalDiffSpec | None = None) -> FastAPI:
         req.path,
         line=req.line,
         idea_resolver=_resolve_idea_binary,
+        popen_fn=subprocess.Popen,
+      )
+    except FileNotFoundError as exc:
+      raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+      raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+      raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+  @app.post("/api/open_in_vscode")
+  def api_open_in_vscode(req: local_helpers.OpenPathIdeaRequest) -> dict[str, Any]:
+    try:
+      return local_helpers.open_path_in_vscode(
+        req.path,
+        line=req.line,
+        code_resolver=_resolve_vscode_binary,
         popen_fn=subprocess.Popen,
       )
     except FileNotFoundError as exc:

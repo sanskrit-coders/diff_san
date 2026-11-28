@@ -212,12 +212,15 @@ function toggleSettingsPane(forceOpen = null) {
   if (!pane) return;
   if (!pane.innerHTML) pane.innerHTML = renderSettingsPaneHtml();
   const nextOpen = forceOpen === null ? !isSettingsPaneOpen() : !!forceOpen;
-  if (nextOpen && typeof document.querySelector === "function") {
-    const hdr = document.querySelector("header");
-    if (hdr && typeof hdr.getBoundingClientRect === "function") {
-      const topPx = Math.max(48, Math.round(hdr.getBoundingClientRect().bottom + 8));
-      pane.style.top = `${topPx}px`;
-      pane.style.maxHeight = `calc(100vh - ${topPx + 14}px)`;
+  if (nextOpen) {
+    if (typeof closeHelpPane === "function" && isHelpPaneOpen()) closeHelpPane();
+    if (typeof document.querySelector === "function") {
+      const hdr = document.querySelector("header");
+      if (hdr && typeof hdr.getBoundingClientRect === "function") {
+        const topPx = Math.max(48, Math.round(hdr.getBoundingClientRect().bottom + 8));
+        pane.style.top = `${topPx}px`;
+        pane.style.maxHeight = `calc(100vh - ${topPx + 14}px)`;
+      }
     }
   }
   pane.style.display = nextOpen ? "flex" : "none";
@@ -228,6 +231,39 @@ function toggleSettingsPane(forceOpen = null) {
 
 function closeSettingsPane() {
   toggleSettingsPane(false);
+}
+
+function isHelpPaneOpen() {
+  const pane = typeof document !== "undefined" && typeof document.getElementById === "function"
+    ? document.getElementById("helpPane")
+    : null;
+  return !!(pane && pane.style && pane.style.display !== "none" && pane.style.display !== "");
+}
+
+function toggleHelpPane(forceOpen = null) {
+  const pane = typeof document !== "undefined" && typeof document.getElementById === "function"
+    ? document.getElementById("helpPane")
+    : null;
+  if (!pane) return;
+  const nextOpen = forceOpen === null ? !isHelpPaneOpen() : !!forceOpen;
+  if (nextOpen) {
+    if (typeof closeSettingsPane === "function" && isSettingsPaneOpen()) closeSettingsPane();
+    if (typeof document.querySelector === "function") {
+      const hdr = document.querySelector("header");
+      if (hdr && typeof hdr.getBoundingClientRect === "function") {
+        const topPx = Math.max(48, Math.round(hdr.getBoundingClientRect().bottom + 8));
+        pane.style.top = `${topPx}px`;
+        pane.style.maxHeight = `calc(100vh - ${topPx + 14}px)`;
+      }
+    }
+  }
+  if (pane.style) pane.style.display = nextOpen ? "flex" : "none";
+  const btn = typeof document.getElementById === "function" ? document.getElementById("helpBtn") : null;
+  if (btn && btn.classList) btn.classList.toggle("active", nextOpen);
+}
+
+function closeHelpPane() {
+  toggleHelpPane(false);
 }
 
 let _diffRowMouseBound = false;
@@ -1205,7 +1241,7 @@ function _locateTextOffset(entries, idx, isEnd = false) {
 
 function _isElementVisibleForFind(el) {
   if (!el) return false;
-  if (el.closest && el.closest("#diffFindBar, #settingsPane, #diffRowContextMenu, #shortcutFooter, #aboutFooter, script, style")) return false;
+  if (el.closest && el.closest("#diffFindBar, #settingsPane, #helpPane, #diffRowContextMenu, #shortcutFooter, #aboutFooter, script, style")) return false;
   if (el.closest && el.closest(".file-card.collapsed .file-card-body")) return false;
   if (typeof el.getClientRects === "function" && el.getClientRects().length === 0) return false;
   let cur = el;
@@ -1864,6 +1900,28 @@ function handleSharedDiffKeydown(ev, navCtx = null) {
       if (typeof ev.preventDefault === "function") ev.preventDefault();
       closeDiffFindBar();
       return true;
+    }
+    if (isHelpPaneOpen()) {
+      if (typeof ev.preventDefault === "function") ev.preventDefault();
+      closeHelpPane();
+      return true;
+    }
+  }
+  if (ev.key === "?" && !ev.ctrlKey && !ev.altKey && !ev.metaKey) {
+    const tgt = ev.target;
+    const tag = (tgt && tgt.tagName || "").toUpperCase();
+    const isTextControl = tag === "TEXTAREA" || tag === "SELECT"
+      || (tag === "INPUT" && tgt.type !== "checkbox" && tgt.type !== "radio" && tgt.type !== "button")
+      || !!tgt?.isContentEditable;
+    if (!isTextControl) {
+      const pane = typeof document !== "undefined" && typeof document.getElementById === "function"
+        ? document.getElementById("helpPane")
+        : null;
+      if (pane) {
+        if (typeof ev.preventDefault === "function") ev.preventDefault();
+        toggleHelpPane();
+        return true;
+      }
     }
   }
   if (navCtx) {

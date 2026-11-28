@@ -74,6 +74,49 @@ def open_path_in_intellij(
   return {"ok": True, "file_path": str(target), "line": line, "command": cmd}
 
 
+def resolve_vscode_binary() -> str | None:
+  """Locate an executable VS Code CLI launcher on the local machine."""
+  candidates: list[Path] = []
+  for name in ("code", "code-insiders", "codium"):
+    w = shutil.which(name)
+    if w:
+      candidates.append(Path(w))
+  for p_str in ("/usr/bin/code", "/usr/local/bin/code", "/snap/bin/code"):
+    candidates.append(Path(p_str))
+  candidates.append(Path.home() / ".local/bin/code")
+  for cand in candidates:
+    try:
+      resolved = cand.resolve(strict=True)
+    except OSError:
+      continue
+    if resolved.is_file() and os.access(resolved, os.X_OK):
+      return str(cand if os.access(cand, os.X_OK) else resolved)
+  return None
+
+
+def open_path_in_vscode(
+  target_path: str | Path,
+  *,
+  line: int | None = None,
+  code_resolver: Callable[[], str | None] | None = None,
+  popen_fn: Callable[..., Any] | None = None,
+) -> dict[str, Any]:
+  """Open an existing file on disk in VS Code at an optional 1-based line number."""
+  target = Path(target_path).expanduser().resolve()
+  if not target.is_file():
+    raise FileNotFoundError(f"Local file not found: {target}")
+  code_bin = (code_resolver or resolve_vscode_binary)()
+  if not code_bin:
+    raise RuntimeError("VS Code CLI binary ('code') not found")
+  cmd = [code_bin]
+  if line is not None and line >= 1:
+    cmd.extend(["--goto", f"{target}:{line}"])
+  else:
+    cmd.append(str(target))
+  (popen_fn or subprocess.Popen)(cmd, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+  return {"ok": True, "file_path": str(target), "line": line, "command": cmd}
+
+
 def open_local_file_in_intellij(
   local_org_dir: str | Path,
   repo: str,

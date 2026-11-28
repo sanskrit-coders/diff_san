@@ -1142,12 +1142,30 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     font-size: 12px;
     line-height: 1.45;
   }
+  .help-drawer {
+    position: fixed;
+    top: 78px;
+    right: 18px;
+    width: 680px;
+    max-width: calc(100vw - 28px);
+    max-height: calc(100vh - 96px);
+    overflow-y: auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-top: 4px solid var(--accent);
+    border-radius: 10px;
+    box-shadow: 0 14px 36px rgba(31, 28, 24, 0.22);
+    padding: 14px 16px;
+    z-index: 1200;
+    display: none;
+    flex-direction: column;
+    gap: 10px;
+  }
 </style>
 </head>
 <body>
 <header>
   <div class="row">
-    <strong style="font-size:15px;">Vedic Accent Fix Reviewer</strong>
     <select id="presetSelect" title="Quick preset directories"></select>
     <input id="dirInput" type="text" placeholder="/path/to/vedAH_yajuH/content/..." />
     <button onclick="browseDir()">Browse...</button>
@@ -1188,8 +1206,19 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     <button type="button" class="stat-pill filter-pill pill-accept" id="statAccept" data-status-filter="accept" title="Show only accepted suggestions (Alt+A)" onclick="setStatusFilter('accept')">Accepted: 0 <span class="kbd-hint">Alt+A</span></button>
     <button type="button" class="stat-pill filter-pill" id="statReject" data-status-filter="reject" title="Show only rejected suggestions (Alt+R)" style="background:var(--red-soft); color:var(--red); border-color:#f5b7b1;" onclick="setStatusFilter('reject')">Rejected: 0 <span class="kbd-hint">Alt+R</span></button>
     <button type="button" class="stat-pill filter-pill pill-hold" id="statHold" data-status-filter="has_feedback" title="Show only suggestions with !! comments (Alt+W)" onclick="setStatusFilter('has_feedback')">With !!: 0 <span class="kbd-hint">Alt+W</span></button>
+    <button id="helpBtn" class="small" type="button" title="About &amp; keyboard shortcuts (?)" onclick="toggleHelpPane()">?</button>
   </div>
 </header>
+<div id="helpPane" class="help-drawer" style="display:none;">
+  <div class="row" style="justify-content:space-between;">
+    <strong style="font-size:15px;">Vedic Accent Fix Reviewer (pada_svara)</strong>
+    <button id="closeHelpBtn" class="small" type="button" onclick="closeHelpPane()">✕ Close</button>
+  </div>
+  <div id="shortcutFooter" style="color:var(--muted); font-size:12px;">Shortcuts: Alt+U Pending • Alt+A Accepted • Alt+R Rejected • Alt+W With !! • Alt+L/0 All • Alt+1 Accept • Alt+2 Reject • Alt+3 Feedback • Enter Submit • Ctrl+Enter Accept+Submit • Ctrl+R Rescan • Ctrl+Z Undo • j/k/↑/↓ navigate • ←/→ Collapse/Expand • ? About/Shortcuts • Esc Close help</div>
+  <div id="aboutFooter" style="color:var(--muted); font-size:12px; border-top:1px solid var(--border); padding-top:8px;">
+    <div><strong>pada_svara</strong> (<a href="https://github.com/sanskrit-coders/diff_san/tree/master/vishvAsa/pada_svara" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) — FastAPI review GUI and scanner for Vedic <code>पद-पाठः</code> and <code>विश्वास-प्रस्तुतिः</code> accent fix suggestions with scoped <code>git commit --only</code> support.</div>
+  </div>
+</div>
 
 <div class="workspace">
   <aside class="sidebar">
@@ -1210,8 +1239,7 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
       </div>
     </div>
     <div id="cardsContainer"></div>
-    <div class="pager">
-      <div style="color:var(--muted); font-size:11px;">Shortcuts: Alt+U Pending • Alt+A Accepted • Alt+R Rejected • Alt+W With !! • Alt+L/0 All • Alt+1 Accept • Alt+2 Reject • Alt+3 Feedback • Enter Submit • Ctrl+Enter Accept+Submit • Ctrl+R Rescan • Ctrl+Z Undo • j/k/↑/↓ navigate • ←/→ Collapse/Expand</div>
+    <div class="pager" style="justify-content:flex-end;">
       <div class="row">
         <button class="small" onclick="changePage(-1)">← Prev</button>
         <span id="pageLabelBottom" style="font-size:12px;">1 / 1</span>
@@ -2135,10 +2163,56 @@ function changePage(delta) {
   if (nxt !== currentPage) loadItems(nxt);
 }
 
+function isHelpPaneOpen() {
+  const pane = typeof document !== "undefined" && typeof document.getElementById === "function"
+    ? document.getElementById("helpPane")
+    : null;
+  return !!(pane && pane.style && pane.style.display !== "none" && pane.style.display !== "");
+}
+
+function toggleHelpPane(forceOpen = null) {
+  const pane = typeof document !== "undefined" && typeof document.getElementById === "function"
+    ? document.getElementById("helpPane")
+    : null;
+  if (!pane) return;
+  const nextOpen = forceOpen === null ? !isHelpPaneOpen() : !!forceOpen;
+  if (nextOpen && typeof document.querySelector === "function") {
+    const hdr = document.querySelector("header");
+    if (hdr && typeof hdr.getBoundingClientRect === "function") {
+      const topPx = Math.max(48, Math.round(hdr.getBoundingClientRect().bottom + 8));
+      pane.style.top = `${topPx}px`;
+      pane.style.maxHeight = `calc(100vh - ${topPx + 14}px)`;
+    }
+  }
+  if (pane.style) pane.style.display = nextOpen ? "flex" : "none";
+  const btn = typeof document.getElementById === "function" ? document.getElementById("helpBtn") : null;
+  if (btn && btn.classList) btn.classList.toggle("active", nextOpen);
+}
+
+function closeHelpPane() {
+  toggleHelpPane(false);
+}
+
 document.addEventListener("keydown", (ev) => {
   const target = ev.target;
   const id = (target && target.id) || "";
   const tag = (target && target.tagName || "").toUpperCase();
+
+  if (ev.key === "Escape" && isHelpPaneOpen()) {
+    ev.preventDefault();
+    closeHelpPane();
+    return;
+  }
+  if (ev.key === "?" && !ev.ctrlKey && !ev.altKey && !ev.metaKey) {
+    const isTextInput = tag === "TEXTAREA" || tag === "SELECT"
+      || (tag === "INPUT" && target.type !== "radio" && target.type !== "checkbox" && target.type !== "button")
+      || !!target?.isContentEditable;
+    if (!isTextInput) {
+      ev.preventDefault();
+      toggleHelpPane();
+      return;
+    }
+  }
 
   // Ctrl+R rescans directory even when list is empty
   if ((ev.key === "r" || ev.key === "R") && ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey) {

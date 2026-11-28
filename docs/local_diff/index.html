@@ -490,6 +490,36 @@
     flex-direction: column;
     gap: 12px;
   }
+  .settings-drawer.help-drawer {
+    width: 700px;
+  }
+  .file-title-link {
+    font-weight: 700;
+    font-size: 18px;
+    color: var(--blue);
+    text-decoration: none;
+  }
+  .file-title-link:hover { text-decoration: underline; }
+  .file-idea-link {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--muted);
+    text-decoration: none;
+    padding: 1px 6px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--surface-2);
+  }
+  .file-idea-link:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .chip-path-link {
+    color: inherit;
+    text-decoration: none;
+  }
+  .chip-path-link:hover { text-decoration: underline; }
   .settings-preview {
     border: 1px solid var(--border);
     border-radius: 7px;
@@ -786,7 +816,6 @@
 <body>
 <header>
   <div class="row">
-    <strong style="font-size:21px;">local-diff-san</strong>
     <label id="modeSelectWrap">Mode:
       <select id="compareModeSelect" onchange="onCompareModeSwitch()">
         <option value="git">Git vs Rev</option>
@@ -856,9 +885,30 @@
     <button id="gdSelectionBtn" class="small" type="button" title="Look up currently selected text in GoldenDict" onclick="lookupSelectedGoldenDict()">📖 GoldenDict Selection</button>
     <button id="findBtn" class="small" type="button" title="Find text or combining marks like ँ across spans (Ctrl+F)" onclick="openDiffFindBar()">🔍 Find</button>
     <button id="settingsBtn" class="small" type="button" title="Customize deleted and added diff highlight colors" onclick="toggleSettingsPane()">⚙ Settings</button>
+    <button id="helpBtn" class="small" type="button" title="About &amp; keyboard shortcuts (?)" onclick="toggleHelpPane()">?</button>
   </div>
 </header>
 <div id="settingsPane" class="settings-drawer" style="display:none;"></div>
+<div id="helpPane" class="settings-drawer help-drawer" style="display:none;">
+  <div class="row" style="justify-content:space-between;">
+    <strong style="font-size:19px;">local-diff-san — Sanskrit Local &amp; Git Diff Viewer</strong>
+    <button id="closeHelpBtn" class="small" type="button" onclick="closeHelpPane()">✕ Close</button>
+  </div>
+  <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • Tab / Shift+Tab Step diffs • Ctrl+Space Checked until here • Click diff box Copy OLD/NEW • Right-click Copy diff • Ctrl+F Find (supports ँ) • Ctrl+G / Ctrl+Shift+G Next/Prev find • Alt+W Word/Char diff • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Alt+S Single/2-Pane • Ctrl+R Refresh • j/k Navigate files • ? About/Shortcuts • Esc Close bar/panel</div>
+  <footer id="aboutFooter" class="about-footer">
+    <div>
+      <strong>diff_san</strong> (<a href="https://github.com/sanskrit-coders/diff_san" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) —
+      Sanskrit &amp; Indic <strong>character-level</strong>, <strong>Vedic grapheme (<code>\X</code>)</strong>, and <strong>single-pane inline word-flow</strong> diff viewer with intra-word highlights across reflowed lines, optional 2-pane LHS/RHS mode, Unicode normalization, punctuation-ignore mode, and expandable context lines. Runs locally in pure JS with zero server uploads.
+    </div>
+    <div>
+      Python / CLI packages on PyPI:
+      <a href="https://pypi.org/project/local-diff-san/" target="_blank" rel="noopener noreferrer"><code>pip install local-diff-san</code></a> (compare local files or Git <code>HEAD</code> revisions)
+      · <a href="https://pypi.org/project/pull-requests-san/" target="_blank" rel="noopener noreferrer"><code>pip install pull_requests_san</code></a> (GitHub PR reviewer)
+      · Web apps: <a href="https://sanskrit-coders.github.io/diff_san/" rel="noopener noreferrer">All <code>diff_san</code> tools</a>
+      · <a href="https://sanskrit-coders.github.io/diff_san/pull_requests/" rel="noopener noreferrer">GitHub PR Diff Viewer</a>.
+    </div>
+  </footer>
+</div>
 
 <div id="workspaceEl" class="workspace">
   <aside id="sidebarEl" class="sidebar">
@@ -896,20 +946,6 @@
     <div id="diffContainer">
       <div class="card">Loading diff...</div>
     </div>
-    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • Tab / Shift+Tab Step diffs • Ctrl+Space Checked until here • Click diff box Copy OLD/NEW • Right-click Copy diff • Ctrl+F Find (supports ँ) • Ctrl+G / Ctrl+Shift+G Next/Prev find • Alt+W Word/Char diff • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Alt+S Single/2-Pane • Ctrl+R Refresh • j/k Navigate files • Esc Close bar/settings</div>
-    <footer id="aboutFooter" class="about-footer">
-      <div>
-        <strong>diff_san</strong> (<a href="https://github.com/sanskrit-coders/diff_san" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) —
-        Sanskrit &amp; Indic <strong>character-level</strong>, <strong>Vedic grapheme (<code>\X</code>)</strong>, and <strong>single-pane inline word-flow</strong> diff viewer with intra-word highlights across reflowed lines, optional 2-pane LHS/RHS mode, Unicode normalization, punctuation-ignore mode, and expandable context lines. Runs locally in pure JS with zero server uploads.
-      </div>
-      <div>
-        Python / CLI packages on PyPI:
-        <a href="https://pypi.org/project/local-diff-san/" target="_blank" rel="noopener noreferrer"><code>pip install local-diff-san</code></a> (compare local files or Git <code>HEAD</code> revisions)
-        · <a href="https://pypi.org/project/pull-requests-san/" target="_blank" rel="noopener noreferrer"><code>pip install pull_requests_san</code></a> (GitHub PR reviewer)
-        · Web apps: <a href="https://sanskrit-coders.github.io/diff_san/" rel="noopener noreferrer">All <code>diff_san</code> tools</a>
-        · <a href="https://sanskrit-coders.github.io/diff_san/pull_requests/" rel="noopener noreferrer">GitHub PR Diff Viewer</a>.
-      </div>
-    </footer>
   </main>
 </div>
 
@@ -2742,12 +2778,15 @@ function toggleSettingsPane(forceOpen = null) {
   if (!pane) return;
   if (!pane.innerHTML) pane.innerHTML = renderSettingsPaneHtml();
   const nextOpen = forceOpen === null ? !isSettingsPaneOpen() : !!forceOpen;
-  if (nextOpen && typeof document.querySelector === "function") {
-    const hdr = document.querySelector("header");
-    if (hdr && typeof hdr.getBoundingClientRect === "function") {
-      const topPx = Math.max(48, Math.round(hdr.getBoundingClientRect().bottom + 8));
-      pane.style.top = `${topPx}px`;
-      pane.style.maxHeight = `calc(100vh - ${topPx + 14}px)`;
+  if (nextOpen) {
+    if (typeof closeHelpPane === "function" && isHelpPaneOpen()) closeHelpPane();
+    if (typeof document.querySelector === "function") {
+      const hdr = document.querySelector("header");
+      if (hdr && typeof hdr.getBoundingClientRect === "function") {
+        const topPx = Math.max(48, Math.round(hdr.getBoundingClientRect().bottom + 8));
+        pane.style.top = `${topPx}px`;
+        pane.style.maxHeight = `calc(100vh - ${topPx + 14}px)`;
+      }
     }
   }
   pane.style.display = nextOpen ? "flex" : "none";
@@ -2758,6 +2797,39 @@ function toggleSettingsPane(forceOpen = null) {
 
 function closeSettingsPane() {
   toggleSettingsPane(false);
+}
+
+function isHelpPaneOpen() {
+  const pane = typeof document !== "undefined" && typeof document.getElementById === "function"
+    ? document.getElementById("helpPane")
+    : null;
+  return !!(pane && pane.style && pane.style.display !== "none" && pane.style.display !== "");
+}
+
+function toggleHelpPane(forceOpen = null) {
+  const pane = typeof document !== "undefined" && typeof document.getElementById === "function"
+    ? document.getElementById("helpPane")
+    : null;
+  if (!pane) return;
+  const nextOpen = forceOpen === null ? !isHelpPaneOpen() : !!forceOpen;
+  if (nextOpen) {
+    if (typeof closeSettingsPane === "function" && isSettingsPaneOpen()) closeSettingsPane();
+    if (typeof document.querySelector === "function") {
+      const hdr = document.querySelector("header");
+      if (hdr && typeof hdr.getBoundingClientRect === "function") {
+        const topPx = Math.max(48, Math.round(hdr.getBoundingClientRect().bottom + 8));
+        pane.style.top = `${topPx}px`;
+        pane.style.maxHeight = `calc(100vh - ${topPx + 14}px)`;
+      }
+    }
+  }
+  if (pane.style) pane.style.display = nextOpen ? "flex" : "none";
+  const btn = typeof document.getElementById === "function" ? document.getElementById("helpBtn") : null;
+  if (btn && btn.classList) btn.classList.toggle("active", nextOpen);
+}
+
+function closeHelpPane() {
+  toggleHelpPane(false);
 }
 
 let _diffRowMouseBound = false;
@@ -3735,7 +3807,7 @@ function _locateTextOffset(entries, idx, isEnd = false) {
 
 function _isElementVisibleForFind(el) {
   if (!el) return false;
-  if (el.closest && el.closest("#diffFindBar, #settingsPane, #diffRowContextMenu, #shortcutFooter, #aboutFooter, script, style")) return false;
+  if (el.closest && el.closest("#diffFindBar, #settingsPane, #helpPane, #diffRowContextMenu, #shortcutFooter, #aboutFooter, script, style")) return false;
   if (el.closest && el.closest(".file-card.collapsed .file-card-body")) return false;
   if (typeof el.getClientRects === "function" && el.getClientRects().length === 0) return false;
   let cur = el;
@@ -4395,6 +4467,28 @@ function handleSharedDiffKeydown(ev, navCtx = null) {
       closeDiffFindBar();
       return true;
     }
+    if (isHelpPaneOpen()) {
+      if (typeof ev.preventDefault === "function") ev.preventDefault();
+      closeHelpPane();
+      return true;
+    }
+  }
+  if (ev.key === "?" && !ev.ctrlKey && !ev.altKey && !ev.metaKey) {
+    const tgt = ev.target;
+    const tag = (tgt && tgt.tagName || "").toUpperCase();
+    const isTextControl = tag === "TEXTAREA" || tag === "SELECT"
+      || (tag === "INPUT" && tgt.type !== "checkbox" && tgt.type !== "radio" && tgt.type !== "button")
+      || !!tgt?.isContentEditable;
+    if (!isTextControl) {
+      const pane = typeof document !== "undefined" && typeof document.getElementById === "function"
+        ? document.getElementById("helpPane")
+        : null;
+      if (pane) {
+        if (typeof ev.preventDefault === "function") ev.preventDefault();
+        toggleHelpPane();
+        return true;
+      }
+    }
   }
   if (navCtx) {
     const rows = typeof navCtx.getRows === "function" ? (navCtx.getRows() || []) : [];
@@ -4881,29 +4975,35 @@ function renderDiffItemHtml(item) {
     }
   }
 
-  const leftBtn = (item.left_path && !IS_STATIC_HOST)
-    ? `<button class="small" type="button" onclick="openPathInIdea(${esc(JSON.stringify(item.left_path))}, null)">Open Left in IDEA</button>`
+  const primaryPath = item.right_path || item.left_path;
+  const titleHtml = (primaryPath && !IS_STATIC_HOST)
+    ? `<a id="fileTitleVscodeLink" class="mono file-title-link" href="#" title="Open ${esc(primaryPath)} in VS Code" onclick="event.preventDefault(); openPathInVscode(${esc(JSON.stringify(primaryPath))}, null)">${esc(item.title)}</a>`
+    : `<span class="mono" style="font-weight:700; font-size:18px;">${esc(item.title)}</span>`;
+  const ideaTitleHtml = (primaryPath && !IS_STATIC_HOST)
+    ? `<a id="fileTitleIdeaLink" class="mono file-idea-link" href="#" title="Open ${esc(primaryPath)} in IntelliJ IDEA" onclick="event.preventDefault(); openPathInIdea(${esc(JSON.stringify(primaryPath))}, null)">[I]</a>`
     : "";
-  const rightBtn = (item.right_path && !IS_STATIC_HOST)
-    ? `<button class="small" type="button" onclick="openPathInIdea(${esc(JSON.stringify(item.right_path))}, null)">Open Right in IDEA</button>`
-    : "";
+
+  const isGitMode = item.mode === "git_head" || item.mode === "git_dir";
+  const leftLabelHtml = (item.left_path && !IS_STATIC_HOST && !isGitMode)
+    ? `<a class="chip-path-link" href="#" title="Open ${esc(item.left_path)} in VS Code" onclick="event.preventDefault(); openPathInVscode(${esc(JSON.stringify(item.left_path))}, null)">${esc(item.left_label)}</a> <a class="file-idea-link" href="#" title="Open ${esc(item.left_path)} in IntelliJ IDEA" onclick="event.preventDefault(); openPathInIdea(${esc(JSON.stringify(item.left_path))}, null)">[I]</a>`
+    : esc(item.left_label);
+  const rightLabelHtml = (item.right_path && !IS_STATIC_HOST && !isGitMode)
+    ? `<a class="chip-path-link" href="#" title="Open ${esc(item.right_path)} in VS Code" onclick="event.preventDefault(); openPathInVscode(${esc(JSON.stringify(item.right_path))}, null)">${esc(item.right_label)}</a> <a class="file-idea-link" href="#" title="Open ${esc(item.right_path)} in IntelliJ IDEA" onclick="event.preventDefault(); openPathInIdea(${esc(JSON.stringify(item.right_path))}, null)">[I]</a>`
+    : esc(item.right_label);
 
   return `<div class="file-card focused">
     <div class="file-card-header">
       <div class="row" style="gap:8px;">
-        <span class="mono" style="font-weight:700; font-size:18px;">${esc(item.title)}</span>
+        ${titleHtml}
+        ${ideaTitleHtml}
         <span class="pill ${statusPillClass(item.status)}">${esc(item.status)}</span>
         <span style="color:var(--green); font-weight:600; font-size:16px;">+${item.additions}</span>
         <span style="color:var(--red); font-weight:600; font-size:16px;">-${item.deletions}</span>
       </div>
-      <div class="row" style="gap:6px;">
-        ${leftBtn}
-        ${rightBtn}
-      </div>
     </div>
     <div style="padding:7px 12px; background:var(--surface-2); border-bottom:1px solid var(--border);" class="label-pair">
-      <span class="label-chip left mono"><strong>Old / Left:</strong> ${esc(item.left_label)}</span>
-      <span class="label-chip right mono"><strong>New / Right:</strong> ${esc(item.right_label)}</span>
+      <span class="label-chip left mono"><strong>Left:</strong> ${leftLabelHtml}</span>
+      <span class="label-chip right mono"><strong>Right:</strong> ${rightLabelHtml}</span>
     </div>
     <div class="file-card-body">${bodyHtml}</div>
   </div>`;
@@ -5007,6 +5107,20 @@ async function changeDiffOptions() {
     localStorage.setItem("local_diff_san_ignore_punct", opts.ignore_punct ? "true" : "false");
   } catch (_) {}
   return fetchDiff(selectedItemId);
+}
+
+async function openPathInVscode(filePath, line = null) {
+  showError("");
+  try {
+    const data = await apiJson("/api/open_in_vscode", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: filePath, line }),
+    }, "Failed to open in VS Code");
+    setStatus(`Opened in VS Code: ${data.file_path}`, 2500);
+  } catch (e) {
+    showError(e.message);
+  }
 }
 
 async function openPathInIdea(filePath, line = null) {

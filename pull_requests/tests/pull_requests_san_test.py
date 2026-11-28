@@ -795,9 +795,10 @@ def test_gui_endpoints_diff_comments_refresh_and_local_helpers(tmp_path: Path, m
   for pill_id in ("stateOpenPill", "stateClosedPill", "stateMergedPill", "stateAllPill"):
     assert f'id="{pill_id}"' in hdr_top
     assert r_html.text.count(f'id="{pill_id}"') == 1
-  for btn_id in ("commentNavBtn", "prevCommentBtn", "nextCommentBtn", "commentNavCount"):
+  for btn_id in ("commentNavBtn", "prevCommentBtn", "nextCommentBtn", "commentNavCount", "helpBtn", "helpPane"):
     assert f'id="{btn_id}"' in r_html.text
   assert "> Wrap\n" in r_html.text and "> Wrap long lines\n" not in r_html.text
+  assert '<div id="helpPane"' in r_html.text and r_html.text.index('id="helpPane"') < r_html.text.index('id="aboutFooter"')
 
   r_meta = tc.get("/api/meta")
   assert r_meta.status_code == 200
@@ -1861,6 +1862,9 @@ def test_static_pr_export_and_github_rest_adapter(tmp_path: Path):
   assert "const IS_STATIC_HOST = true" in static_html
   assert "https://sanskrit-coders.github.io/diff_san/local_diff/" in static_html
   assert "pip install pull_requests_san" in static_html
+  assert 'id="helpBtn"' in static_html and 'id="helpPane"' in static_html
+  hdr_top = static_html.split("<header>", 1)[1].split("</div>", 1)[0]
+  assert "GitHub PR Character-Level Reviewer" not in hdr_top
 
   m = re.search(r"<script>\n(.*?)\n</script>", static_html, re.S)
   assert m is not None

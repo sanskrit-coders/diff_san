@@ -316,10 +316,31 @@
     <button id="gdSelectionBtn" class="small" title="Look up currently selected text in GoldenDict" onclick="lookupSelectedGoldenDict()">📖 GoldenDict Selection</button>
     <button id="findBtn" class="small" type="button" title="Find text or combining marks like ँ across spans (Ctrl+F)" onclick="openDiffFindBar()">🔍 Find</button>
     <button id="settingsBtn" class="small" type="button" title="Customize deleted and added diff highlight colors" onclick="toggleSettingsPane()">⚙ Settings</button>
+    <button id="helpBtn" class="small" type="button" title="About &amp; keyboard shortcuts (?)" onclick="toggleHelpPane()">?</button>
   </div>
   <div id="headerPrActions" class="row" style="display:none; padding-top:4px; border-top:1px solid #ece6da; gap:6px;"></div>
 </header>
 <div id="settingsPane" class="settings-drawer" style="display:none;"></div>
+<div id="helpPane" class="settings-drawer help-drawer" style="display:none;">
+  <div class="row" style="justify-content:space-between;">
+    <strong style="font-size:19px;">GitHub PR Character-Level Reviewer (diff_san)</strong>
+    <button id="closeHelpBtn" class="small" type="button" onclick="closeHelpPane()">✕ Close</button>
+  </div>
+  <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • Tab / Shift+Tab Step diffs • Ctrl+Space Checked until here • Click diff box Copy OLD/NEW • Right-click Copy diff / PR line link • Ctrl+F Find (supports ँ) • Ctrl+G / Ctrl+Shift+G Next/Prev find • Ctrl+D / Ctrl+Shift+D Next/Prev comment • Alt+D / Alt+Shift+D Next/Prev unresolved • ←/→ Collapse/Expand resolved comment • Alt+R Reply selected comment • Alt+V Resolve/Unresolve selected comment • Alt+W Word/Char diff • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Shift+Enter Multiline reply • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • [/] Prev/Next PR • ? About/Shortcuts • Esc Close panel/bar/composer</div>
+  <footer id="aboutFooter" class="about-footer">
+    <div>
+      <strong>diff_san — Pull Requests</strong> (<a href="https://github.com/sanskrit-coders/diff_san" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) —
+      Sanskrit &amp; Indic <strong>character-level</strong>, <strong>Vedic grapheme (<code>\X</code>)</strong>, and <strong>single-pane inline word-flow</strong> GitHub Pull Request viewer with Sandhi diff highlighting, intra-word sub-highlights, collapsible context, and review threads.
+    </div>
+    <div>
+      Python / CLI packages on PyPI:
+      <a href="https://pypi.org/project/pull-requests-san/" target="_blank" rel="noopener noreferrer"><code>pip install pull_requests_san</code></a>
+      · <a href="https://pypi.org/project/local-diff-san/" target="_blank" rel="noopener noreferrer"><code>pip install local-diff-san</code></a>
+      · Web apps: <a href="https://sanskrit-coders.github.io/diff_san/" rel="noopener noreferrer">All <code>diff_san</code> tools</a>
+      · <a href="https://sanskrit-coders.github.io/diff_san/local_diff/" rel="noopener noreferrer">Local / File Diff Viewer</a>.
+    </div>
+  </footer>
+</div>
 
 <div class="workspace">
   <aside class="sidebar">
@@ -344,20 +365,6 @@
     <div id="prContainer">
       <div class="card">Loading pull requests...</div>
     </div>
-    <div id="shortcutFooter" style="color:var(--muted); font-size:15px; padding:4px 0;">Shortcuts: Shift+Click / ↑/↓ Select line • Tab / Shift+Tab Step diffs • Ctrl+Space Checked until here • Click diff box Copy OLD/NEW • Right-click Copy diff / PR line link • Ctrl+F Find (supports ँ) • Ctrl+G / Ctrl+Shift+G Next/Prev find • Ctrl+D / Ctrl+Shift+D Next/Prev comment • Alt+D / Alt+Shift+D Next/Prev unresolved • ←/→ Collapse/Expand resolved comment • Alt+R Reply selected comment • Alt+V Resolve/Unresolve selected comment • Alt+W Word/Char diff • PgUp/PgDn Page &amp; select first line • Alt+↑/↓ Prev/Next diff line • Alt+Shift+↑/↓ Prev/Next sandhi diff • Ctrl+Enter Comment selected line / Submit • Ctrl+Click Insert comment • Shift+Enter Multiline reply • Alt+S Single/2-Pane • Alt+O Open • Alt+C Closed • Alt+M Merged • Alt+L/0 All • Alt+B Browser • Alt+Shift+M Merge • Alt+Shift+C Close/Reopen • Alt+1 Approve • Alt+2 Request Changes • Alt+3 Feedback • Ctrl+R Refresh • j/k navigate files • [/] Prev/Next PR • Esc Close bar/composer/settings</div>
-    <footer id="aboutFooter" class="about-footer">
-      <div>
-        <strong>diff_san — Pull Requests</strong> (<a href="https://github.com/sanskrit-coders/diff_san" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) —
-        Sanskrit &amp; Indic <strong>character-level</strong>, <strong>Vedic grapheme (<code>\X</code>)</strong>, and <strong>single-pane inline word-flow</strong> GitHub Pull Request viewer with Sandhi diff highlighting, intra-word sub-highlights, collapsible context, and review threads.
-      </div>
-      <div>
-        Python / CLI packages on PyPI:
-        <a href="https://pypi.org/project/pull-requests-san/" target="_blank" rel="noopener noreferrer"><code>pip install pull_requests_san</code></a>
-        · <a href="https://pypi.org/project/local-diff-san/" target="_blank" rel="noopener noreferrer"><code>pip install local-diff-san</code></a>
-        · Web apps: <a href="https://sanskrit-coders.github.io/diff_san/" rel="noopener noreferrer">All <code>diff_san</code> tools</a>
-        · <a href="https://sanskrit-coders.github.io/diff_san/local_diff/" rel="noopener noreferrer">Local / File Diff Viewer</a>.
-      </div>
-    </footer>
   </main>
 </div>
 
