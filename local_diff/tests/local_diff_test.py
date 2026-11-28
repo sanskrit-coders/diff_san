@@ -247,8 +247,16 @@ def test_local_diff_fastapi_endpoints_and_cli_errors(tmp_path: Path, monkeypatch
     assert r_gd.status_code == 200
     assert launched[-1] == ["/usr/bin/gd-mock", "सुपेशसा"]
 
-  # CLI validates missing paths before launching uvicorn
-  assert server.main([str(tmp_path / "does_not_exist.md"), "--no-browser"]) == 2
+  # CLI validates missing paths before killing existing servers, then kills previous local-diff-san before binding port
+  calls: list[str] = []
+  with monkeypatch.context() as mp:
+    mp.setattr(server.local_helpers, "kill_other_server_instances", lambda **kw: calls.append(f"kill:{kw.get('label')}") or [])
+    mp.setattr(server.local_helpers, "find_free_port", lambda p: calls.append("port") or p)
+    mp.setattr(server.uvicorn, "run", lambda *a, **kw: calls.append("run"))
+    assert server.main([str(tmp_path / "does_not_exist.md"), "--no-browser"]) == 2
+    assert calls == []
+    assert server.main([str(repo), "--no-browser", "--port", "8772"]) == 0
+    assert calls == ["kill:local-diff-san", "port", "run"]
 
 
 def test_local_diff_frontend_js_renders_settings_and_diff(tmp_path: Path):

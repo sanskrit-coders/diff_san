@@ -273,6 +273,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 2
 
   app = create_app(initial_spec=spec)
+  local_helpers.kill_other_server_instances(
+    entry_names=("local-diff-san", "local_diff_san"),
+    module_names=("local_diff_san", "local_diff_san.__main__", "local_diff_san.server"),
+    script_suffixes=("local_diff_san/__main__.py", "local_diff_san/server.py"),
+    label="local-diff-san",
+  )
   port = local_helpers.find_free_port(args.port)
   url = f"http://127.0.0.1:{port}/"
   print(f"local-diff-san running at {url} (mode={spec.mode})", flush=True)

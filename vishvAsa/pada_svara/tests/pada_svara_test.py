@@ -1068,3 +1068,52 @@ def test_open_in_goldendict_and_pratipadika_lookup(tmp_path: Path, monkeypatch):
   assert bad.status_code == 400
 
 
+def test_kill_other_pada_svara_servers_and_main_order(tmp_path: Path, monkeypatch):
+  import sys
+  import time
+  from pada_svara import review_gui
+
+  assert review_gui._is_matching_server_cmdline(["/venv/bin/python", "/repo/pada_svara/__main__.py", "--dir", "/x"]) is True
+  assert review_gui._is_matching_server_cmdline(["/venv/bin/python", "-m", "pada_svara"]) is True
+  assert review_gui._is_matching_server_cmdline(["/venv/bin/pada_svara", "--no-browser"]) is True
+  assert review_gui._is_matching_server_cmdline(["/venv/bin/python", "/repo/pada_svara/__main__.py", "--help"]) is False
+  assert review_gui._is_matching_server_cmdline(["/venv/bin/python", "/venv/bin/local-diff-san", "/tmp/pada_svara/__main__.py"]) is False
+  assert review_gui._is_matching_server_cmdline(["bash", "-c", "pada_svara"]) is False
+
+  # Test standalone fallback path with a real subprocess
+  dummy_srv = tmp_path / "_diff_san_test_ps_srv.py"
+  ready = tmp_path / "ps_ready.flag"
+  dummy_srv.write_text(
+    "import signal, sys, time\n"
+    "open(sys.argv[1], 'w').write('ok')\n"
+    "signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))\n"
+    "while True: time.sleep(0.2)\n",
+    encoding="utf-8",
+  )
+  proc = subprocess.Popen([sys.executable, str(dummy_srv), str(ready)])
+  try:
+    deadline = time.monotonic() + 5.0
+    while not ready.exists() and time.monotonic() < deadline:
+      time.sleep(0.05)
+    assert ready.exists()
+    killed = review_gui._kill_other_pada_svara_servers(
+      entry_names=("_diff_san_test_ps_srv.py",),
+      module_names=(),
+      script_suffixes=(str(dummy_srv),),
+      iter_cmdlines_fn=lambda: [(proc.pid, [sys.executable, str(dummy_srv), str(ready)])],
+    )
+    assert proc.pid in killed
+    assert proc.wait(timeout=2) is not None
+  finally:
+    if proc.poll() is None:
+      proc.kill()
+      proc.wait(timeout=2)
+
+  calls: list[str] = []
+  monkeypatch.setattr(review_gui, "_kill_other_pada_svara_servers", lambda: calls.append("kill") or [])
+  monkeypatch.setattr(review_gui, "_find_free_port", lambda p: calls.append("port") or p)
+  monkeypatch.setattr(review_gui.uvicorn, "run", lambda *a, **kw: calls.append("run"))
+  assert review_gui.main(["--no-browser", "--port", "8765"]) == 0
+  assert calls == ["kill", "port", "run"]
+
+

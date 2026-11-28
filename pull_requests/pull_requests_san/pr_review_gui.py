@@ -585,6 +585,15 @@ def _launch_browser(url: str) -> None:
   local_helpers.launch_browser(url)
 
 
+def _kill_other_server_instances() -> list[int]:
+  return local_helpers.kill_other_server_instances(
+    entry_names=("pull_requests_san",),
+    module_names=("pull_requests_san", "pull_requests_san.__main__", "pull_requests_san.pr_review_gui"),
+    script_suffixes=("pull_requests_san/__main__.py", "pull_requests_san/pr_review_gui.py"),
+    label="pull_requests_san",
+  )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
   p = argparse.ArgumentParser(description="Launch pull_requests_san — GitHub PR Reviewer for Sanskrit scholarship.")
   p.add_argument("--owner", default=pr_review.DEFAULT_OWNER, help="GitHub organization/user (default: vishvAsa).")
@@ -609,6 +618,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     token=args.token,
     local_org_dir=args.local_org_dir,
   )
+  _kill_other_server_instances()
   port = _find_free_port(args.port)
   url = f"http://127.0.0.1:{port}/"
   print(f"GitHub PR Reviewer running at {url}", flush=True)

@@ -14,8 +14,10 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import socket
 import subprocess
+import sys
 import threading
 import time
 import webbrowser
@@ -721,6 +723,156 @@ def _launch_browser(url: str) -> None:
   webbrowser.open(url)
 
 
+_PYTHON_EXE_RE = re.compile(r"^(?:python|pypy)(?:\d+(?:\.\d+)*)?$", re.I)
+_PYTHON_TWO_ARG_OPTS = frozenset({"-W", "-X", "--check-hash-based-pycs"})
+
+
+def _is_matching_server_cmdline(
+  argv: Sequence[str],
+  *,
+  entry_names: Sequence[str] = ("pada_svara",),
+  module_names: Sequence[str] = ("pada_svara", "pada_svara.__main__", "pada_svara.review_gui"),
+  script_suffixes: Sequence[str] = ("pada_svara/__main__.py", "pada_svara/review_gui.py"),
+) -> bool:
+  args = [str(a) for a in argv if str(a)]
+  if not args:
+    return False
+  if any(t in ("-h", "--help", "--export-static") or t.startswith("--export-static=") for t in args[1:]):
+    return False
+  exe_name = Path(args[0]).name
+  if _PYTHON_EXE_RE.fullmatch(exe_name):
+    i = 1
+    while i < len(args):
+      tok = args[i]
+      if tok == "-m":
+        return i + 1 < len(args) and args[i + 1] in module_names
+      if tok.startswith("-m") and len(tok) > 2:
+        return tok[2:] in module_names
+      if tok == "-c" or tok.startswith("-c"):
+        return False
+      if tok in _PYTHON_TWO_ARG_OPTS:
+        i += 2
+        continue
+      if tok.startswith("-"):
+        i += 1
+        continue
+      script_norm = tok.replace("\\", "/")
+      return Path(tok).name in entry_names or any(
+        script_norm == suf or script_norm.endswith("/" + suf) for suf in script_suffixes
+      )
+    return False
+  return exe_name in entry_names
+
+
+def _kill_other_pada_svara_servers(
+  *,
+  timeout_seconds: float = 2.5,
+  iter_cmdlines_fn: Any = None,
+  kill_fn: Any = None,
+  is_running_fn: Any = None,
+  entry_names: Sequence[str] = ("pada_svara",),
+  module_names: Sequence[str] = ("pada_svara", "pada_svara.__main__", "pada_svara.review_gui"),
+  script_suffixes: Sequence[str] = ("pada_svara/__main__.py", "pada_svara/review_gui.py"),
+) -> list[int]:
+  """Terminate any other running ``pada_svara`` server processes owned by the current user."""
+  try:
+    from pull_requests_san.local_helpers import kill_other_server_instances
+    if iter_cmdlines_fn is None and kill_fn is None and is_running_fn is None:
+      return kill_other_server_instances(
+        entry_names=entry_names,
+        module_names=module_names,
+        script_suffixes=script_suffixes,
+        label="pada_svara",
+        timeout_seconds=timeout_seconds,
+      )
+  except ImportError:
+    pass
+
+  if sys.platform == "win32" and iter_cmdlines_fn is None:
+    return []
+
+  uid = os.getuid() if hasattr(os, "getuid") else None
+  self_pid = os.getpid()
+  excluded = {self_pid, os.getppid()}
+
+  def _default_iter() -> list[tuple[int, list[str]]]:
+    proc_root = Path("/proc")
+    if not proc_root.is_dir():
+      return []
+    out: list[tuple[int, list[str]]] = []
+    for child in proc_root.iterdir():
+      if not child.name.isdigit():
+        continue
+      try:
+        if uid is not None and child.stat().st_uid != uid:
+          continue
+        raw = (child / "cmdline").read_bytes()
+      except OSError:
+        continue
+      argv = [p.decode("utf-8", errors="replace") for p in raw.split(b"\x00") if p]
+      if argv:
+        out.append((int(child.name), argv))
+    return out
+
+  def _default_running(pid: int) -> bool:
+    stat_p = Path(f"/proc/{pid}/stat")
+    if stat_p.parent.parent.is_dir():
+      try:
+        st = stat_p.read_text(encoding="utf-8", errors="replace")
+        rp = st.rfind(")")
+        if rp >= 0 and st[rp + 2 :].lstrip().split(None, 1)[0] == "Z":
+          return False
+      except OSError:
+        return False
+    try:
+      os.kill(pid, 0)
+      return True
+    except OSError:
+      return False
+
+  targets = [
+    pid
+    for pid, argv in (iter_cmdlines_fn or _default_iter)()
+    if pid not in excluded
+    and _is_matching_server_cmdline(
+      argv,
+      entry_names=entry_names,
+      module_names=module_names,
+      script_suffixes=script_suffixes,
+    )
+  ]
+  if not targets:
+    return []
+  killer = kill_fn or os.kill
+  checker = is_running_fn or _default_running
+  signaled: list[int] = []
+  for pid in targets:
+    try:
+      killer(pid, signal.SIGTERM)
+      signaled.append(pid)
+    except OSError:
+      pass
+  deadline = time.monotonic() + max(0.0, timeout_seconds)
+  alive = list(signaled)
+  while alive and time.monotonic() < deadline:
+    time.sleep(0.05)
+    alive = [pid for pid in alive if checker(pid)]
+  if alive and hasattr(signal, "SIGKILL"):
+    for pid in alive:
+      try:
+        killer(pid, signal.SIGKILL)
+      except OSError:
+        pass
+    kill_deadline = time.monotonic() + 0.5
+    while alive and time.monotonic() < kill_deadline:
+      time.sleep(0.05)
+      alive = [pid for pid in alive if checker(pid)]
+  killed = sorted(set(signaled))
+  if killed:
+    print(f"Stopped {len(killed)} previous pada_svara server(s): {', '.join(str(p) for p in killed)}", flush=True)
+  return killed
+
+
 def main(argv: Sequence[str] | None = None) -> int:
   p = argparse.ArgumentParser(
     description="Launch the Vedic accent fix suggestion reviewer GUI."
@@ -732,6 +884,7 @@ def main(argv: Sequence[str] | None = None) -> int:
   args = p.parse_args(argv)
 
   app = create_app(initial_dir=args.dir, default_n=args.context_lines)
+  _kill_other_pada_svara_servers()
   port = _find_free_port(args.port)
   url = f"http://127.0.0.1:{port}/"
   print(f"Vedic Accent Fix Reviewer running at {url}", flush=True)

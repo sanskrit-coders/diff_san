@@ -2172,3 +2172,76 @@ def test_static_pr_export_and_github_rest_adapter(tmp_path: Path):
   assert "<strong>Ctrl+F</strong>" in shortcut_line and "<strong>Shift+PgUp</strong>" in shortcut_line
   assert "#shortcutFooter strong" in static_html
   assert "main::-webkit-scrollbar" in static_html and ".scroll-list::-webkit-scrollbar" in static_html and "scrollbar-gutter: stable" in static_html
+
+
+def test_kill_other_server_instances_and_main_lifecycle(tmp_path: Path, monkeypatch):
+  import socket
+  import sys
+  import time
+  from pull_requests_san import local_helpers, pr_review_gui
+
+  pr_match = lambda argv: local_helpers.is_matching_server_cmdline(
+    argv,
+    entry_names=("pull_requests_san",),
+    module_names=("pull_requests_san", "pull_requests_san.__main__", "pull_requests_san.pr_review_gui"),
+    script_suffixes=("pull_requests_san/__main__.py", "pull_requests_san/pr_review_gui.py"),
+  )
+  assert pr_match(["/venv/bin/python", "/venv/bin/pull_requests_san", "--owner", "vishvAsa"]) is True
+  assert pr_match(["/venv/bin/python3.12", "-u", "-m", "pull_requests_san"]) is True
+  assert pr_match(["/venv/bin/python", "/repo/pull_requests_san/__main__.py"]) is True
+  assert pr_match(["/venv/bin/pull_requests_san"]) is True
+  assert pr_match(["/venv/bin/python", "/venv/bin/pull_requests_san", "--export-static", "/tmp/out.html"]) is False
+  assert pr_match(["/venv/bin/python", "/repo/pull_requests_san/__main__.py", "--help"]) is False
+  assert pr_match(["/venv/bin/python", "-c", "import pull_requests_san"]) is False
+  assert pr_match(["/venv/bin/python", "/venv/bin/local-diff-san", "/tmp/pull_requests_san/pr_review_gui.py"]) is False
+  assert pr_match(["/bin/bash", "-c", "pull_requests_san"]) is False
+
+  # Launch real background test processes cleanly scoped to dummy test script names (never touches live user servers)
+  srv_script = tmp_path / "_diff_san_test_srv_alpha.py"
+  other_script = tmp_path / "_diff_san_test_srv_beta.py"
+  bound_port = local_helpers.find_free_port(28910)
+  srv_code = (
+    "import signal, socket, sys, time\n"
+    "s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)\n"
+    f"s.bind(('127.0.0.1', {bound_port})); s.listen(1)\n"
+    "open(sys.argv[1], 'w').write('ready')\n"
+    "signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))\n"
+    "while True: time.sleep(0.2)\n"
+  )
+  other_code = "import signal, sys, time\nsignal.signal(signal.SIGTERM, lambda *_: sys.exit(0))\nwhile True: time.sleep(0.2)\n"
+  srv_script.write_text(srv_code, encoding="utf-8")
+  other_script.write_text(other_code, encoding="utf-8")
+  ready_file = tmp_path / "ready.flag"
+  p_alpha = subprocess.Popen([sys.executable, str(srv_script), str(ready_file)])
+  p_beta = subprocess.Popen([sys.executable, str(other_script)])
+  try:
+    deadline = time.monotonic() + 5.0
+    while not ready_file.exists() and time.monotonic() < deadline:
+      time.sleep(0.05)
+    assert ready_file.exists(), "Dummy alpha server failed to bind port"
+    killed = local_helpers.kill_other_server_instances(
+      entry_names=("_diff_san_test_srv_alpha.py",),
+      module_names=(),
+      script_suffixes=(str(srv_script),),
+      label="dummy-alpha",
+    )
+    assert p_alpha.pid in killed
+    assert p_alpha.wait(timeout=2) is not None
+    assert p_beta.poll() is None, "Siblings of another server type must not be killed"
+    with socket.socket() as s:
+      s.bind(("127.0.0.1", bound_port))
+  finally:
+    for proc in (p_alpha, p_beta):
+      if proc.poll() is None:
+        proc.kill()
+      proc.wait(timeout=2)
+
+  # Verify pr_review_gui.main() kills previous instances before binding port or starting uvicorn (and skips on --export-static)
+  calls: list[str] = []
+  monkeypatch.setattr(pr_review_gui, "_kill_other_server_instances", lambda: calls.append("kill") or [])
+  monkeypatch.setattr(pr_review_gui, "_find_free_port", lambda p: calls.append("port") or p)
+  monkeypatch.setattr(pr_review_gui.uvicorn, "run", lambda *a, **kw: calls.append("run"))
+  assert pr_review_gui.main(["--export-static", str(tmp_path / "static_noop.html")]) == 0
+  assert calls == []
+  assert pr_review_gui.main(["--no-browser", "--port", "8770"]) == 0
+  assert calls == ["kill", "port", "run"]

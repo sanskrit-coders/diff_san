@@ -5,11 +5,14 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
+import signal
 import socket
 import subprocess
+import sys
 import time
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 from urllib.parse import urlparse
 import webbrowser
 
@@ -210,3 +213,215 @@ def launch_browser(url: str) -> None:
     except Exception:
       pass
   webbrowser.open(url)
+
+
+_PYTHON_EXE_RE = re.compile(r"^(?:python|pypy)(?:\d+(?:\.\d+)*)?$", re.I)
+_PYTHON_TWO_ARG_OPTS = frozenset({"-W", "-X", "--check-hash-based-pycs"})
+
+
+def is_matching_server_cmdline(
+  argv: Sequence[str],
+  *,
+  entry_names: Sequence[str],
+  module_names: Sequence[str],
+  script_suffixes: Sequence[str],
+) -> bool:
+  """Return True if ``argv`` launches the matching web server (ignoring ``--export-static``, ``--help``, or ``-c``)."""
+  args = [str(a) for a in argv if str(a)]
+  if not args:
+    return False
+  for tok in args[1:]:
+    if tok in ("-h", "--help", "--export-static") or tok.startswith("--export-static="):
+      return False
+
+  exe_name = Path(args[0]).name
+  if _PYTHON_EXE_RE.fullmatch(exe_name):
+    i = 1
+    while i < len(args):
+      tok = args[i]
+      if tok == "-m":
+        return i + 1 < len(args) and args[i + 1] in module_names
+      if tok.startswith("-m") and len(tok) > 2:
+        return tok[2:] in module_names
+      if tok == "-c" or tok.startswith("-c"):
+        return False
+      if tok in _PYTHON_TWO_ARG_OPTS:
+        i += 2
+        continue
+      if tok.startswith("-"):
+        i += 1
+        continue
+      script_norm = tok.replace("\\", "/")
+      script_base = Path(tok).name
+      return script_base in entry_names or any(
+        script_norm == suf or script_norm.endswith("/" + suf) for suf in script_suffixes
+      )
+    return False
+
+  return exe_name in entry_names
+
+
+def _ancestor_pids(pid: int | None = None) -> set[int]:
+  cur = int(pid or os.getpid())
+  seen = {cur}
+  proc_root = Path("/proc")
+  if not proc_root.is_dir():
+    try:
+      ppid = os.getppid()
+      if ppid > 1:
+        seen.add(ppid)
+    except Exception:
+      pass
+    return seen
+  while cur > 1:
+    try:
+      stat_txt = (proc_root / str(cur) / "stat").read_text(encoding="utf-8", errors="replace")
+      rparen = stat_txt.rfind(")")
+      if rparen < 0:
+        break
+      rest = stat_txt[rparen + 2 :].split()
+      ppid = int(rest[1]) if len(rest) > 1 else 0
+    except Exception:
+      break
+    if ppid <= 1 or ppid in seen:
+      break
+    seen.add(ppid)
+    cur = ppid
+  return seen
+
+
+def iter_process_cmdlines() -> list[tuple[int, list[str]]]:
+  """Enumerate ``(pid, argv)`` pairs for current-user processes via ``/proc`` (or ``ps`` on non-/proc POSIX)."""
+  uid = os.getuid() if hasattr(os, "getuid") else None
+  proc_root = Path("/proc")
+  if proc_root.is_dir():
+    entries: list[tuple[int, list[str]]] = []
+    for child in proc_root.iterdir():
+      if not child.name.isdigit():
+        continue
+      pid = int(child.name)
+      try:
+        if uid is not None and child.stat().st_uid != uid:
+          continue
+        raw = (child / "cmdline").read_bytes()
+      except OSError:
+        continue
+      if not raw:
+        continue
+      argv = [p.decode("utf-8", errors="replace") for p in raw.split(b"\x00") if p]
+      if argv:
+        entries.append((pid, argv))
+    return entries
+
+  if sys.platform == "win32":
+    return []
+  cmd = ["ps"]
+  if uid is not None:
+    cmd.extend(["-u", str(uid)])
+  cmd.extend(["-o", "pid=,args="])
+  proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+  if proc.returncode != 0:
+    return []
+  out: list[tuple[int, list[str]]] = []
+  for ln in proc.stdout.splitlines():
+    stripped = ln.strip()
+    if not stripped:
+      continue
+    parts = stripped.split(None, 1)
+    if len(parts) != 2 or not parts[0].isdigit():
+      continue
+    try:
+      argv = shlex.split(parts[1])
+    except ValueError:
+      argv = parts[1].split()
+    out.append((int(parts[0]), argv))
+  return out
+
+
+def _is_pid_running(pid: int) -> bool:
+  stat_path = Path(f"/proc/{pid}/stat")
+  if stat_path.parent.parent.is_dir():
+    try:
+      stat_txt = stat_path.read_text(encoding="utf-8", errors="replace")
+      rparen = stat_txt.rfind(")")
+      if rparen >= 0:
+        state_tok = stat_txt[rparen + 2 :].lstrip().split(None, 1)[0]
+        if state_tok == "Z":
+          return False
+    except OSError:
+      return False
+  try:
+    os.kill(pid, 0)
+    return True
+  except (ProcessLookupError, PermissionError, OSError):
+    return False
+
+
+def kill_other_server_instances(
+  *,
+  entry_names: Sequence[str],
+  module_names: Sequence[str],
+  script_suffixes: Sequence[str],
+  label: str = "",
+  timeout_seconds: float = 2.5,
+  iter_cmdlines_fn: Callable[[], list[tuple[int, list[str]]]] | None = None,
+  kill_fn: Callable[[int, int], None] | None = None,
+  is_running_fn: Callable[[int], bool] | None = None,
+) -> list[int]:
+  """Terminate other running server instances matching ``entry_names`` / ``module_names`` / ``script_suffixes``."""
+  if sys.platform == "win32" and iter_cmdlines_fn is None:
+    return []
+  excluded = _ancestor_pids()
+  lister = iter_cmdlines_fn or iter_process_cmdlines
+  targets = [
+    pid
+    for pid, argv in lister()
+    if pid not in excluded
+    and is_matching_server_cmdline(
+      argv,
+      entry_names=entry_names,
+      module_names=module_names,
+      script_suffixes=script_suffixes,
+    )
+  ]
+  if not targets:
+    return []
+
+  killer = kill_fn or os.kill
+  checker = is_running_fn or _is_pid_running
+  signaled: list[int] = []
+  for pid in targets:
+    try:
+      killer(pid, signal.SIGTERM)
+      signaled.append(pid)
+    except ProcessLookupError:
+      pass
+    except OSError:
+      pass
+
+  if not signaled:
+    return []
+
+  deadline = time.monotonic() + max(0.0, timeout_seconds)
+  alive = list(signaled)
+  while alive and time.monotonic() < deadline:
+    time.sleep(0.05)
+    alive = [pid for pid in alive if checker(pid)]
+
+  if alive and hasattr(signal, "SIGKILL"):
+    for pid in alive:
+      try:
+        killer(pid, signal.SIGKILL)
+      except ProcessLookupError:
+        pass
+      except OSError:
+        pass
+    kill_deadline = time.monotonic() + 0.5
+    while alive and time.monotonic() < kill_deadline:
+      time.sleep(0.05)
+      alive = [pid for pid in alive if checker(pid)]
+
+  killed = sorted(set(signaled))
+  if killed and label:
+    print(f"Stopped {len(killed)} previous {label} server(s): {', '.join(str(p) for p in killed)}", flush=True)
+  return killed
