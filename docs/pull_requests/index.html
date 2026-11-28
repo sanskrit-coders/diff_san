@@ -5260,7 +5260,16 @@ function handleSharedDiffKeydown(ev, navCtx = null) {
     return { reviewDecision: pr.reviewDecision || null, byRootId };
   }
 
-  function _normalizePrSummary(owner, repo, prObj, { reviewDecision = null, commentCount = null, threadCount = null } = {}) {
+  function _countUnresolvedComments(threads) {
+    let total = 0;
+    for (const t of (threads || [])) {
+      if (!t || t.is_resolved) continue;
+      total += (t.comments || []).length;
+    }
+    return total;
+  }
+
+  function _normalizePrSummary(owner, repo, prObj, { reviewDecision = null, commentCount = null, threadCount = null, unresolvedCommentCount = null } = {}) {
     const merged = Boolean(prObj.merged || prObj.merged_at);
     const state = merged ? "closed" : (prObj.state || "open");
     return {
@@ -5286,6 +5295,7 @@ function handleSharedDiffKeydown(ev, navCtx = null) {
       review_decision: reviewDecision,
       comment_count: commentCount != null ? commentCount : Number(prObj.comments || 0),
       thread_count: threadCount != null ? threadCount : Number(prObj.review_comments || 0),
+      unresolved_comment_count: unresolvedCommentCount != null ? Number(unresolvedCommentCount) : 0,
     };
   }
 
@@ -5359,6 +5369,7 @@ function handleSharedDiffKeydown(ev, navCtx = null) {
       reviewDecision: resolvedInfo?.reviewDecision || null,
       commentCount: (rawIssueComments || []).length,
       threadCount: threads.length,
+      unresolvedCommentCount: _countUnresolvedComments(threads),
     });
     const commits = (rawCommits || []).map(c => {
       const msg = c.commit?.message || c.message || "";
@@ -5427,9 +5438,12 @@ function handleSharedDiffKeydown(ev, navCtx = null) {
     ]);
     const bundle = { owner, repo, prObj, rawFiles, rawCommits, rawReviewComments, rawIssueComments, rawReviews, resolvedInfo, isSample: false };
     staticPrRawCache[key] = bundle;
+    const groupedThreads = _groupReviewThreads(rawReviewComments, resolvedInfo?.byRootId || {});
     const summary = _normalizePrSummary(owner, repo, prObj, {
       reviewDecision: resolvedInfo?.reviewDecision || null,
       commentCount: rawIssueComments.length,
+      threadCount: groupedThreads.length,
+      unresolvedCommentCount: _countUnresolvedComments(groupedThreads),
     });
     _rememberRecentPr(summary);
     return bundle;
@@ -6656,9 +6670,35 @@ function mergeStatusInfo(prLike, detail = null) {
   };
 }
 
+function countUnresolvedThreadComments(threads) {
+  let total = 0;
+  for (const t of (threads || [])) {
+    if (!t || t.is_resolved) continue;
+    total += (t.comments || []).length;
+  }
+  return total;
+}
+
+function getPrSummaryUnresolvedCount(p) {
+  if (!p) return 0;
+  if (p.unresolved_comment_count != null) return Number(p.unresolved_comment_count) || 0;
+  if (
+    activePrData?.summary
+    && activePrData.summary.owner === p.owner
+    && activePrData.summary.repo === p.repo
+    && activePrData.summary.number === p.number
+    && Array.isArray(activePrData.review_threads)
+  ) {
+    return countUnresolvedThreadComments(activePrData.review_threads);
+  }
+  return 0;
+}
+
 function renderPrSidebar() {
-  document.getElementById("prCountLabel").textContent = filteredPrs.length;
+  const countEl = document.getElementById("prCountLabel");
+  if (countEl) countEl.textContent = filteredPrs.length;
   const el = document.getElementById("prList");
+  if (!el) return;
   if (!filteredPrs.length) {
     el.innerHTML = `<div style="color:var(--muted); font-size:16px;">No matching PRs.</div>`;
     return;
@@ -6671,13 +6711,13 @@ function renderPrSidebar() {
         ? `<span class="pill pill-green" style="padding:0 5px;">Approved</span>`
         : "");
     const ms = mergeStatusInfo(p);
-    const commentsTotal = (p.comment_count || 0) + (p.thread_count || 0);
+    const unresolvedCount = getPrSummaryUnresolvedCount(p);
     return `<div class="pr-item ${isActive ? 'active' : ''}" onclick="openPrIdx(${idx})">
       <div class="pr-item-meta">
         <span class="mono" style="font-weight:700; color:var(--blue);">${esc(p.repo)}#${p.number}</span>
         ${ms.badgeHtml}
         ${decPill}
-        ${commentsTotal ? `<span class="pill" style="padding:0 5px;">💬 ${commentsTotal}</span>` : ""}
+        ${unresolvedCount ? `<span class="pill" style="padding:0 5px;" title="${unresolvedCount} unresolved comment${unresolvedCount === 1 ? '' : 's'}">💬 ${unresolvedCount}</span>` : ""}
         <span class="pr-item-actions">
           <button class="small pr-item-icon-btn pr-item-copy-url-btn" title="Copy PR URL (${esc(p.url || '')})" onclick="event.stopPropagation(); copyPrUrlIdx(${idx})">🔗</button>
           <button class="small pr-item-icon-btn pr-item-browser-btn" title="Open ${esc(p.repo)}#${p.number} in main browser" onclick="event.stopPropagation(); openPrInBrowserIdx(${idx})">🌐</button>
@@ -6901,8 +6941,11 @@ function renderFileSidebar() {
   const files = getDisplayedFiles();
   const threads = activePrData?.review_threads || [];
   const conflictPaths = new Set((activePrData?.conflicts || []).map(c => c.filename));
-  const threadCounts = {};
-  for (const t of threads) threadCounts[t.path] = (threadCounts[t.path] || 0) + 1;
+  const unresolvedCounts = {};
+  for (const t of threads) {
+    if (!t || t.is_resolved) continue;
+    unresolvedCounts[t.path] = (unresolvedCounts[t.path] || 0) + (t.comments || []).length;
+  }
   document.getElementById("fileCountLabel").textContent = files.length;
   const el = document.getElementById("fileList");
   if (!files.length) {
@@ -6921,7 +6964,7 @@ function renderFileSidebar() {
   const renderLeaf = (entry) => {
     const f = entry.item;
     const fi = entry.idx;
-    const tc = threadCounts[f.filename] || 0;
+    const uc = unresolvedCounts[f.filename] || 0;
     const isConflict = conflictPaths.has(f.filename);
     return `<div class="file-item ${entry.isActive ? 'active' : ''}" data-file-idx="${fi}" title="${esc(f.filename)}" onclick="selectFileFilterIdx(${fi})">
       <div class="mono" style="font-size:15px; word-break:break-all; font-weight:600;">${esc(entry.name)}</div>
@@ -6930,7 +6973,7 @@ function renderFileSidebar() {
         <span style="color:var(--green);">+${f.additions}</span>
         <span style="color:var(--red);">-${f.deletions}</span>
         ${isConflict ? `<span class="pill pill-red" style="padding:0 5px;">⚠ Conflict</span>` : ""}
-        ${tc ? `<span class="pill pill-amber" style="padding:0 5px;">💬 ${tc}</span>` : ""}
+        ${uc ? `<span class="pill pill-amber" style="padding:0 5px;" title="${uc} unresolved comment${uc === 1 ? '' : 's'}">💬 ${uc}</span>` : ""}
       </div>
     </div>`;
   };
@@ -7204,13 +7247,25 @@ function renderActivePr() {
     return;
   }
   const s = activePrData.summary;
+  const issueComments = activePrData.issue_comments || [];
+  const reviews = activePrData.reviews || [];
+  const threads = activePrData.review_threads || [];
+  const unresolvedCommentsCount = countUnresolvedThreadComments(threads);
+  const resolvedInlineCount = threads
+    .filter(t => t && t.is_resolved)
+    .reduce((n, t) => n + (t.comments || []).length, 0);
+  const totalCommentsCount = unresolvedCommentsCount + resolvedInlineCount + issueComments.length;
+  const prCommentBadgeText = totalCommentsCount === unresolvedCommentsCount
+    ? `${unresolvedCommentsCount} unresolved comment${unresolvedCommentsCount === 1 ? "" : "s"}`
+    : `${unresolvedCommentsCount} unresolved · ${totalCommentsCount} total comment${totalCommentsCount === 1 ? "" : "s"}`;
+  if (s && Array.isArray(activePrData.review_threads)) {
+    s.unresolved_comment_count = unresolvedCommentsCount;
+    syncPrSummaryListAfterUpdate(activePrData, { skipRemoval: true, rerenderSidebar: true });
+  }
   const prStateLower = String(s.state || "open").toLowerCase();
   const ms = mergeStatusInfo(activePrData, activePrData);
   const drafts = activePrData.pending_drafts || [];
   renderHeaderPrActions(activePrData, ms, drafts);
-  const issueComments = activePrData.issue_comments || [];
-  const reviews = activePrData.reviews || [];
-  const threads = activePrData.review_threads || [];
 
   const convItemsHtml = [
     ...issueComments.map(c => `<div class="thread-comment">
@@ -7279,7 +7334,7 @@ function renderActivePr() {
             <span class="pill pill-green">+${s.additions}</span>
             <span class="pill pill-red">-${s.deletions}</span>
             ${(activePrData.ahead_by != null || activePrData.behind_by != null) ? `<span class="pill">↑${activePrData.ahead_by ?? 0} ↓${activePrData.behind_by ?? 0}</span>` : ""}
-            <span class="pill">💬 ${threads.length} threads · ${issueComments.length} comments</span>
+            <span class="pill" title="Unresolved inline review comments (${resolvedInlineCount} resolved, ${issueComments.length} PR conversation)">💬 ${prCommentBadgeText}</span>
           </div>
           <h2 class="pr-title-heading">${esc(s.title)}</h2>
           <div style="font-size:16px; color:var(--muted);">Author: <strong>@${esc(s.author)}</strong> · Updated: ${esc(shortDate(s.updated_at))} · Commits: ${activePrData.commits_count}</div>
@@ -8278,9 +8333,14 @@ function renderActivePrFiles() {
   const orphanThreads = (!selectedFileFilter && !selectedChangelistSha)
     ? allThreads.filter(t => !allPrFiles.some(f => f.filename === t.path))
     : [];
+  const orphanUnresolved = countUnresolvedThreadComments(orphanThreads);
+  const orphanTotal = orphanThreads.reduce((n, t) => n + (t.comments || []).length, 0);
+  const orphanLabel = orphanTotal === orphanUnresolved
+    ? `${orphanUnresolved} unresolved`
+    : `${orphanUnresolved} unresolved · ${orphanTotal} total`;
   const orphanHtml = orphanThreads.length
     ? `<div class="card">
-        <div class="pane-title"><span>Other File Review Threads (${orphanThreads.length})</span></div>
+        <div class="pane-title"><span>Other File Review Comments (${orphanLabel})</span></div>
         ${orphanThreads.map(t => `<div style="font-family:monospace; font-size:15px; color:var(--blue); margin-bottom:2px;">${esc(t.path)}</div>${renderThreadHtml(t)}`).join("")}
       </div>`
     : "";
@@ -8380,6 +8440,7 @@ function renderActivePrFiles() {
 
     const isFocused = fi === focusedFileIdx;
     const fileConflict = conflictMap[f.filename];
+    const fileUnresolved = countUnresolvedThreadComments(fileThreads);
     return `<div class="file-card ${isFocused ? 'focused' : ''} ${isCollapsed ? 'collapsed' : ''}" id="fileCard_${fi}" onclick="setFocusedFile(${fi})">
       <div class="file-card-header">
         <div class="file-header-main">
@@ -8390,7 +8451,7 @@ function renderActivePrFiles() {
             <span style="color:var(--green); font-weight:600; font-size:15px;">+${f.additions}</span>
             <span style="color:var(--red); font-weight:600; font-size:15px;">-${f.deletions}</span>
             ${fileConflict ? `<span class="pill pill-red" style="padding:0 6px; font-size:13.5px;">⚠ ${esc(conflictReasonLabel(fileConflict))}</span>` : ""}
-            ${fileThreads.length ? `<span class="pill pill-amber" style="padding:0 6px; font-size:13.5px;">💬 ${fileThreads.length}</span>` : ""}
+            ${fileUnresolved ? `<span class="pill pill-amber" style="padding:0 6px; font-size:13.5px;" title="${fileUnresolved} unresolved comment${fileUnresolved === 1 ? '' : 's'}">💬 ${fileUnresolved}</span>` : ""}
           </span>
         </div>
         <div class="row" style="gap:6px; flex-shrink:0;">
@@ -8908,21 +8969,25 @@ async function copyPrUrlIdx(idx) {
   setStatus(ok ? `Copied ${p.repo}#${p.number} URL` : "Copy failed — check clipboard permissions", 2500);
 }
 
-function syncPrSummaryListAfterUpdate(detail) {
+function syncPrSummaryListAfterUpdate(detail, { skipRemoval = false, rerenderSidebar = false } = {}) {
   const s = detail?.summary;
   if (!s) return;
-  const curFilterState = document.getElementById("stateSelect").value || "open";
+  const stateSel = document.getElementById("stateSelect");
+  const curFilterState = (stateSel && stateSel.value) || "open";
   const newState = (s.state || "").toLowerCase();
   const isMerged = Boolean(detail.merged || s.merged);
-  const remove =
+  const remove = !skipRemoval && (
     (curFilterState === "open" && newState !== "open") ||
     (curFilterState === "closed" && newState !== "closed") ||
-    (curFilterState === "merged" && !isMerged);
+    (curFilterState === "merged" && !isMerged)
+  );
   if (remove) {
     allPrs = allPrs.filter(p => !(p.owner === s.owner && p.repo === s.repo && p.number === s.number));
   } else {
     allPrs = allPrs.map(p => (p.owner === s.owner && p.repo === s.repo && p.number === s.number) ? s : p);
+    filteredPrs = filteredPrs.map(p => (p.owner === s.owner && p.repo === s.repo && p.number === s.number) ? s : p);
   }
+  if (rerenderSidebar) renderPrSidebar();
 }
 
 async function setActivePrState(nextState) {

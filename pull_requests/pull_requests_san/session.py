@@ -70,11 +70,20 @@ class PRReviewSession:
       if detail.summary.review_decision is None:
         detail.summary.review_decision = prev_decision or self._lookup_cached_review_decision(owner, repo, int(number))
       self.pr_detail_cache[key] = detail
+      self._sync_list_cache_summary(detail.summary)
     else:
       detail = self.pr_detail_cache[key]
       if detail.char_diff_mode != char_diff_mode or detail.normalize != norm_clean or detail.ignore_punct != ign_punct:
         detail.recompute_diff_mode(char_diff_mode, normalize=norm_clean, ignore_punct=ign_punct)
     return detail
+
+  def _sync_list_cache_summary(self, s: PullRequestSummary) -> None:
+    for lst in self.pr_list_cache.values():
+      for i, item in enumerate(lst):
+        if item.owner == s.owner and item.repo == s.repo and item.number == s.number:
+          if s.review_decision is None and item.review_decision is not None:
+            s.review_decision = item.review_decision
+          lst[i] = s
 
   def _lookup_cached_review_decision(self, owner: str, repo: str, number: int) -> str | None:
     for lst in self.pr_list_cache.values():
@@ -304,13 +313,7 @@ class PRReviewSession:
       normalize=normalize,
       ignore_punct=ignore_punct,
     )
-    s = detail.summary
-    for lst in self.pr_list_cache.values():
-      for i, item in enumerate(lst):
-        if item.owner == s.owner and item.repo == s.repo and item.number == s.number:
-          if s.review_decision is None and item.review_decision is not None:
-            s.review_decision = item.review_decision
-          lst[i] = s
+    self._sync_list_cache_summary(detail.summary)
     return detail
 
   def submit_issue_comment(

@@ -321,7 +321,16 @@ class _FakeSession:
                     "author": {"login": "mrunaldatar"},
                     "repository": {"name": "mahAbhAratam", "nameWithOwner": "vishvAsa/mahAbhAratam"},
                     "comments": {"totalCount": len(self.issue_comments)},
-                    "reviewThreads": {"totalCount": len(self.threads)},
+                    "reviewThreads": {
+                      "totalCount": len(self.threads),
+                      "nodes": [
+                        {
+                          "isResolved": bool(th.get("isResolved")),
+                          "comments": {"totalCount": len((th.get("comments") or {}).get("nodes") or [])},
+                        }
+                        for th in self.threads
+                      ],
+                    },
                   }
                 ],
               }
@@ -870,6 +879,9 @@ def test_gui_endpoints_diff_comments_refresh_and_local_helpers(tmp_path: Path, m
   )
   assert r_reply.status_code == 200
   assert len(r_reply.json()["pr"]["review_threads"][0]["comments"]) == 2
+  # 2 threads (t0 with 2 comments + t1 with 1 comment) -> 3 unresolved comments total
+  assert r_reply.json()["pr"]["summary"]["thread_count"] == 2
+  assert r_reply.json()["pr"]["summary"]["unresolved_comment_count"] == 3
 
   r_issue = tc.post(
     "/api/pr/vishvAsa/mahAbhAratam/192/issue_comment",
@@ -930,6 +942,11 @@ def test_gui_endpoints_diff_comments_refresh_and_local_helpers(tmp_path: Path, m
   )
   assert r_res.status_code == 200
   assert r_res.json()["pr"]["review_threads"][0]["is_resolved"] is True
+  # Resolving t0 (2 comments) leaves 2 unresolved comments (t1 + t2), synced into /api/prs list cache
+  assert r_res.json()["pr"]["summary"]["unresolved_comment_count"] == 2
+  r_prs_after = tc.get("/api/prs?owner=vishvAsa&state=open")
+  assert r_prs_after.status_code == 200
+  assert r_prs_after.json()["prs"][0]["unresolved_comment_count"] == 2
 
   # Refresh picks up upstream changes (e.g. updated PR title)
   fake.pr_title = "Updated PR title"
@@ -1761,6 +1778,35 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
     "    throw new Error('Alt+V did not resolve selected comment thread: ' + JSON.stringify(fetched.slice(fetchBeforeResolve)));\n"
     "  }\n"
     "  elems['prContainer'].querySelectorAll = prevPrQsa;\n"
+    "  // PR/file badges count unresolved comments rather than threads (no 'threads' label)\n"
+    "  filteredPrs = [\n"
+    "    { owner: 'vishvAsa', repo: 'rAmAnujIyam', number: 481, title: 'Merged unresolved replies', state: 'closed', merged: true, additions: 1, deletions: 1, changed_files: 1, comment_count: 2, thread_count: 1, unresolved_comment_count: 5 },\n"
+    "    { owner: 'vishvAsa', repo: 'vedAH_yajuH', number: 482, title: 'All resolved', state: 'closed', merged: true, additions: 1, deletions: 1, changed_files: 1, comment_count: 4, thread_count: 2, unresolved_comment_count: 0 },\n"
+    "  ];\n"
+    "  allPrs = filteredPrs.slice();\n"
+    "  renderPrSidebar();\n"
+    "  const prSideHtml = elems['prList'].innerHTML;\n"
+    "  if (!prSideHtml.includes('💬 5') || prSideHtml.includes('💬 3') || prSideHtml.includes('💬 6') || prSideHtml.includes('💬 0')) {\n"
+    "    throw new Error('PR sidebar did not show unresolved comment count only: ' + prSideHtml);\n"
+    "  }\n"
+    "  const prevPrObj = activePrData;\n"
+    "  activePrData = Object.assign({}, samplePr, {\n"
+    "    summary: Object.assign({}, samplePr.summary, { comment_count: 1, thread_count: 2 }),\n"
+    "    issue_comments: [{ id: 1, author: 'a', body: 'hi', created_at: '2026-11-28T00:00:00Z' }],\n"
+    "    review_threads: [\n"
+    "      { id: 'PRRT_u1', path: '01.md', line: 2, original_line: 2, side: 'RIGHT', is_resolved: false, is_outdated: false, comments: [{ id: 1, author: 'a', body: 'c1', created_at: '' }, { id: 2, author: 'b', body: 'c2', created_at: '' }, { id: 3, author: 'c', body: 'c3', created_at: '' }] },\n"
+    "      { id: 'PRRT_r1', path: '01.md', line: 3, original_line: 3, side: 'RIGHT', is_resolved: true, is_outdated: false, comments: [{ id: 4, author: 'a', body: 'r1', created_at: '' }, { id: 5, author: 'b', body: 'r2', created_at: '' }] },\n"
+    "    ],\n"
+    "  });\n"
+    "  renderActivePr();\n"
+    "  const prHdrHtml = elems['prContainer'].innerHTML;\n"
+    "  const fSideListHtml = elems['fileList'].innerHTML;\n"
+    "  const fCardBodyHtml = elems['filesDiffContainer'].innerHTML;\n"
+    "  if (prHdrHtml.toLowerCase().includes('threads') || !prHdrHtml.includes('3 unresolved') || !fSideListHtml.includes('💬 3') || !fCardBodyHtml.includes('💬 3')) {\n"
+    "    throw new Error('PR detail/file badges failed unresolved count check: hdr=' + prHdrHtml + ' side=' + fSideListHtml);\n"
+    "  }\n"
+    "  activePrData = prevPrObj;\n"
+    "  renderActivePr();\n"
     "  // Samasa-hyphenated sandhi bug report caught in word, grapheme, codepoint, 2-pane, and across del_nl reflows\n"
     "  setSandhiHighlightEnabled(true, false);\n"
     "  const hypOld = 'अतो व्युत्थित-चित्तैः निष्ठीयते शुभाश्रय-भूते ऽस्मिन्न् इति—  ';\n"

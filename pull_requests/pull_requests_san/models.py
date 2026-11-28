@@ -117,6 +117,7 @@ class PullRequestSummary:
   mergeable_state: str = ""
   comment_count: int = 0
   thread_count: int = 0
+  unresolved_comment_count: int = 0
 
   def to_dict(self) -> dict[str, Any]:
     return asdict(self)

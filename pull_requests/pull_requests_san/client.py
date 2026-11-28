@@ -64,7 +64,13 @@ query($q: String!, $first: Int!, $after: String) {
         author { login }
         repository { name nameWithOwner }
         comments { totalCount }
-        reviewThreads { totalCount }
+        reviewThreads(first: 100) {
+          totalCount
+          nodes {
+            isResolved
+            comments { totalCount }
+          }
+        }
       }
     }
   }
@@ -185,6 +191,11 @@ def _normalize_mergeable_state(val: Any) -> str:
   return str(val).strip().lower() if val else ""
 
 
+def count_unresolved_comments_in_threads(threads: Sequence[ReviewThread]) -> int:
+  """Return total comments inside unresolved inline review threads."""
+  return sum(len(t.comments) for t in threads if not t.is_resolved)
+
+
 def _parse_graphql_pr_summary(node: dict[str, Any], clean_owner: str) -> PullRequestSummary:
   repo_info = node.get("repository") or {}
   repo_full = repo_info.get("nameWithOwner") or ""
@@ -193,6 +204,16 @@ def _parse_graphql_pr_summary(node: dict[str, Any], clean_owner: str) -> PullReq
   head_repo = (node.get("headRepository") or {}).get("nameWithOwner") or repo_full
   state_norm = (node.get("state") or "OPEN").lower()
   merged_flag = bool(node.get("merged")) or state_norm == "merged"
+  rt_obj = node.get("reviewThreads") or {}
+  rt_nodes = rt_obj.get("nodes")
+  if isinstance(rt_nodes, list):
+    unresolved_count = sum(
+      int(((th.get("comments") or {}).get("totalCount")) or 0)
+      for th in rt_nodes
+      if isinstance(th, dict) and not th.get("isResolved")
+    )
+  else:
+    unresolved_count = int(rt_obj.get("totalCount") or 0)
   return PullRequestSummary(
     owner=repo_owner,
     repo=repo_name,
@@ -218,7 +239,8 @@ def _parse_graphql_pr_summary(node: dict[str, Any], clean_owner: str) -> PullReq
     mergeable=_parse_gql_mergeable(node.get("mergeable")),
     mergeable_state=_normalize_mergeable_state(node.get("mergeStateStatus")),
     comment_count=int(((node.get("comments") or {}).get("totalCount")) or 0),
-    thread_count=int(((node.get("reviewThreads") or {}).get("totalCount")) or 0),
+    thread_count=int(rt_obj.get("totalCount") or 0),
+    unresolved_comment_count=unresolved_count,
   )
 
 
@@ -1026,6 +1048,7 @@ class GitHubClient:
       mergeable_state=mergeable_state_val,
       comment_count=len(issue_comments),
       thread_count=len(threads),
+      unresolved_comment_count=count_unresolved_comments_in_threads(threads),
     )
     return PullRequestDetail(
       summary=summary,

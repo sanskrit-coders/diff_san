@@ -199,7 +199,16 @@
     return { reviewDecision: pr.reviewDecision || null, byRootId };
   }
 
-  function _normalizePrSummary(owner, repo, prObj, { reviewDecision = null, commentCount = null, threadCount = null } = {}) {
+  function _countUnresolvedComments(threads) {
+    let total = 0;
+    for (const t of (threads || [])) {
+      if (!t || t.is_resolved) continue;
+      total += (t.comments || []).length;
+    }
+    return total;
+  }
+
+  function _normalizePrSummary(owner, repo, prObj, { reviewDecision = null, commentCount = null, threadCount = null, unresolvedCommentCount = null } = {}) {
     const merged = Boolean(prObj.merged || prObj.merged_at);
     const state = merged ? "closed" : (prObj.state || "open");
     return {
@@ -225,6 +234,7 @@
       review_decision: reviewDecision,
       comment_count: commentCount != null ? commentCount : Number(prObj.comments || 0),
       thread_count: threadCount != null ? threadCount : Number(prObj.review_comments || 0),
+      unresolved_comment_count: unresolvedCommentCount != null ? Number(unresolvedCommentCount) : 0,
     };
   }
 
@@ -298,6 +308,7 @@
       reviewDecision: resolvedInfo?.reviewDecision || null,
       commentCount: (rawIssueComments || []).length,
       threadCount: threads.length,
+      unresolvedCommentCount: _countUnresolvedComments(threads),
     });
     const commits = (rawCommits || []).map(c => {
       const msg = c.commit?.message || c.message || "";
@@ -366,9 +377,12 @@
     ]);
     const bundle = { owner, repo, prObj, rawFiles, rawCommits, rawReviewComments, rawIssueComments, rawReviews, resolvedInfo, isSample: false };
     staticPrRawCache[key] = bundle;
+    const groupedThreads = _groupReviewThreads(rawReviewComments, resolvedInfo?.byRootId || {});
     const summary = _normalizePrSummary(owner, repo, prObj, {
       reviewDecision: resolvedInfo?.reviewDecision || null,
       commentCount: rawIssueComments.length,
+      threadCount: groupedThreads.length,
+      unresolvedCommentCount: _countUnresolvedComments(groupedThreads),
     });
     _rememberRecentPr(summary);
     return bundle;
