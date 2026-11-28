@@ -831,6 +831,9 @@ def test_review_gui_embedded_js_syntax(tmp_path: Path):
     assert ".collapse-correction {" in review_gui._RENDERED_HTML
     assert "font-size: var(--dev-font-size);" in review_gui._RENDERED_HTML.split(".collapse-correction {")[1].split("}")[0]
     assert "background: var(--accent-soft);" in review_gui._RENDERED_HTML
+    shortcut_line = review_gui._RENDERED_HTML.split('id="shortcutFooter"')[1].split('</div>')[0]
+    assert "<strong>Alt+U</strong>" in shortcut_line and "<strong>Ctrl+R</strong>" in shortcut_line
+    assert "#shortcutFooter strong" in review_gui._RENDERED_HTML
     run_js = tmp_path / "run_render.js"
     run_js.write_text(harness, encoding="utf-8")
     subprocess.check_call(["node", str(run_js)])

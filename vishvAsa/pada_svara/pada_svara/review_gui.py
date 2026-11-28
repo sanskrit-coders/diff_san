@@ -1302,6 +1302,8 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     flex-direction: column;
     gap: 10px;
   }
+  #shortcutFooter { line-height: 1.65; }
+  #shortcutFooter strong { color: var(--fg); font-weight: 700; }
 </style>
 </head>
 <body>
@@ -1355,7 +1357,7 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     <strong style="font-size:15px;">Vedic Accent Fix Reviewer (pada_svara)</strong>
     <button id="closeHelpBtn" class="small" type="button" onclick="closeHelpPane()">✕ Close</button>
   </div>
-  <div id="shortcutFooter" style="color:var(--muted); font-size:12px;">Shortcuts: Hold Alt/Ctrl Highlight button shortcut letters • Alt+U Pending • Alt+A Accepted • Alt+R Rejected • Alt+W With !! • Alt+L/0 All • Alt+1 Accept • Alt+2 Reject • Alt+3 Feedback • Enter Submit • Ctrl+Enter Accept+Submit • Ctrl+R Rescan • Ctrl+Z Undo • j/k/↑/↓ navigate • ←/→ Collapse/Expand • Shift+PgUp/PgDn Prev/Next file group • Ctrl+PgUp/PgDn Prev/Next file • ? About/Shortcuts • Esc Close help</div>
+  <div id="shortcutFooter" style="color:var(--muted); font-size:12px;"><strong>Shortcuts:</strong> <strong>Hold Alt/Ctrl</strong> Highlight button shortcut letters • <strong>Alt+U</strong> Pending • <strong>Alt+A</strong> Accepted • <strong>Alt+R</strong> Rejected • <strong>Alt+W</strong> With !! • <strong>Alt+L</strong>/<strong>0</strong> All • <strong>Alt+1</strong> Accept • <strong>Alt+2</strong> Reject • <strong>Alt+3</strong> Feedback • <strong>Enter</strong> Submit • <strong>Ctrl+Enter</strong> Accept+Submit • <strong>Ctrl+R</strong> Rescan • <strong>Ctrl+Z</strong> Undo • <strong>j</strong>/<strong>k</strong>/<strong>↑</strong>/<strong>↓</strong> navigate • <strong>←</strong>/<strong>→</strong> Collapse/Expand • <strong>Shift+PgUp</strong>/<strong>PgDn</strong> Prev/Next file group • <strong>Ctrl+PgUp</strong>/<strong>PgDn</strong> Prev/Next file • <strong>?</strong> About/Shortcuts • <strong>Esc</strong> Close help</div>
   <div id="aboutFooter" style="color:var(--muted); font-size:12px; border-top:1px solid var(--border); padding-top:8px;">
     <div><strong>pada_svara</strong> (<a href="https://github.com/sanskrit-coders/diff_san/tree/master/vishvAsa/pada_svara" target="_blank" rel="noopener noreferrer">github.com/sanskrit-coders/diff_san</a>) — FastAPI review GUI and scanner for Vedic <code>पद-पाठः</code> and <code>विश्वास-प्रस्तुतिः</code> accent fix suggestions with scoped <code>git commit --only</code> support.</div>
   </div>

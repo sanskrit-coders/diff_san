@@ -608,6 +608,8 @@
   .settings-drawer.help-drawer {
     width: 700px;
   }
+  #shortcutFooter { line-height: 1.65; }
+  #shortcutFooter strong { color: var(--fg); font-weight: 700; }
   .settings-drawer.token-drawer {
     left: 18px;
     right: auto;
