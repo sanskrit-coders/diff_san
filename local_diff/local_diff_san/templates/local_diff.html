@@ -68,41 +68,40 @@
 <body>
 <header>
   <div class="row">
-    <label id="modeSelectWrap">Mode:
-      <select id="compareModeSelect" onchange="onCompareModeSwitch()">
+    <span id="modeSelectWrap">
+      <select id="compareModeSelect" title="Comparison mode" onchange="onCompareModeSwitch()">
         <option value="git">Git vs Rev</option>
-        <option value="pair">2 Local Files</option>
-        <option value="texts">Upload / Paste Texts (Pure JS)</option>
+        <option value="pair">2 Files</option>
+        <option value="texts">Paste / Upload</option>
       </select>
-    </label>
-    <span id="gitInputsRow" class="row" style="gap:6px;">
-      <label>Path: <input id="gitPathInput" type="text" placeholder="file or directory..." style="width:320px;" onkeydown="if(event.key==='Enter') submitCompareSpec()" /></label>
-      <label>Rev: <input id="revInput" type="text" value="HEAD" style="width:110px;" onkeydown="if(event.key==='Enter') submitCompareSpec()" /></label>
     </span>
-    <span id="pairInputsRow" class="row" style="gap:6px; display:none;">
-      <label>Left: <input id="leftPathInput" type="text" placeholder="left/old file..." style="width:260px;" onkeydown="if(event.key==='Enter') submitCompareSpec()" /></label>
-      <label>Right: <input id="rightPathInput" type="text" placeholder="right/new file..." style="width:260px;" onkeydown="if(event.key==='Enter') submitCompareSpec()" /></label>
+    <span id="gitInputsRow" class="row" style="gap:4px;">
+      <label>Path: <input id="gitPathInput" type="text" placeholder="file or directory..." style="width:200px;" onkeydown="if(event.key==='Enter') submitCompareSpec()" /></label>
+      <label>Rev: <input id="revInput" type="text" value="HEAD" style="width:72px;" onkeydown="if(event.key==='Enter') submitCompareSpec()" /></label>
     </span>
-    <span id="staticActionsRow" class="row" style="gap:6px; display:none;">
-      <button id="toggleStaticInputsBtn" class="small" type="button" onclick="toggleStaticInputs()">▾ Hide Inputs</button>
-      <button id="loadSampleBtn" class="small" type="button" onclick="loadSanskritSample()">Load Sample</button>
+    <span id="pairInputsRow" class="row" style="gap:4px; display:none;">
+      <label>Left: <input id="leftPathInput" type="text" placeholder="left file..." style="width:175px;" onkeydown="if(event.key==='Enter') submitCompareSpec()" /></label>
+      <label>Right: <input id="rightPathInput" type="text" placeholder="right file..." style="width:175px;" onkeydown="if(event.key==='Enter') submitCompareSpec()" /></label>
+    </span>
+    <span id="staticActionsRow" class="row" style="gap:4px; display:none;">
+      <button id="toggleStaticInputsBtn" class="small" type="button" onclick="toggleStaticInputs()">▾ Hide</button>
+      <button id="loadSampleBtn" class="small" type="button" onclick="loadSanskritSample()">Sample</button>
       <button id="swapTextsBtn" class="small" type="button" onclick="swapStaticTexts()">⇄ Swap</button>
       <button id="clearTextsBtn" class="small" type="button" onclick="clearStaticTexts()">Clear</button>
     </span>
     <button id="compareBtn" class="primary" type="button" onclick="submitCompareSpec()">Compare</button>
-    <button id="refreshBtn" class="small" type="button" title="Reload diff (Ctrl+R)" onclick="refreshDiff()">↻ Refresh <span class="kbd-hint">Ctrl+R</span></button>
-    <button id="reloadBtn" class="small" type="button" onclick="window.location.reload()">↻ Reload UI</button>
+    <button id="refreshBtn" class="small" type="button" title="Reload diff (Ctrl+R)" onclick="refreshDiff()">↻ Refresh</button>
+    <button id="reloadBtn" class="small" type="button" title="Reload UI" onclick="window.location.reload()">↻ Reload</button>
     <span id="checkedUntilPill" class="checked-until-pill" style="display:none;"></span>
-    <span id="statusText" style="color:var(--muted); font-size:16px;"></span>
+    <span id="statusText" style="color:var(--muted);"></span>
   </div>
   <div class="row">
-    <label title="Toggle Word / Char (Grapheme \X) diff unit (Alt+W)">Diff unit:
+    <label title="Toggle Word / Char (Grapheme \X) diff unit (Alt+W)">Unit:
       <select id="diffModeSelect" onchange="changeDiffOptions()">
-        <option value="word" selected>Word (space-separated)</option>
-        <option value="grapheme">Char (Grapheme \X)</option>
-        <option value="codepoint">Codepoint (Raw)</option>
+        <option value="word" selected>Word</option>
+        <option value="grapheme">Char (\X)</option>
+        <option value="codepoint">Codept</option>
       </select>
-      <span class="kbd-hint">Alt+W</span>
     </label>
     <label title="Apply Unicode normalization before diffing">Norm:
       <select id="normalizeSelect" onchange="changeDiffOptions()">
@@ -113,28 +112,28 @@
         <option value="nfkd">NFKD</option>
       </select>
     </label>
-    <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;">
-      <input id="ignorePunctChk" type="checkbox" onchange="changeDiffOptions()" /> Ignore punct
+    <label style="cursor:pointer;" title="Ignore Unicode punctuation differences">
+      <input id="ignorePunctChk" type="checkbox" onchange="changeDiffOptions()" /> No punct
     </label>
     <span class="row" style="gap:2px;">
-      <button id="sandhiHighlightBtn" class="small" type="button" title="Highlight interword sandhi changes (e.g. अस्ति इति ↔ अस्तीति) with a special color" onclick="onToggleSandhiHighlight()">Sandhi diff</button>
+      <button id="sandhiHighlightBtn" class="small" type="button" title="Highlight interword sandhi changes (e.g. अस्ति इति ↔ अस्तीति) with a special color" onclick="onToggleSandhiHighlight()">Sandhi</button>
       <button id="prevSandhiBtn" class="small" type="button" title="Previous sandhi diff (Alt+Shift+↑)" onclick="jumpSandhiDiff(-1)">◀</button>
       <button id="nextSandhiBtn" class="small" type="button" title="Next sandhi diff (Alt+Shift+↓)" onclick="jumpSandhiDiff(1)">▶</button>
     </span>
-    <label title="Matches VS Code (25) / IntelliJ IDEA (28)">Editor font (px): <input id="fontPxInput" type="number" min="14" max="42" value="26" style="width:74px;" onchange="applyEditorFont(this.value, 'local_diff_san_font_px')" /></label>
-    <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;" title="Single pane inline word flow (Alt+S)">
-      <input id="singlePaneChk" type="checkbox" checked onchange="toggleSinglePane(this.checked)" /> Single pane <span class="kbd-hint">Alt+S</span>
+    <label title="Editor font size in px — matches VS Code (25) / IntelliJ IDEA (28)">Font: <input id="fontPxInput" type="number" min="14" max="42" value="26" style="width:48px;" onchange="applyEditorFont(this.value, 'local_diff_san_font_px')" /></label>
+    <label style="cursor:pointer;" title="Single pane inline word flow (Alt+S)">
+      <input id="singlePaneChk" type="checkbox" checked onchange="toggleSinglePane(this.checked)" /> 1-pane
     </label>
-    <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;" title="Collapse long runs of unchanged context lines with expandable gaps">
-      <input id="collapseContextChk" type="checkbox" checked onchange="renderWorkspace()" /> Collapse unchanged
+    <label style="cursor:pointer;" title="Collapse long runs of unchanged context lines with expandable gaps">
+      <input id="collapseContextChk" type="checkbox" checked onchange="renderWorkspace()" /> Fold same
     </label>
-    <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;">
-      <input id="changedOnlyChk" type="checkbox" onchange="renderWorkspace()" /> Changed lines only
+    <label style="cursor:pointer;" title="Show changed lines only">
+      <input id="changedOnlyChk" type="checkbox" onchange="renderWorkspace()" /> Changed
     </label>
-    <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;">
-      <input id="wrapLinesChk" type="checkbox" checked onchange="renderWorkspace()" /> Wrap long lines
+    <label style="cursor:pointer;" title="Wrap long lines">
+      <input id="wrapLinesChk" type="checkbox" checked onchange="renderWorkspace()" /> Wrap
     </label>
-    <button id="gdSelectionBtn" class="small" type="button" title="Look up currently selected text in GoldenDict" onclick="lookupSelectedGoldenDict()">📖 GoldenDict Selection</button>
+    <button id="gdSelectionBtn" class="small" type="button" title="Look up currently selected text in GoldenDict" onclick="lookupSelectedGoldenDict()">📖 GD</button>
     <button id="findBtn" class="small" type="button" title="Find text or combining marks like ँ across spans (Ctrl+F)" onclick="openDiffFindBar()">🔍 Find</button>
     <button id="settingsBtn" class="small" type="button" title="Customize deleted and added diff highlight colors" onclick="toggleSettingsPane()">⚙ Settings</button>
     <button id="helpBtn" class="small" type="button" title="About &amp; keyboard shortcuts (?)" onclick="toggleHelpPane()">?</button>
@@ -336,7 +335,7 @@ function toggleStaticInputs(forceCollapse = null) {
   const panel = document.getElementById("staticTextInputsPanel");
   const btn = document.getElementById("toggleStaticInputsBtn");
   if (panel) panel.style.display = (isClientTextMode() && !staticInputsCollapsed) ? "flex" : "none";
-  if (btn) btn.textContent = staticInputsCollapsed ? "▸ Show Inputs" : "▾ Hide Inputs";
+  if (btn) btn.textContent = staticInputsCollapsed ? "▸ Inputs" : "▾ Hide";
 }
 
 function applyModeLayoutUi() {

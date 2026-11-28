@@ -54,13 +54,24 @@
   header {
     background: var(--surface);
     border-bottom: 1px solid var(--border);
-    padding: 9px 14px;
+    padding: 5px 10px;
     display: flex;
     flex-direction: column;
-    gap: 7px;
+    gap: 4px;
     flex-shrink: 0;
+    font-size: 13px;
+    line-height: 1.25;
   }
   .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  header .row { gap: 5px; }
+  header label {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 12.5px;
+    white-space: nowrap;
+  }
+  header input[type="checkbox"] { margin: 0; }
   input[type="text"], input[type="number"], select, textarea {
     padding: 5px 8px;
     border: 1px solid var(--border);
@@ -69,6 +80,11 @@
     color: var(--text);
     font-size: 18px;
     font-family: inherit;
+  }
+  header input[type="text"], header input[type="number"], header select {
+    padding: 2px 6px;
+    font-size: 12.5px;
+    border-radius: 5px;
   }
   button {
     padding: 6px 12px;
@@ -90,6 +106,13 @@
   button.danger:hover:not(:disabled) { background: #74251c; }
   button.small { padding: 4px 9px; font-size: 15.5px; }
   button.active { box-shadow: 0 0 0 2px var(--accent); background: var(--accent-soft); }
+  header button {
+    padding: 3px 7px;
+    font-size: 12.5px;
+    border-radius: 5px;
+    white-space: nowrap;
+  }
+  header button.small { padding: 2px 6px; font-size: 12px; }
 
   .pill {
     display: inline-flex;
@@ -103,6 +126,21 @@
     background: var(--surface-2);
     color: var(--text);
   }
+  header .pill, header button.filter-pill, header .checked-until-pill {
+    padding: 2px 7px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  header .kbd-hint { font-size: 10px; padding: 0 3px; }
+  header #statusText {
+    font-size: 12px !important;
+    flex: 1 1 40px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  header #statusText:empty { display: none; }
   .pill-green { background: var(--green-soft); color: var(--green); border-color: #a9dfbf; }
   .pill-red { background: var(--red-soft); color: var(--red); border-color: #f5b7b1; }
   .pill-amber { background: var(--amber-soft); color: var(--amber); border-color: #f9e79f; }
@@ -485,6 +523,16 @@
   }
   .settings-drawer.help-drawer {
     width: 700px;
+  }
+  .settings-drawer.token-drawer {
+    left: 18px;
+    right: auto;
+    width: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
   }
   .file-title-link {
     font-weight: 700;

@@ -651,13 +651,23 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
   header {
     background: var(--surface);
     border-bottom: 1px solid var(--border);
-    padding: 10px 16px;
+    padding: 5px 10px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 4px;
     flex-shrink: 0;
+    font-size: 12px;
+    line-height: 1.25;
   }
   .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  header .row { gap: 5px; }
+  header label {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
   input[type="text"], input[type="number"], select {
     padding: 6px 9px;
     border: 1px solid var(--border);
@@ -666,8 +676,13 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     color: var(--text);
     font-size: 13px;
   }
-  #dirInput { flex: 1; min-width: 280px; font-family: monospace; }
-  #presetSelect { max-width: 300px; }
+  header input[type="text"], header input[type="number"], header select {
+    padding: 2px 6px;
+    font-size: 12px;
+    border-radius: 5px;
+  }
+  #dirInput { flex: 1; min-width: 180px; font-family: monospace; }
+  #presetSelect { max-width: 220px; }
   button {
     padding: 6px 12px;
     border: 1px solid var(--border);
@@ -684,6 +699,9 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
   button.green { background: var(--green); color: #fff; border-color: var(--green); }
   button.green:hover { background: #11502c; }
   button.small { padding: 3px 8px; font-size: 12px; }
+  header button { padding: 3px 7px; font-size: 12px; border-radius: 5px; white-space: nowrap; }
+  header button.small { padding: 2px 6px; font-size: 11.5px; }
+  header .kbd-hint { font-size: 9.5px; padding: 0 3px; }
 
   .stat-pill {
     padding: 3px 9px;
@@ -700,6 +718,11 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     font-weight: 600;
     cursor: pointer;
     transition: box-shadow 0.12s, filter 0.12s;
+  }
+  header .stat-pill, header button.filter-pill {
+    padding: 2px 7px;
+    font-size: 11.5px;
+    white-space: nowrap;
   }
   button.filter-pill:hover { filter: brightness(0.96); }
   button.filter-pill.active { box-shadow: 0 0 0 2px var(--accent); }
@@ -1168,44 +1191,44 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
   <div class="row">
     <select id="presetSelect" title="Quick preset directories"></select>
     <input id="dirInput" type="text" placeholder="/path/to/vedAH_yajuH/content/..." />
-    <button onclick="browseDir()">Browse...</button>
-    <button class="primary" onclick="scanDirectory()">Scan Directory</button>
-    <span id="scanSpinner" style="color:var(--muted); font-size:12px;"></span>
+    <button onclick="browseDir()">Browse</button>
+    <button class="primary" onclick="scanDirectory()">Scan</button>
+    <span id="scanSpinner" style="color:var(--muted); font-size:11.5px;"></span>
   </div>
   <div class="row">
-    <label>Context lines (n): <input id="nInput" type="number" min="0" max="30" value="3" style="width:62px" onchange="loadItems(1)" /></label>
+    <label title="Context lines (n)">Ctx: <input id="nInput" type="number" min="0" max="30" value="3" style="width:46px" onchange="loadItems(1)" /></label>
     <button id="refreshBtn" class="small" title="Reload UI (Ctrl+R rescans directory)" onclick="reloadUi()">↻ Reload</button>
-    <label title="Matches VS Code (25) / IntelliJ IDEA (28)">Editor font (px): <input id="fontPxInput" type="number" min="14" max="42" value="26" style="width:62px" onchange="applyEditorFont(this.value)" /></label>
+    <label title="Editor font size in px — matches VS Code (25) / IntelliJ IDEA (28)">Font: <input id="fontPxInput" type="number" min="14" max="42" value="26" style="width:46px" onchange="applyEditorFont(this.value)" /></label>
     <label>Git:
       <select id="gitFilter" onchange="loadItems(1)">
-        <option value="all">All files</option>
-        <option value="dirty">Uncommitted only (M / ??)</option>
-        <option value="clean">Committed only</option>
+        <option value="all">All</option>
+        <option value="dirty">Dirty</option>
+        <option value="clean">Clean</option>
       </select>
     </label>
-    <label>Review state:
+    <label>State:
       <select id="statusFilter" onchange="loadItems(1)">
         <option value="all">All</option>
         <option value="pending" selected>Pending</option>
         <option value="accept">Accepted</option>
         <option value="reject">Rejected</option>
-        <option value="has_feedback">With !! comment</option>
+        <option value="has_feedback">With !!</option>
       </select>
     </label>
-    <label>Pairing:
+    <label>Pair:
       <select id="kindFilter" onchange="loadItems(1)">
-        <option value="all">All VP suggestions</option>
-        <option value="both">Paired (VP + पद-पाठः)</option>
-        <option value="vp_only">Unpaired VP (no पद-पाठः)</option>
+        <option value="all">All VP</option>
+        <option value="both">Paired</option>
+        <option value="vp_only">Unpaired</option>
       </select>
     </label>
-    <input id="searchInput" type="text" placeholder="Filter Devanagari / path / sūtra..." style="width:210px;" oninput="debouncedSearch()" />
-    <button id="undoBtn" class="small" title="Undo last review action (Ctrl+Z)" onclick="undoLastAction()" disabled>↶ Undo <span class="kbd-hint">Ctrl+Z</span></button>
-    <button type="button" class="stat-pill filter-pill" id="statTotal" data-status-filter="all" title="Show all matching suggestions (Alt+L / Alt+0)" onclick="setStatusFilter('all')">0 suggestions <span class="kbd-hint">Alt+L</span></button>
-    <button type="button" class="stat-pill filter-pill pill-pending active" id="statPending" data-status-filter="pending" title="Show only pending suggestions without !! (Alt+U)" onclick="setStatusFilter('pending')">Pending: 0 <span class="kbd-hint">Alt+U</span></button>
-    <button type="button" class="stat-pill filter-pill pill-accept" id="statAccept" data-status-filter="accept" title="Show only accepted suggestions (Alt+A)" onclick="setStatusFilter('accept')">Accepted: 0 <span class="kbd-hint">Alt+A</span></button>
-    <button type="button" class="stat-pill filter-pill" id="statReject" data-status-filter="reject" title="Show only rejected suggestions (Alt+R)" style="background:var(--red-soft); color:var(--red); border-color:#f5b7b1;" onclick="setStatusFilter('reject')">Rejected: 0 <span class="kbd-hint">Alt+R</span></button>
-    <button type="button" class="stat-pill filter-pill pill-hold" id="statHold" data-status-filter="has_feedback" title="Show only suggestions with !! comments (Alt+W)" onclick="setStatusFilter('has_feedback')">With !!: 0 <span class="kbd-hint">Alt+W</span></button>
+    <input id="searchInput" type="text" placeholder="Filter..." style="width:125px;" oninput="debouncedSearch()" />
+    <button id="undoBtn" class="small" title="Undo last review action (Ctrl+Z)" onclick="undoLastAction()" disabled>↶ Undo</button>
+    <button type="button" class="stat-pill filter-pill" id="statTotal" data-status-filter="all" title="Show all matching suggestions (Alt+L / Alt+0)" onclick="setStatusFilter('all')">0 <span class="kbd-hint">Alt+L</span></button>
+    <button type="button" class="stat-pill filter-pill pill-pending active" id="statPending" data-status-filter="pending" title="Show only pending suggestions without !! (Alt+U)" onclick="setStatusFilter('pending')">Pend: 0 <span class="kbd-hint">Alt+U</span></button>
+    <button type="button" class="stat-pill filter-pill pill-accept" id="statAccept" data-status-filter="accept" title="Show only accepted suggestions (Alt+A)" onclick="setStatusFilter('accept')">Acc: 0 <span class="kbd-hint">Alt+A</span></button>
+    <button type="button" class="stat-pill filter-pill" id="statReject" data-status-filter="reject" title="Show only rejected suggestions (Alt+R)" style="background:var(--red-soft); color:var(--red); border-color:#f5b7b1;" onclick="setStatusFilter('reject')">Rej: 0 <span class="kbd-hint">Alt+R</span></button>
+    <button type="button" class="stat-pill filter-pill pill-hold" id="statHold" data-status-filter="has_feedback" title="Show only suggestions with !! comments (Alt+W)" onclick="setStatusFilter('has_feedback')">!!: 0 <span class="kbd-hint">Alt+W</span></button>
     <button id="helpBtn" class="small" type="button" title="About &amp; keyboard shortcuts (?)" onclick="toggleHelpPane()">?</button>
   </div>
 </header>
@@ -1464,11 +1487,11 @@ async function loadItems(page) {
 
 function renderSummary(sum) {
   if (!sum) return;
-  document.getElementById("statTotal").innerHTML = `${sum.total_items} suggestions <span class="kbd-hint">Alt+L</span>`;
-  document.getElementById("statPending").innerHTML = `Pending: ${sum.counts.pending} <span class="kbd-hint">Alt+U</span>`;
-  document.getElementById("statAccept").innerHTML = `Accepted: ${sum.counts.accept} <span class="kbd-hint">Alt+A</span>`;
-  document.getElementById("statReject").innerHTML = `Rejected: ${sum.counts.reject || 0} <span class="kbd-hint">Alt+R</span>`;
-  document.getElementById("statHold").innerHTML = `With !!: ${sum.counts.with_feedback || 0} <span class="kbd-hint">Alt+W</span>`;
+  document.getElementById("statTotal").innerHTML = `${sum.total_items} <span class="kbd-hint">Alt+L</span>`;
+  document.getElementById("statPending").innerHTML = `Pend: ${sum.counts.pending} <span class="kbd-hint">Alt+U</span>`;
+  document.getElementById("statAccept").innerHTML = `Acc: ${sum.counts.accept} <span class="kbd-hint">Alt+A</span>`;
+  document.getElementById("statReject").innerHTML = `Rej: ${sum.counts.reject || 0} <span class="kbd-hint">Alt+R</span>`;
+  document.getElementById("statHold").innerHTML = `!!: ${sum.counts.with_feedback || 0} <span class="kbd-hint">Alt+W</span>`;
   updateStatusFilterPills();
   document.getElementById("markedCountPill").textContent = `${sum.marked_files.length} marked`;
 

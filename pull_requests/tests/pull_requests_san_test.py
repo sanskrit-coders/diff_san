@@ -798,6 +798,8 @@ def test_gui_endpoints_diff_comments_refresh_and_local_helpers(tmp_path: Path, m
   for btn_id in ("commentNavBtn", "prevCommentBtn", "nextCommentBtn", "commentNavCount", "helpBtn", "helpPane"):
     assert f'id="{btn_id}"' in r_html.text
   assert "> Wrap\n" in r_html.text and "> Wrap long lines\n" not in r_html.text
+  assert "header button {" in r_html.text and "font-size: 12.5px;" in r_html.text
+  assert r_html.text.index("</header>") < r_html.text.index('id="staticTokenRow"')
   assert '<div id="helpPane"' in r_html.text and r_html.text.index('id="helpPane"') < r_html.text.index('id="aboutFooter"')
 
   r_meta = tc.get("/api/meta")
@@ -1046,7 +1048,7 @@ def test_frontend_js_renders_char_diffs_and_comments(tmp_path: Path):
   assert 'id="reloadBtn"' in html_src and 'onclick="reloadUi()"' in html_src
   assert 'id="settingsBtn"' in html_src and 'id="settingsPane"' in html_src
   assert 'id="singlePaneChk" type="checkbox" checked' in html_src
-  assert '<option value="word" selected>Word (space-separated)</option>' in html_src
+  assert '<option value="word" selected>Word</option>' in html_src
   assert 'id="normalizeSelect"' in html_src and 'id="ignorePunctChk"' in html_src
   assert 'id="sandhiHighlightBtn"' in html_src and 'onToggleSandhiHighlight()' in html_src
   assert ".ch-ws" not in html_src

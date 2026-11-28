@@ -34,8 +34,14 @@ function setStatus(msg, autoClearMs = 0) {
   const el = document.getElementById("statusText");
   if (!el) return;
   el.textContent = msg || "";
+  el.title = msg || "";
   if (autoClearMs > 0 && msg) {
-    setTimeout(() => { if (el.textContent === msg) el.textContent = ""; }, autoClearMs);
+    setTimeout(() => {
+      if (el.textContent === msg) {
+        el.textContent = "";
+        el.title = "";
+      }
+    }, autoClearMs);
   }
 }
 

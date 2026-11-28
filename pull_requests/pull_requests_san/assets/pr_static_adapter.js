@@ -971,12 +971,15 @@
       if (meta.auth_user?.login) {
         badge.className = "pill pill-green";
         badge.textContent = `@${meta.auth_user.login}`;
+        badge.title = `Authenticated as @${meta.auth_user.login}`;
       } else if (meta.has_token) {
         badge.className = "pill pill-blue";
-        badge.textContent = "Token configured";
+        badge.textContent = "Token";
+        badge.title = "Token configured";
       } else {
         badge.className = "pill pill-amber";
-        badge.textContent = "Public API (read-only)";
+        badge.textContent = "Read-only";
+        badge.title = "Public API (read-only)";
       }
     }
     if (typeof setStatus === "function") setStatus(val ? "GitHub token saved in browser localStorage" : "GitHub token cleared", 2500);
@@ -994,17 +997,20 @@
     if (badge) {
       if (getStaticGithubToken()) {
         badge.className = "pill pill-blue";
-        badge.textContent = "Token configured";
+        badge.textContent = "Token";
+        badge.title = "Token configured";
         try {
           const meta = await handleStaticPrApi("/api/meta");
           if (meta?.auth_user?.login) {
             badge.className = "pill pill-green";
             badge.textContent = `@${meta.auth_user.login}`;
+            badge.title = `Authenticated as @${meta.auth_user.login}`;
           }
         } catch (_) {}
       } else {
         badge.className = "pill pill-amber";
-        badge.textContent = "Public API (read-only)";
+        badge.textContent = "Read-only";
+        badge.title = "Public API (read-only)";
       }
     }
 

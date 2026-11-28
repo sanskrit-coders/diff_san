@@ -528,6 +528,7 @@ def test_review_gui_embedded_js_syntax(tmp_path: Path):
   assert 'id="refreshBtn"' in review_gui._RENDERED_HTML and 'onclick="reloadUi()"' in review_gui._RENDERED_HTML
   assert 'id="undoBtn"' in review_gui._RENDERED_HTML and 'onclick="undoLastAction()"' in review_gui._RENDERED_HTML
   assert 'id="helpBtn"' in review_gui._RENDERED_HTML and 'id="helpPane"' in review_gui._RENDERED_HTML
+  assert "header button {" in review_gui._RENDERED_HTML and ">Scan</button>" in review_gui._RENDERED_HTML
   hdr_top = review_gui._RENDERED_HTML.split("<header>", 1)[1].split("</div>", 1)[0]
   assert "Vedic Accent Fix Reviewer" not in hdr_top
   assert "Vedic Accent Fix Reviewer" in review_gui._RENDERED_HTML.split('id="helpPane"', 1)[1]

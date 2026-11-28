@@ -214,6 +214,9 @@ def test_local_diff_frontend_js_renders_settings_and_diff(tmp_path: Path):
   assert "--red-char: #ffeded;" in html_src
   assert "--del-char-sub: #ffd6db;" in html_src
   assert 'id="settingsBtn"' in html_src and 'id="settingsPane"' in html_src
+  assert "header button {" in html_src and "font-size: 12.5px;" in html_src
+  assert '<option value="word" selected>Word</option>' in html_src
+  assert "> Wrap\n" in html_src and "> Wrap long lines\n" not in html_src
 
   m = re.search(r"<script>\n(.*?)\n</script>", html_src, re.S)
   assert m is not None

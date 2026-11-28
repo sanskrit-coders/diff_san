@@ -61,13 +61,24 @@
   header {
     background: var(--surface);
     border-bottom: 1px solid var(--border);
-    padding: 9px 14px;
+    padding: 5px 10px;
     display: flex;
     flex-direction: column;
-    gap: 7px;
+    gap: 4px;
     flex-shrink: 0;
+    font-size: 13px;
+    line-height: 1.25;
   }
   .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  header .row { gap: 5px; }
+  header label {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 12.5px;
+    white-space: nowrap;
+  }
+  header input[type="checkbox"] { margin: 0; }
   input[type="text"], input[type="number"], select, textarea {
     padding: 5px 8px;
     border: 1px solid var(--border);
@@ -76,6 +87,11 @@
     color: var(--text);
     font-size: 18px;
     font-family: inherit;
+  }
+  header input[type="text"], header input[type="number"], header select {
+    padding: 2px 6px;
+    font-size: 12.5px;
+    border-radius: 5px;
   }
   button {
     padding: 6px 12px;
@@ -97,6 +113,13 @@
   button.danger:hover:not(:disabled) { background: #74251c; }
   button.small { padding: 4px 9px; font-size: 15.5px; }
   button.active { box-shadow: 0 0 0 2px var(--accent); background: var(--accent-soft); }
+  header button {
+    padding: 3px 7px;
+    font-size: 12.5px;
+    border-radius: 5px;
+    white-space: nowrap;
+  }
+  header button.small { padding: 2px 6px; font-size: 12px; }
 
   .pill {
     display: inline-flex;
@@ -110,6 +133,21 @@
     background: var(--surface-2);
     color: var(--text);
   }
+  header .pill, header button.filter-pill, header .checked-until-pill {
+    padding: 2px 7px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  header .kbd-hint { font-size: 10px; padding: 0 3px; }
+  header #statusText {
+    font-size: 12px !important;
+    flex: 1 1 40px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  header #statusText:empty { display: none; }
   .pill-green { background: var(--green-soft); color: var(--green); border-color: #a9dfbf; }
   .pill-red { background: var(--red-soft); color: var(--red); border-color: #f5b7b1; }
   .pill-amber { background: var(--amber-soft); color: var(--amber); border-color: #f9e79f; }
@@ -492,6 +530,16 @@
   }
   .settings-drawer.help-drawer {
     width: 700px;
+  }
+  .settings-drawer.token-drawer {
+    left: 18px;
+    right: auto;
+    width: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
   }
   .file-title-link {
     font-weight: 700;
@@ -988,46 +1036,37 @@
 <body>
 <header>
   <div class="row" id="headerFilterRow">
-    <label id="ownerWrap">Owner/Org: <input id="ownerInput" type="text" value="vishvAsa" style="width:170px;" /></label>
-    <span id="staticPrControls" class="row" style="gap:6px; display:none;">
-      <label>PR / Repo: <input id="staticPrUrlInput" type="text" placeholder="https://github.com/owner/repo/pull/123 or owner/repo" style="width:330px;" onkeydown="if(event.key==='Enter') loadStaticPrFromInput()" /></label>
-      <button id="staticLoadPrBtn" class="primary" type="button" onclick="loadStaticPrFromInput()">Load PR</button>
-      <button id="staticSamplePrBtn" class="small" type="button" onclick="loadStaticSamplePr()">Sample PR</button>
+    <label id="ownerWrap">Owner: <input id="ownerInput" type="text" value="vishvAsa" style="width:86px;" /></label>
+    <span id="staticPrControls" class="row" style="gap:4px; display:none;">
+      <label>PR: <input id="staticPrUrlInput" type="text" placeholder="owner/repo or PR URL..." style="width:165px;" onkeydown="if(event.key==='Enter') loadStaticPrFromInput()" /></label>
+      <button id="staticLoadPrBtn" class="primary" type="button" onclick="loadStaticPrFromInput()">Load</button>
+      <button id="staticSamplePrBtn" class="small" type="button" onclick="loadStaticSamplePr()">Sample</button>
       <button id="staticTokenBtn" class="small" type="button" title="Optional GitHub Personal Access Token (browser localStorage only) for private repos, 5000 req/hr, and posting comments/reviews" onclick="toggleStaticTokenRow()">🔑 Token</button>
     </span>
-    <span id="stateFilterPills" class="row" style="gap:4px;">
+    <span id="stateFilterPills" class="row" style="gap:3px;">
       <input type="hidden" id="stateSelect" value="open" />
-      <button type="button" class="pill filter-pill pill-green active" id="stateOpenPill" data-state-filter="open" title="Show Open PRs (Alt+O)" onclick="setStateFilter('open')">Open <span class="kbd-hint">Alt+O</span></button>
-      <button type="button" class="pill filter-pill pill-amber" id="stateClosedPill" data-state-filter="closed" title="Show past 10 Closed PRs (Alt+C)" onclick="setStateFilter('closed')">Closed <span class="kbd-hint">Alt+C</span></button>
-      <button type="button" class="pill filter-pill pill-blue" id="stateMergedPill" data-state-filter="merged" title="Show past 10 Merged PRs (Alt+M)" onclick="setStateFilter('merged')">Merged <span class="kbd-hint">Alt+M</span></button>
-      <button type="button" class="pill filter-pill" id="stateAllPill" data-state-filter="all" title="Show past 10 PRs (Alt+L / Alt+0)" onclick="setStateFilter('all')">All <span class="kbd-hint">Alt+L</span></button>
+      <button type="button" class="pill filter-pill pill-green active" id="stateOpenPill" data-state-filter="open" title="Show Open PRs (Alt+O)" onclick="setStateFilter('open')">Open</button>
+      <button type="button" class="pill filter-pill pill-amber" id="stateClosedPill" data-state-filter="closed" title="Show past 10 Closed PRs (Alt+C)" onclick="setStateFilter('closed')">Closed</button>
+      <button type="button" class="pill filter-pill pill-blue" id="stateMergedPill" data-state-filter="merged" title="Show past 10 Merged PRs (Alt+M)" onclick="setStateFilter('merged')">Merged</button>
+      <button type="button" class="pill filter-pill" id="stateAllPill" data-state-filter="all" title="Show past 10 PRs (Alt+L / Alt+0)" onclick="setStateFilter('all')">All</button>
     </span>
-    <label>Repo:
-      <select id="repoSelect" onchange="applyPrFilters()">
-        <option value="">All repos</option>
-      </select>
-    </label>
-    <input id="prSearchInput" type="text" placeholder="Filter PRs (repo / title / author)..." style="width:230px;" oninput="applyPrFilters()" />
-    <button id="refreshAllBtn" class="primary" title="Refresh PRs from GitHub (Ctrl+R)" onclick="refreshAll()">↻ Refresh <span class="kbd-hint" style="background:rgba(255,255,255,0.2); color:#fff;">Ctrl+R</span></button>
+    <select id="repoSelect" title="Filter by repo" style="max-width:110px;" onchange="applyPrFilters()">
+      <option value="">All repos</option>
+    </select>
+    <input id="prSearchInput" type="text" placeholder="Filter PRs..." style="width:100px;" oninput="applyPrFilters()" />
+    <button id="refreshAllBtn" class="primary" title="Refresh PRs from GitHub (Ctrl+R)" onclick="refreshAll()">↻ Refresh</button>
     <button id="reloadBtn" class="small" title="Reload UI (Ctrl+R refreshes from GitHub)" onclick="reloadUi()">↻ Reload</button>
-    <span id="authBadge" class="pill">Checking auth...</span>
+    <span id="authBadge" class="pill">Checking...</span>
     <span id="checkedUntilPill" class="checked-until-pill" style="display:none;"></span>
-    <span id="statusText" style="color:var(--muted); font-size:16px;"></span>
-  </div>
-  <div id="staticTokenRow" class="row" style="display:none; padding:4px 8px; background:var(--surface-2); border:1px solid var(--border); border-radius:7px;">
-    <label style="font-size:15.5px;">GitHub PAT (saved only in browser localStorage): <input id="staticTokenInput" type="password" placeholder="ghp_... or github_pat_..." style="width:270px;" onkeydown="if(event.key==='Enter') saveStaticGithubToken(false)" /></label>
-    <button id="saveStaticTokenBtn" class="small primary" type="button" onclick="saveStaticGithubToken(false)">Save</button>
-    <button id="clearStaticTokenBtn" class="small" type="button" onclick="saveStaticGithubToken(true)">Clear</button>
-    <button class="small" type="button" onclick="toggleStaticTokenRow()">Close</button>
+    <span id="statusText" style="color:var(--muted);"></span>
   </div>
   <div class="row">
-    <label title="Toggle Word / Char (Grapheme \X) diff unit (Alt+W)">Diff unit:
+    <label title="Toggle Word / Char (Grapheme \X) diff unit (Alt+W)">Unit:
       <select id="diffModeSelect" onchange="changeDiffMode()">
-        <option value="word" selected>Word (space-separated)</option>
-        <option value="grapheme">Char (Grapheme \X)</option>
-        <option value="codepoint">Codepoint (Raw)</option>
+        <option value="word" selected>Word</option>
+        <option value="grapheme">Char (\X)</option>
+        <option value="codepoint">Codept</option>
       </select>
-      <span class="kbd-hint">Alt+W</span>
     </label>
     <label title="Apply Unicode normalization before diffing">Norm:
       <select id="normalizeSelect" onchange="changeDiffMode()">
@@ -1038,11 +1077,11 @@
         <option value="nfkd">NFKD</option>
       </select>
     </label>
-    <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;" title="Ignore Unicode punctuation differences when comparing words/lines">
-      <input id="ignorePunctChk" type="checkbox" onchange="changeDiffMode()" /> Ignore punct
+    <label style="cursor:pointer;" title="Ignore Unicode punctuation differences when comparing words/lines">
+      <input id="ignorePunctChk" type="checkbox" onchange="changeDiffMode()" /> No punct
     </label>
     <span class="row" style="gap:2px;">
-      <button id="sandhiHighlightBtn" class="small" type="button" title="Highlight interword sandhi changes (e.g. अस्ति इति ↔ अस्तीति) with a special color" onclick="onToggleSandhiHighlight()">Sandhi diff</button>
+      <button id="sandhiHighlightBtn" class="small" type="button" title="Highlight interword sandhi changes (e.g. अस्ति इति ↔ अस्तीति) with a special color" onclick="onToggleSandhiHighlight()">Sandhi</button>
       <button id="prevSandhiBtn" class="small" type="button" title="Previous sandhi diff (Alt+Shift+↑)" onclick="jumpSandhiDiff(-1)">◀</button>
       <button id="nextSandhiBtn" class="small" type="button" title="Next sandhi diff (Alt+Shift+↓)" onclick="jumpSandhiDiff(1)">▶</button>
     </span>
@@ -1051,23 +1090,29 @@
       <button id="prevCommentBtn" class="small" type="button" title="Previous PR comment (Ctrl+Shift+D; Alt+Shift+D for unresolved)" onclick="cyclePrComments(-1)">◀</button>
       <button id="nextCommentBtn" class="small" type="button" title="Next PR comment (Ctrl+D; Alt+D for unresolved)" onclick="cyclePrComments(1)">▶</button>
     </span>
-    <label title="Matches VS Code (25) / IntelliJ IDEA (28)">Editor font (px): <input id="fontPxInput" type="number" min="14" max="42" value="26" style="width:74px;" onchange="applyEditorFont(this.value)" /></label>
-    <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;" title="Single pane inline word flow without line matching (Alt+S)">
-      <input id="singlePaneChk" type="checkbox" checked onchange="toggleSinglePane(this.checked)" /> Single pane <span class="kbd-hint">Alt+S</span>
+    <label title="Editor font size in px — matches VS Code (25) / IntelliJ IDEA (28)">Font: <input id="fontPxInput" type="number" min="14" max="42" value="26" style="width:48px;" onchange="applyEditorFont(this.value)" /></label>
+    <label style="cursor:pointer;" title="Single pane inline word flow without line matching (Alt+S)">
+      <input id="singlePaneChk" type="checkbox" checked onchange="toggleSinglePane(this.checked)" /> 1-pane
     </label>
-    <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;">
-      <input id="changedOnlyChk" type="checkbox" onchange="renderActivePrFiles()" /> Changed lines only
+    <label style="cursor:pointer;" title="Show changed lines only">
+      <input id="changedOnlyChk" type="checkbox" onchange="renderActivePrFiles()" /> Changed
     </label>
-    <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;" title="Wrap long lines">
+    <label style="cursor:pointer;" title="Wrap long lines">
       <input id="wrapLinesChk" type="checkbox" checked onchange="renderActivePrFiles()" /> Wrap
     </label>
-    <button id="gdSelectionBtn" class="small" title="Look up currently selected text in GoldenDict" onclick="lookupSelectedGoldenDict()">📖 GoldenDict Selection</button>
+    <button id="gdSelectionBtn" class="small" title="Look up currently selected text in GoldenDict" onclick="lookupSelectedGoldenDict()">📖 GD</button>
     <button id="findBtn" class="small" type="button" title="Find text or combining marks like ँ across spans (Ctrl+F)" onclick="openDiffFindBar()">🔍 Find</button>
     <button id="settingsBtn" class="small" type="button" title="Customize deleted and added diff highlight colors" onclick="toggleSettingsPane()">⚙ Settings</button>
     <button id="helpBtn" class="small" type="button" title="About &amp; keyboard shortcuts (?)" onclick="toggleHelpPane()">?</button>
   </div>
-  <div id="headerPrActions" class="row" style="display:none; padding-top:4px; border-top:1px solid #ece6da; gap:6px;"></div>
+  <div id="headerPrActions" class="row" style="display:none; padding-top:3px; border-top:1px solid #ece6da; gap:5px;"></div>
 </header>
+<div id="staticTokenRow" class="settings-drawer token-drawer" style="display:none;">
+  <label style="font-size:14px;">GitHub PAT (localStorage): <input id="staticTokenInput" type="password" placeholder="ghp_... or github_pat_..." style="width:240px; font-size:14px; padding:4px 8px;" onkeydown="if(event.key==='Enter') saveStaticGithubToken(false)" /></label>
+  <button id="saveStaticTokenBtn" class="small primary" type="button" onclick="saveStaticGithubToken(false)">Save</button>
+  <button id="clearStaticTokenBtn" class="small" type="button" onclick="saveStaticGithubToken(true)">Clear</button>
+  <button class="small" type="button" onclick="toggleStaticTokenRow()">Close</button>
+</div>
 <div id="settingsPane" class="settings-drawer" style="display:none;"></div>
 <div id="helpPane" class="settings-drawer help-drawer" style="display:none;">
   <div class="row" style="justify-content:space-between;">
@@ -2767,8 +2812,14 @@ function setStatus(msg, autoClearMs = 0) {
   const el = document.getElementById("statusText");
   if (!el) return;
   el.textContent = msg || "";
+  el.title = msg || "";
   if (autoClearMs > 0 && msg) {
-    setTimeout(() => { if (el.textContent === msg) el.textContent = ""; }, autoClearMs);
+    setTimeout(() => {
+      if (el.textContent === msg) {
+        el.textContent = "";
+        el.title = "";
+      }
+    }, autoClearMs);
   }
 }
 
@@ -5658,12 +5709,15 @@ function handleSharedDiffKeydown(ev, navCtx = null) {
       if (meta.auth_user?.login) {
         badge.className = "pill pill-green";
         badge.textContent = `@${meta.auth_user.login}`;
+        badge.title = `Authenticated as @${meta.auth_user.login}`;
       } else if (meta.has_token) {
         badge.className = "pill pill-blue";
-        badge.textContent = "Token configured";
+        badge.textContent = "Token";
+        badge.title = "Token configured";
       } else {
         badge.className = "pill pill-amber";
-        badge.textContent = "Public API (read-only)";
+        badge.textContent = "Read-only";
+        badge.title = "Public API (read-only)";
       }
     }
     if (typeof setStatus === "function") setStatus(val ? "GitHub token saved in browser localStorage" : "GitHub token cleared", 2500);
@@ -5681,17 +5735,20 @@ function handleSharedDiffKeydown(ev, navCtx = null) {
     if (badge) {
       if (getStaticGithubToken()) {
         badge.className = "pill pill-blue";
-        badge.textContent = "Token configured";
+        badge.textContent = "Token";
+        badge.title = "Token configured";
         try {
           const meta = await handleStaticPrApi("/api/meta");
           if (meta?.auth_user?.login) {
             badge.className = "pill pill-green";
             badge.textContent = `@${meta.auth_user.login}`;
+            badge.title = `Authenticated as @${meta.auth_user.login}`;
           }
         } catch (_) {}
       } else {
         badge.className = "pill pill-amber";
-        badge.textContent = "Public API (read-only)";
+        badge.textContent = "Read-only";
+        badge.title = "Public API (read-only)";
       }
     }
 
@@ -6077,12 +6134,15 @@ async function init() {
     if (metaInfo.auth_user?.login) {
       badge.className = "pill pill-green";
       badge.textContent = `@${metaInfo.auth_user.login}`;
+      badge.title = `Authenticated as @${metaInfo.auth_user.login}`;
     } else if (metaInfo.has_token) {
       badge.className = "pill pill-blue";
-      badge.textContent = "Token configured";
+      badge.textContent = "Token";
+      badge.title = "GitHub token configured";
     } else {
       badge.className = "pill pill-amber";
-      badge.textContent = "Unauthenticated (read-only)";
+      badge.textContent = "Read-only";
+      badge.title = "Unauthenticated (read-only)";
     }
   } catch (e) {
     showError(e.message);
@@ -6718,26 +6778,26 @@ function renderHeaderPrActions(detail, ms, drafts) {
   const prStateLower = String(s.state || "open").toLowerCase();
   const numDrafts = (drafts || []).length;
   const mergeHtml = prStateLower === "open"
-    ? `<select id="headerMergeMethodSelect" title="Merge strategy" style="font-size:14.5px; padding:3px 6px;" onchange="syncMergeMethod(this.value)">
+    ? `<select id="headerMergeMethodSelect" title="Merge strategy" style="font-size:12.5px; padding:2px 6px;" onchange="syncMergeMethod(this.value)">
          <option value="merge" ${selectedMergeMethod === 'merge' ? 'selected' : ''}>Merge</option>
          <option value="squash" ${selectedMergeMethod === 'squash' ? 'selected' : ''}>Squash</option>
          <option value="rebase" ${selectedMergeMethod === 'rebase' ? 'selected' : ''}>Rebase</option>
        </select>
-       <button id="headerMergePrBtn" class="small green" ${ms.canMerge ? "" : "disabled"} title="${esc(ms.canMerge ? 'Merge this pull request on GitHub (Alt+Shift+M)' : ms.disabledReason)}" onclick="mergeActivePr()">⛙ Merge PR <span class="kbd-hint" style="background:rgba(255,255,255,0.2); color:#fff;">Alt+Shift+M</span></button>`
+       <button id="headerMergePrBtn" class="small green" ${ms.canMerge ? "" : "disabled"} title="${esc(ms.canMerge ? 'Merge this pull request on GitHub (Alt+Shift+M)' : ms.disabledReason)}" onclick="mergeActivePr()">⛙ Merge</button>`
     : "";
   const stateHtml = prStateLower === "open"
-    ? `<button id="headerClosePrBtn" class="small danger" title="Close this pull request on GitHub (Alt+Shift+C)" onclick="setActivePrState('closed')">✕ Close PR <span class="kbd-hint" style="background:rgba(255,255,255,0.2); color:#fff;">Alt+Shift+C</span></button>`
+    ? `<button id="headerClosePrBtn" class="small danger" title="Close this pull request on GitHub (Alt+Shift+C)" onclick="setActivePrState('closed')">✕ Close</button>`
     : (prStateLower === "closed" && !ms.cls.includes("merged")
-      ? `<button id="headerReopenPrBtn" class="small" title="Reopen this pull request on GitHub (Alt+Shift+C)" onclick="setActivePrState('open')">↺ Reopen PR <span class="kbd-hint">Alt+Shift+C</span></button>`
+      ? `<button id="headerReopenPrBtn" class="small" title="Reopen this pull request on GitHub (Alt+Shift+C)" onclick="setActivePrState('open')">↺ Reopen</button>`
       : "");
   bar.innerHTML = `
-    <span class="mono" style="font-size:15px; font-weight:700; color:var(--blue);">${esc(s.repo_full_name)}#${s.number}</span>
+    <span class="mono" title="${esc(s.repo_full_name)}#${s.number}" style="font-size:12.5px; font-weight:700; color:var(--blue); max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(s.repo_full_name)}#${s.number}</span>
     ${ms.badgeHtml}
-    ${numDrafts ? `<button id="headerSubmitPendingReviewBtn" class="small primary submit-pending-review-btn" onclick="submitPendingReview()">Submit Pending Review (${numDrafts})</button>` : ""}
+    ${numDrafts ? `<button id="headerSubmitPendingReviewBtn" class="small primary submit-pending-review-btn" onclick="submitPendingReview()">Submit Review (${numDrafts})</button>` : ""}
     ${mergeHtml}
     ${stateHtml}
     <button class="small" title="Open PR on GitHub in browser (Alt+B)" onclick="openActivePrInBrowser()">🌐 Open</button>
-    <button class="small" title="Copy PR URL to clipboard" onclick="copyActivePrUrl()">🔗 Copy URL</button>
+    <button class="small" title="Copy PR URL to clipboard" onclick="copyActivePrUrl()">🔗 Copy</button>
   `;
   bar.style.display = "flex";
 }
