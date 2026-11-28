@@ -337,6 +337,12 @@ def test_vp_only_feedback_fallback_and_scoped_git_commit_via_fastapi(tmp_path: P
     str(ved_root / "vedAH_Rk" / "content"),
     str(ved_root / "vedAH_yajuH" / "static"),
   ]
+  sub_a = ved_root / "vedAH_yajuH" / "static" / "taittirIyam"
+  sub_a.mkdir()
+  assert str(sub_a) in review_gui._suggest_dirs(str(ved_root / "vedAH_yajuH" / "static"), ved_root)
+  assert str(ved_root / "vedAH_Rk" / "static") in review_gui._suggest_dirs("rk stat", ved_root)
+  sug_resp = client.get("/api/dir_suggest", params={"q": str(content_dir.parent)})
+  assert sug_resp.status_code == 200 and str(content_dir) in sug_resp.json()["suggestions"]
 
   items_resp = client.get("/api/items", params={"n_context": 2, "page_size": 50}).json()
   assert items_resp["filtered_total"] == 3
@@ -844,6 +850,14 @@ def test_review_gui_embedded_js_syntax(tmp_path: Path):
     "  if (stepMainFileGroup(1) !== false) throw new Error('stepMainFileGroup must return false when only 1 file shown');\n"
     "  elems['searchInput'] = document.getElementById('searchInput');\n"
     "  elems['mainPane'] = document.getElementById('mainPane');\n"
+    "  dirPresetsList = ['/home/vvasuki/gitland/vishvAsa/vedAH_yajuH/static', '/home/vvasuki/gitland/vishvAsa/vedAH_Rk/content'];\n"
+    "  elems['dirInput'] = document.getElementById('dirInput');\n"
+    "  elems['dirInput'].value = '/home/vvasuki/gitland/vishvAsa/vedAH_yajuH/static/taittirIyam';\n"
+    "  elems['dirInput'].focus();\n"
+    "  openDirSuggest({ filterByInput: false });\n"
+    "  if (!isDirSuggestOpen() || !elems['dirSuggestMenu'].innerHTML.includes('vedAH_Rk/content')) throw new Error('dirSuggestMenu did not show presets on focus: ' + elems['dirSuggestMenu'].innerHTML);\n"
+    "  listeners['keydown']({ key: 'Escape', altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, target: elems['dirInput'], preventDefault(){}, stopPropagation(){} });\n"
+    "  if (isDirSuggestOpen() || global.document.activeElement === elems['mainPane']) throw new Error('First Escape inside open dirSuggestMenu should close menu only');\n"
     "  elems['searchInput'].focus();\n"
     "  listeners['keydown']({ key: 'Escape', altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, target: elems['searchInput'], preventDefault(){}, stopPropagation(){} });\n"
     "  if (global.document.activeElement !== elems['mainPane']) throw new Error('Escape did not return focus to mainPane');\n"
@@ -863,6 +877,8 @@ def test_review_gui_embedded_js_syntax(tmp_path: Path):
     font_idx = row2_html.index('id="fontPxInput"')
     assert n_idx < ref_idx < font_idx
     assert '<main id="mainPane" tabindex="-1">' in review_gui._RENDERED_HTML
+    assert 'padding: 14px 0;' in review_gui._RENDERED_HTML
+    assert 'id="dirSuggestMenu"' in review_gui._RENDERED_HTML
     assert '<option value="pending" selected>' in review_gui._RENDERED_HTML
     assert "Alt+P" not in review_gui._RENDERED_HTML and "KeyP" not in review_gui._RENDERED_HTML
     assert 'id="statPending"' in review_gui._RENDERED_HTML and "setStatusFilter('pending')" in review_gui._RENDERED_HTML

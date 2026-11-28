@@ -44,6 +44,39 @@ def _discover_vedah_dirs(vishvasa_root: Path | None = None) -> list[str]:
   return found
 
 
+def _suggest_dirs(query: str = "", vishvasa_root: Path | None = None, limit: int = 30) -> list[str]:
+  """Return matching ``vedAH*/static`` / ``vedAH*/content`` roots plus on-disk subdirectory completions."""
+  roots = _discover_vedah_dirs(vishvasa_root)
+  q_raw = (query or "").strip()
+  if not q_raw:
+    return roots[:limit]
+
+  q_exp = os.path.expanduser(q_raw)
+  p = Path(q_exp)
+  disk_hits: list[str] = []
+  try:
+    if p.is_dir():
+      disk_hits.extend(
+        str(c)
+        for c in sorted(p.iterdir())
+        if c.is_dir() and not c.name.startswith(".")
+      )
+    elif p.parent.is_dir():
+      prefix = p.name.lower()
+      disk_hits.extend(
+        str(c)
+        for c in sorted(p.parent.iterdir())
+        if c.is_dir() and not c.name.startswith(".") and c.name.lower().startswith(prefix)
+      )
+  except OSError:
+    pass
+
+  tokens = [tok for tok in re.split(r"[\s/]+", q_exp.lower()) if tok]
+  matching_roots = [r for r in roots if all(tok in r.lower() for tok in tokens)]
+  ordered = list(dict.fromkeys([*disk_hits, *matching_roots, *roots]))
+  return ordered[:limit]
+
+
 class _ScanRequest(BaseModel):
   dir_path: str
 
@@ -357,6 +390,10 @@ def create_app(
     with store.lock:
       cur_dir = store.scan_data["dir_path"] if store.scan_data else (initial_dir or "")
     return {"presets": presets, "default_n": store.default_n, "current_dir": cur_dir}
+
+  @app.get("/api/dir_suggest")
+  def api_dir_suggest(q: str = Query("")) -> dict[str, Any]:
+    return {"suggestions": _suggest_dirs(q)}
 
   @app.post("/api/browse")
   def api_browse() -> dict[str, Any]:
@@ -770,7 +807,47 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     font-size: 12px;
     border-radius: 5px;
   }
-  #dirInput { flex: 1; min-width: 220px; font-family: monospace; }
+  .dir-wrap {
+    position: relative;
+    flex: 1;
+    min-width: 220px;
+    display: flex;
+  }
+  #dirInput { width: 100%; min-width: 220px; font-family: monospace; }
+  .dir-suggest-menu {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    right: 0;
+    z-index: 1300;
+    max-height: 320px;
+    overflow-y: auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--accent);
+    border-radius: 7px;
+    box-shadow: 0 10px 28px rgba(31, 28, 24, 0.22);
+    display: flex;
+    flex-direction: column;
+  }
+  .dir-suggest-item {
+    padding: 5px 9px;
+    font-family: monospace;
+    font-size: 11.5px;
+    cursor: pointer;
+    border-bottom: 1px solid #f0ebe0;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .dir-suggest-item:last-child { border-bottom: none; }
+  .dir-suggest-item:hover,
+  .dir-suggest-item.active {
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 600;
+  }
   button {
     padding: 6px 12px;
     border: 1px solid var(--border);
@@ -894,7 +971,7 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     min-height: 0;
     overflow-y: scroll;
     scrollbar-gutter: stable;
-    padding: 14px 18px;
+    padding: 14px 0;
     display: flex;
     flex-direction: column;
     gap: 14px;
@@ -1037,6 +1114,7 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
     border-right-color: var(--accent);
     border-bottom-color: var(--accent);
     outline: 3px solid var(--accent);
+    outline-offset: -3px;
     box-shadow: 0 0 0 5px rgba(139, 69, 19, 0.16), 0 6px 18px rgba(139, 69, 19, 0.14);
   }
   .card.focused.dec-pending { border-left-color: var(--accent); }
@@ -1435,8 +1513,11 @@ _RENDERED_HTML = r"""<!DOCTYPE html>
 <body>
 <header>
   <div class="row">
-    <input id="dirInput" type="text" list="dirPresets" placeholder="/home/vvasuki/gitland/vishvAsa/vedAH_yajuH/static" />
-    <datalist id="dirPresets"></datalist>
+    <span id="dirWrap" class="dir-wrap">
+      <input id="dirInput" type="text" list="dirPresets" autocomplete="off" placeholder="/home/vvasuki/gitland/vishvAsa/vedAH_yajuH/static" onfocus="openDirSuggest({ filterByInput: false })" onclick="openDirSuggest({ filterByInput: false })" oninput="onDirInputChanged()" onkeydown="onDirInputKeydown(event)" />
+      <datalist id="dirPresets"></datalist>
+      <span id="dirSuggestMenu" class="dir-suggest-menu" style="display:none;"></span>
+    </span>
     <button onclick="browseDir()">Browse</button>
     <button class="primary" onclick="scanDirectory()">Scan</button>
     <button type="button" class="stat-pill filter-pill" id="statTotal" data-status-filter="all" title="Show all matching suggestions (Alt+L / Alt+0)" onclick="setStatusFilter('all')">A<u class="sc-key sc-alt">l</u>l: 0 <span class="kbd-hint">Alt+L</span></button>
@@ -1640,8 +1721,138 @@ function applyEditorFont(pxVal) {
   try { localStorage.setItem("accent_review_font_px", String(px)); } catch (_) {}
 }
 
+let dirPresetsList = [];
+let dirSuggestItems = [];
+let dirSuggestIdx = -1;
+let dirSuggestTimer = null;
+let dirSuggestSeq = 0;
+
+function isDirSuggestOpen() {
+  const menu = typeof document !== "undefined" && typeof document.getElementById === "function"
+    ? document.getElementById("dirSuggestMenu")
+    : null;
+  return Boolean(menu && menu.style && menu.style.display && menu.style.display !== "none");
+}
+
+function closeDirSuggest() {
+  clearTimeout(dirSuggestTimer);
+  const menu = typeof document !== "undefined" && typeof document.getElementById === "function"
+    ? document.getElementById("dirSuggestMenu")
+    : null;
+  if (menu && menu.style) menu.style.display = "none";
+  dirSuggestIdx = -1;
+}
+
+function renderDirSuggestMenu() {
+  const menu = typeof document !== "undefined" && typeof document.getElementById === "function"
+    ? document.getElementById("dirSuggestMenu")
+    : null;
+  if (!menu) return;
+  if (!dirSuggestItems.length) {
+    if (menu.style) menu.style.display = "none";
+    menu.innerHTML = "";
+    return;
+  }
+  menu.innerHTML = dirSuggestItems.map((p, i) =>
+    `<div class="dir-suggest-item${i === dirSuggestIdx ? " active" : ""}" data-idx="${i}" title="${esc(p)}" onmousedown="event.preventDefault(); chooseDirSuggest(${i})">${esc(p)}</div>`
+  ).join("");
+  if (menu.style) menu.style.display = "flex";
+  if (dirSuggestIdx >= 0 && typeof menu.querySelector === "function") {
+    const act = menu.querySelector(`.dir-suggest-item[data-idx="${dirSuggestIdx}"]`);
+    if (act && typeof act.scrollIntoView === "function") act.scrollIntoView({ block: "nearest" });
+  }
+}
+
+function chooseDirSuggest(idx) {
+  const p = dirSuggestItems[idx];
+  const inp = typeof document !== "undefined" ? document.getElementById("dirInput") : null;
+  if (!p || !inp) return;
+  inp.value = p;
+  dirSuggestIdx = -1;
+  if (typeof inp.focus === "function") inp.focus();
+  openDirSuggest({ filterByInput: false });
+}
+
+function _localPresetSuggestions(rawVal, filterByInput) {
+  if (!filterByInput || !rawVal.trim()) return [...dirPresetsList];
+  const toks = rawVal.trim().toLowerCase().split(/[\s/]+/).filter(Boolean);
+  const matched = dirPresetsList.filter(p => toks.every(t => p.toLowerCase().includes(t)));
+  return matched.length ? matched : [...dirPresetsList];
+}
+
+async function _fetchDirSuggestions(queryVal, filterByInput) {
+  const seq = ++dirSuggestSeq;
+  try {
+    const resp = await fetch(`/api/dir_suggest?q=${encodeURIComponent(queryVal)}`);
+    if (!resp.ok || seq !== dirSuggestSeq) return;
+    const data = await resp.json();
+    if (seq !== dirSuggestSeq) return;
+    const apiList = Array.isArray(data.suggestions) ? data.suggestions : [];
+    const fallbackList = _localPresetSuggestions(queryVal, filterByInput);
+    const merged = [];
+    for (const item of [...apiList, ...fallbackList]) {
+      if (item && !merged.includes(item)) merged.push(item);
+    }
+    dirSuggestItems = merged;
+    if (dirSuggestIdx >= dirSuggestItems.length) dirSuggestIdx = dirSuggestItems.length - 1;
+    const active = typeof document !== "undefined" ? document.activeElement : null;
+    if (active && active.id === "dirInput") {
+      renderDirSuggestMenu();
+    }
+  } catch (_) {}
+}
+
+function openDirSuggest({ filterByInput = false } = {}) {
+  const inp = typeof document !== "undefined" ? document.getElementById("dirInput") : null;
+  const rawVal = inp ? (inp.value || "") : "";
+  dirSuggestItems = _localPresetSuggestions(rawVal, filterByInput);
+  renderDirSuggestMenu();
+  clearTimeout(dirSuggestTimer);
+  dirSuggestTimer = setTimeout(() => _fetchDirSuggestions(rawVal, filterByInput), 60);
+}
+
+function onDirInputChanged() {
+  dirSuggestIdx = -1;
+  openDirSuggest({ filterByInput: true });
+}
+
+function onDirInputKeydown(ev) {
+  if (!ev) return;
+  if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+    ev.preventDefault();
+    if (!isDirSuggestOpen()) {
+      openDirSuggest({ filterByInput: false });
+    }
+    if (!dirSuggestItems.length) return;
+    const delta = ev.key === "ArrowDown" ? 1 : -1;
+    dirSuggestIdx = dirSuggestIdx < 0
+      ? (delta > 0 ? 0 : dirSuggestItems.length - 1)
+      : Math.max(0, Math.min(dirSuggestItems.length - 1, dirSuggestIdx + delta));
+    renderDirSuggestMenu();
+    return;
+  }
+  if (ev.key === "Enter" && !ev.shiftKey && !ev.altKey && !ev.ctrlKey && !ev.metaKey) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (isDirSuggestOpen() && dirSuggestIdx >= 0 && dirSuggestItems[dirSuggestIdx]) {
+      chooseDirSuggest(dirSuggestIdx);
+      return;
+    }
+    closeDirSuggest();
+    scanDirectory();
+  }
+}
+
 async function init() {
   bindModifierHintTracking();
+  if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+    document.addEventListener("pointerdown", (ev) => {
+      const wrap = document.getElementById("dirWrap");
+      if (wrap && ev.target && typeof wrap.contains === "function" && !wrap.contains(ev.target)) {
+        closeDirSuggest();
+      }
+    });
+  }
   try {
     const savedPx = localStorage.getItem("accent_review_font_px");
     if (savedPx) applyEditorFont(savedPx);
@@ -1649,11 +1860,8 @@ async function init() {
   const resp = await fetch("/api/presets");
   const data = await resp.json();
   document.getElementById("nInput").value = data.default_n ?? 3;
-  const dl = document.getElementById("dirPresets");
   const presets = Array.isArray(data.presets) ? data.presets : [];
-  if (dl) {
-    dl.innerHTML = presets.map(p => `<option value="${esc(p)}"></option>`).join("");
-  }
+  dirPresetsList = presets;
   const dirInp = document.getElementById("dirInput");
   if (data.current_dir) {
     if (dirInp) dirInp.value = data.current_dir;
@@ -1701,6 +1909,7 @@ async function _runScan(dirPath, { preserveView = false } = {}) {
 }
 
 async function scanDirectory() {
+  closeDirSuggest();
   const dirPath = document.getElementById("dirInput").value.trim();
   if (!dirPath) return;
   await _runScan(dirPath, { preserveView: false });
@@ -2854,6 +3063,11 @@ document.addEventListener("keydown", (ev) => {
   const tag = (target && target.tagName || "").toUpperCase();
 
   if (ev.key === "Escape") {
+    if (isDirSuggestOpen()) {
+      ev.preventDefault();
+      closeDirSuggest();
+      return;
+    }
     if (isHelpPaneOpen()) {
       ev.preventDefault();
       closeHelpPane();
